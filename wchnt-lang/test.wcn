@@ -1,0 +1,8 @@
+Game = PlayArea Ball [Team]/teams [Player]/players
+PlayArea = Rect
+Rect = int/x int/y int/width int/height
+Ball = Football | Rugbyball
+Football = int/x int/y int/radius
+Rugbyball = int/x int/y int/xrad int/yrad
+Player = int/x int/y String/name
+Team = [Player]/players
