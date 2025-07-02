@@ -8,8 +8,11 @@
                  [metosin/malli "0.15.0"]]
   :repl-options {:init-ns wchnt-lang.core}
   :main wchnt-lang.core
-  :aot [wchnt-lang.core wchnt-lang.parser wchnt-lang.haxegen wchnt-lang.eyeball wchnt-lang.schema]
+  :aot [wchnt-lang.core wchnt-lang.api wchnt-lang.parser wchnt-lang.haxegen wchnt-lang.eyeball wchnt-lang.schema]
+  :prep-tasks ["javac" "compile"]
   :jar-name "wchnt-lang.jar"
+  :uberjar-name "wchnt-lang-standalone.jar"
   :jar-exclusions [#"\.cljx$"]
+  :omit-source true
   :profiles {:dev {:dependencies [[org.clojure/test.check "1.1.1"]]}
              :uberjar {:aot :all}})

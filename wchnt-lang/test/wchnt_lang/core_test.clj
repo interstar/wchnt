@@ -180,4 +180,54 @@ Config = BuildType/environment"
       (is (not (:success invalid-result)))
       (is (contains? invalid-result :error)))))
 
+(deftest test-dict-compilation
+  (testing "Dictionary type compilation"
+    (let [input "Config = {String : int}/settings"
+          result (compile-to-haxe input)]
+      (is (:success result))
+      (is (some #(str/includes? % "public var settings: Map<String, int>") (:code result))))))
+
+(deftest test-dict-with-enum-keys
+  (testing "Dictionary with enum keys"
+    (let [input "BuildType = \"Dev\" | \"Local\" | \"Deploy\"
+Config = {BuildType : String}/environments"
+          result (compile-to-haxe input)]
+      (is (:success result))
+      (is (some #(str/includes? % "enum BuildType") (:code result)))
+      (is (some #(str/includes? % "public var environments: Map<BuildType, String>") (:code result))))))
+
+(deftest test-dict-with-custom-types
+  (testing "Dictionary with custom types as keys and values"
+    (let [input "User = String/name int/id
+UserProfile = {User : String}/profiles"
+          result (compile-to-haxe input)]
+      (is (:success result))
+      (is (some #(str/includes? % "public var profiles: Map<User, String>") (:code result))))))
+
+(deftest test-dict-syntax-validation
+  (testing "Dictionary syntax validation"
+    (let [valid-input "Config = {String : int}/settings"
+          invalid-input "Config = {String int}/settings"
+          valid-result (validate-wchnt-syntax valid-input)
+          invalid-result (validate-wchnt-syntax invalid-input)]
+      (is (:success valid-result))
+      (is (not (:success invalid-result)))
+      (is (contains? invalid-result :error)))))
+
+(deftest test-mixed-dict-and-array
+  (testing "Mixed dictionary and array types"
+    (let [input "Game = {String : [Player]}/teams [Player]/players
+Player = String/name int/score"
+          result (compile-to-haxe input)]
+      (is (:success result))
+      (is (some #(str/includes? % "public var teams: Map<String, Array<Player>>") (:code result)))
+      (is (some #(str/includes? % "public var players: Array<Player>") (:code result))))))
+
+(deftest test-dict-default-naming
+  (testing "Dictionary default naming (lowercase first letter)"
+    (let [input "Config = {String : int}"
+          result (compile-to-haxe input)]
+      (is (:success result))
+      (is (some #(str/includes? % "public var stringToInt: Map<String, int>") (:code result))))))
+
 (run-tests)
