@@ -145,4 +145,39 @@ Player = String/name int/score"
       (is (schema/valid-validation-result? validation-ok))
       (is (schema/valid-validation-result? validation-issues)))))
 
+(deftest test-enum-compilation
+  (testing "Enum compilation"
+    (let [input "BuildType = \"Dev\" | \"Local\" | \"Deploy\"
+Config = BuildType/environment"
+          result (compile-to-haxe input)]
+      (is (:success result))
+      (is (some #(str/includes? % "enum BuildType") (:code result)))
+      (is (some #(str/includes? % "Dev") (:code result)))
+      (is (some #(str/includes? % "Local") (:code result)))
+      (is (some #(str/includes? % "Deploy") (:code result)))
+      (is (some #(str/includes? % "public var environment: BuildType") (:code result))))))
+
+(deftest test-enum-with-spaces
+  (testing "Enum with spaces in values"
+    (let [input "GameState = \"Not Started\" | \"In Progress\" | \"Game Over\""
+          result (compile-to-haxe input)]
+      (is (:success result))
+      (is (some #(str/includes? % "enum GameState") (:code result)))
+      (is (some #(str/includes? % "NotStarted") (:code result)))
+      (is (some #(str/includes? % "InProgress") (:code result)))
+      (is (some #(str/includes? % "GameOver") (:code result))))))
+
+(deftest test-enum-syntax-validation
+  (testing "Enum syntax validation"
+    (let [valid-enum-input "BuildType = \"Dev\" | \"Local\" | \"Deploy\""
+          valid-disjunction-input "BuildType = Dev | Local | Deploy"
+          invalid-input "BuildType = = Dev | Local | Deploy"
+          valid-enum-result (validate-wchnt-syntax valid-enum-input)
+          valid-disjunction-result (validate-wchnt-syntax valid-disjunction-input)
+          invalid-result (validate-wchnt-syntax invalid-input)]
+      (is (:success valid-enum-result))
+      (is (:success valid-disjunction-result))
+      (is (not (:success invalid-result)))
+      (is (contains? invalid-result :error)))))
+
 (run-tests)

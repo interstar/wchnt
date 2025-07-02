@@ -71,6 +71,8 @@
 ;; Command-line interface
 
 (defn -main [& args]
+  ;; This ensures the gen-class is loaded
+  (require 'wchnt-lang.api)
   (if (empty? args)
     (do
       (println "Usage: lein run <wchnt-source-file>")

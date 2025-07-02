@@ -6,9 +6,10 @@
 
 (def grammar
   "Schema = DefLine (<NL> DefLine)*
-   DefLine = CompositionLine | DisjunctionLine
+   DefLine = CompositionLine | DisjunctionLine | EnumLine
    CompositionLine = Definee <SPACE> '=' <SPACE> Element (<SPACE> Element)* <SPACE>?
    DisjunctionLine = Definee <SPACE> '=' <SPACE> Element (<SPACE> '|' <SPACE> Element)+ <SPACE>?
+   EnumLine = Definee <SPACE> '=' <SPACE> '\"' EnumValue '\"' (<SPACE> '|' <SPACE> '\"' EnumValue '\"')+ <SPACE>?
    Definee = Name
    <Name> = #'[A-Za-z][A-Za-z0-9_]*'
    NL = #'\\n+'
@@ -16,7 +17,9 @@
    SPACE = #'\\s+'
    Type = ArrayType | Name
    ArrayType = '[' Type ']'
-   AltName = Name")
+   AltName = Name
+   EnumValue =  #'[^\"]+'
+   ")
 
 (defn get-parser []
   (insta/parser grammar))

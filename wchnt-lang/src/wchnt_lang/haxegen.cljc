@@ -30,6 +30,18 @@
        "    // Interface for " interface-name "\n"
        "}"))
 
+(defn generate-haxe-enum [enum-name enum-values]
+  (let [processed-values (for [value enum-values]
+                          (let [raw-value (str/trim value)
+                                enum-value-name (-> raw-value
+                                                   (str/replace #"[^A-Za-z0-9]" "")
+                                                   (str/replace #"^[a-z]" str/upper-case))]
+                            enum-value-name))
+        enum-code (str "enum " enum-name " {\n"
+                      (str/join "\n" (map #(str "    " % ";") processed-values))
+                      "\n}")]
+    enum-code))
+
 (defn generate-haxe-class-implementing [class-name interface-name elements]
   (let [fields (for [element elements]
                  (let [field-name (:name element)
@@ -79,6 +91,13 @@
               type-names (map #(second (wchnt-lang.parser/find-node :Type %)) element-nodes)
               interface-code (generate-haxe-interface interface-name)]
           [interface-code])
+        :EnumLine
+        (let [definee-node (first (filter #(= (first %) :Definee) children))
+              enum-name (second definee-node)
+              enum-value-nodes (filter #(= (first %) :EnumValue) children)
+              enum-values (map second enum-value-nodes)]
+          (let [enum-code (generate-haxe-enum enum-name enum-values)]
+            [enum-code]))
         :Definee []
         :Element []
         :Type []
