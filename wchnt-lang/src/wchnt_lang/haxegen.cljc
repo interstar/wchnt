@@ -5,18 +5,30 @@
             [wchnt-lang.schema :as schema]))
 
 (defn generate-haxe-class [class-name elements]
-  (let [fields (for [element elements]
+  (let [has-context-components (some #(= (:sigil %) ":") elements)
+        import-statement (when has-context-components "import wchnt.*;")
+        fields (for [element elements]
                  (let [field-name (:name element)
-                       field-type (:type element)]
-                   (str "    public var " field-name ": " field-type ";")))
+                       field-type (:type element)
+                       sigil (:sigil element)]
+                   (case sigil
+                     ":" (str "    public var " field-name ": LazyContext<" field-type ">;")
+                     (str "    public var " field-name ": " field-type ";"))))
         constructor-params (for [element elements]
                             (let [field-name (:name element)
-                                  field-type (:type element)]
-                              (str field-type " " field-name)))
+                                  field-type (:type element)
+                                  sigil (:sigil element)]
+                              (case sigil
+                                ":" (str "LazyContext<" field-type "> " field-name)
+                                (str field-type " " field-name))))
         constructor-body (for [element elements]
-                          (let [field-name (:name element)]
-                            (str "        this." field-name " = " field-name ";")))
+                          (let [field-name (:name element)
+                                sigil (:sigil element)]
+                            (case sigil
+                              ":" (str "        this." field-name " = " field-name ";")
+                              (str "        this." field-name " = " field-name ";"))))
         class-code (str "class " class-name " {\n"
+                       (when import-statement (str import-statement "\n"))
                        (str/join "\n" fields)
                        "\n\n"
                        "    public function new(" (str/join ", " constructor-params) ") {\n"

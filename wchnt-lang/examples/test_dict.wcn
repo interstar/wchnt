@@ -1,0 +1,3 @@
+Config = {String : int}/settings
+BuildType = "Dev" | "Local" | "Deploy"
+Config2 = {BuildType : String}/environments 
