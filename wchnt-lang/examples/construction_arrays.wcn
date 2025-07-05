@@ -1,0 +1,7 @@
+## Schema
+School = [Person]/students
+Person = String/name
+
+## Construction
+
+[:School [:Array/students [:Person "John"] [:Person "Jane"]]] 

@@ -1,0 +1,8 @@
+## Schema
+
+Direction = "Up" | "Down" | "Left" | "Right"
+Config = {Direction : String}/moves
+
+## Construction
+
+[:Config {Up:"jump", Down:"crouch", Left:"left" Right:"right"}] 

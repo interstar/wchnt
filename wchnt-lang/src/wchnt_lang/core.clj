@@ -83,9 +83,39 @@
           (println (str "File not found: " filename))
           (System/exit 1))
         (let [input (slurp filename)
-              result (compile-to-haxe input)]
+              _ (println "=== DEBUG: Input file content ===")
+              _ (println input)
+              _ (println "=== DEBUG: End input ===")
+              phases (parser/split-wchnt-phases input)
+              _ (println "=== DEBUG: Schema phase ===")
+              _ (println (:schema phases))
+              _ (println "=== DEBUG: Construction phase ===")
+              _ (println (:construction phases))
+              _ (println "=== DEBUG: Attempting to parse schema ===")
+              parse-result (parser/parse-input (:schema phases))
+              _ (println "=== DEBUG: Parse result ===")
+              _ (println parse-result)
+              result (compile-to-haxe (:schema phases))]
           (if (:success result)
-            (doseq [class (:code result)] (println class) (println))
+            (do
+              (println "=== SCHEMA COMPILATION SUCCESS ===")
+              (doseq [class (:code result)] (println class) (println))
+              
+              ;; Process construction phase if present
+              (when (:construction phases)
+                (println "=== PROCESSING CONSTRUCTION PHASE ===")
+                (println "Construction input:" (:construction phases))
+                
+                (let [factory-result (haxe-gen/generate-construction-factory (:schema phases) (:construction phases))]
+                  (if (:success factory-result)
+                    (do
+                      (println "=== FACTORY GENERATION SUCCESS ===")
+                      (println "Generated Haxe factory code:")
+                      (println (:haxe-code factory-result))
+                      (println "=== END FACTORY CODE ==="))
+                    (do
+                      (println "=== FACTORY GENERATION FAILED ===")
+                      (println "Error:" (:error factory-result)))))))
             (do
               (println "Compilation failed:")
               (println (:error result))
