@@ -363,8 +363,7 @@
 (defn generate-class-grammars [classes enums disjunctions]
   "Generate grammar rules for all classes"
   (let [sorted-classes (sort-by #(if (= (:type %) :empty) 1 0) classes)
-        class-grammars (mapcat #(let [[strict-rule relaxed-rule] (generate-class-grammar % enums disjunctions)
-                                      _ (println "DEBUG: class grammar for" (:name %) strict-rule relaxed-rule)]
+        class-grammars (mapcat #(let [[strict-rule relaxed-rule] (generate-class-grammar % enums disjunctions)]
                                   [strict-rule relaxed-rule])
                                 sorted-classes)]
     class-grammars))
@@ -378,7 +377,6 @@
                                                    (str/join " | " (map #(str "R" % "Construction") implementers)))
                                   relaxed-rule (str interface-name "Construction = "
                                                     (str/join " | " (map #(str % "Construction") implementers)))]
-                              (println "DEBUG: disjunction/interface rule for" interface-name "=" strict-rule "and" relaxed-rule)
                               [strict-rule relaxed-rule]))
         disjunction-grammars (mapcat identity disjunction-rules)]
     disjunction-grammars))
@@ -389,7 +387,6 @@
                        element (:elements class)
                        :when (str/starts-with? (:type element) "Map<")]
                    (let [g (generate-map-grammar element classes enums disjunctions)]
-                     (println "DEBUG: map grammar for" (:name element) "=" g)
                      g))]
     map-rules))
 
@@ -404,11 +401,9 @@
                                        (str/replace ">" "")))
                                  distinct)
         ;; Generate array-element versions of construction rules (with optional whitespace)
-        _ (println "DEBUG: array-element-types =" array-element-types)
         array-element-rules (for [class classes
                                   :when (some #(= % (str (:name class))) array-element-types)]
                               (let [rule (generate-array-element-grammar class enums disjunctions)]
-                                (println "DEBUG: Generated array-element rule for" (:name class) "=" rule)
                                 rule))
         ;; Use array-element versions for array elements
         array-construction-rule (if (seq array-element-types)
@@ -416,7 +411,7 @@
                                        (str/join " | " (map #(str % "ArrayElement") array-element-types))
                                        "))* <WS>? ']'")
                                   "ArrayConstruction = '[' <WS>? ':' 'Array' '/' TypeName <WS>? ']'")
-        _ (println "DEBUG: array-element-rules =" array-element-rules)]
+        ]
     {:array-element-rules array-element-rules
      :array-construction-rule array-construction-rule}))
 
@@ -456,7 +451,7 @@
                                                           (str key-type "To" value-type "MapElement")) map-types))
                                      "))* <WS>? ']'")
                                 "MapConstruction = '[' <WS>? ':' 'Map' '/' '{' TypeName ':' TypeName '}' <WS>? ']'")
-        _ (println "DEBUG: map-element-rules =" map-element-rules)]
+        ]
     {:map-element-rules map-element-rules
      :map-construction-rule map-construction-rule}))
 
@@ -493,9 +488,7 @@
   (let [classes (:classes class-info)
         enums (:enums class-info)
         disjunctions (:disjunctions class-info)
-        _ (println "DEBUG: classes=" classes)
-        _ (println "DEBUG: enums=" enums)
-        _ (println "DEBUG: disjunctions=" disjunctions)
+
         
         ;; Start with the assemblage root as the main rule
         grammar-parts []
@@ -521,7 +514,7 @@
         grammar-parts (concat grammar-parts map-field-grammars)
         
         ;; Add enum value rules
-        enum-rules (map #(do (let [g (generate-enum-grammar %)] (println "DEBUG: enum grammar for" (:name %) "=" g) g)) enums)
+        enum-rules (map #(generate-enum-grammar %) enums)
         grammar-parts (concat grammar-parts enum-rules)
         
         ;; Add disjunction grammars for empty classes
@@ -530,7 +523,6 @@
                               (let [interface-name (:name disjunction)
                                     empty-class-name (str "_" interface-name)
                                     g (str empty-class-name "Construction = '[' ':' '" empty-class-name "' <WS>? ']'")]
-                                (println "DEBUG: disjunction grammar for" interface-name "(empty) =" g)
                                 g))
         grammar-parts (concat grammar-parts disjunction-grammars)
         
@@ -543,8 +535,7 @@
         grammar-parts (concat grammar-parts common-rules)
         
         ;; Join all parts - MultiStepConstruction will be the start symbol
-        composed-grammar (str/join "\n" grammar-parts)
-        _ (println "DEBUG: FINAL GRAMMAR\n" composed-grammar)]
+        composed-grammar (str/join "\n" grammar-parts)]
     composed-grammar))
 
 (defn schema-to-construction-grammar-impl [schema-input]
@@ -618,7 +609,7 @@
               ;; Check if this string is a variable name
               (if (contains? variable-assignments node)
                 (do
-                  (println "DEBUG: Resolving variable reference:" node)
+              
                   (get variable-assignments node))
                 node)
               (vector? node)
@@ -726,16 +717,14 @@
   "Parse variable assignments from lines, returning a map of variable assignments and final construction"
   (let [variable-assignments (atom {})
         final-construction (atom nil)]
-    (println "DEBUG: parse-variable-assignments processing lines:")
     (doseq [line lines]
-      (println "DEBUG: Processing line:" (pr-str line))
       (let [trimmed-line (str/trim line)]
         (if (re-find #"^[a-zA-Z_][a-zA-Z0-9_]*\s*=" trimmed-line)
           ;; Variable assignment
           (let [[var-name assignment] (str/split trimmed-line #"\s*=\s*" 2)
                 var-name (str/trim var-name)
                 assignment (str/trim assignment)]
-            (println "DEBUG: Found variable assignment:" var-name "=" assignment)
+
             (let [assignment-parse (construction-parser assignment)]
               (if (insta/failure? assignment-parse)
                 (throw (ex-info (str "Failed to parse variable assignment for '" var-name "': " (insta/get-failure assignment-parse))
@@ -743,9 +732,7 @@
                 (swap! variable-assignments assoc var-name assignment-parse))))
           ;; Construction
           (if (nil? @final-construction)
-            (do
-              (println "DEBUG: Found final construction:" trimmed-line)
-              (reset! final-construction trimmed-line))
+            (reset! final-construction trimmed-line)
             (throw (ex-info "Multiple constructions found - only one final construction allowed"
                            {:constructions [@final-construction trimmed-line]}))))))
     {:variable-assignments @variable-assignments
@@ -758,24 +745,18 @@
       (let [[var-name-with-sigil assignment-text] (str/split trimmed #"\s*=\s*" 2)
             var-name (str/trim (subs var-name-with-sigil 1))
             assignment-text (str/trim assignment-text)]
-        (println "DEBUG: Parsing assignment:" var-name "=" assignment-text)
+
         (let [assignment-ast (construction-parser assignment-text)]
           (if (insta/failure? assignment-ast)
-            (do
-              (println "DEBUG: Parse failure for assignment:")
-              (println "Input:" assignment-text)
-              (println "Failure:" (insta/get-failure assignment-ast))
-              (throw (ex-info (str "Failed to parse assignment for '" var-name "': " (insta/get-failure assignment-ast))
-                             {:variable var-name :assignment assignment-text})))
-            (do
-              (println "DEBUG: Successfully parsed assignment AST:" assignment-ast)
-              {:name var-name :construction assignment-ast}))))
+            (throw (ex-info (str "Failed to parse assignment for '" var-name "': " (insta/get-failure assignment-ast))
+                           {:variable var-name :assignment assignment-text}))
+            {:name var-name :construction assignment-ast})))
       nil)))
 
 (defn parse-final-construction-statement [statement construction-parser]
   "Parse a single final construction statement"
   (let [trimmed (str/trim statement)]
-    (println "DEBUG: Parsing final construction:" trimmed)
+
     (let [final-ast (construction-parser trimmed)]
       (if (insta/failure? final-ast)
         (throw (ex-info (str "Failed to parse final construction: " (insta/get-failure final-ast))
@@ -788,7 +769,7 @@
         final-construction (atom nil)]
     (doseq [statement statements]
       (let [trimmed (str/trim statement)]
-        (println "DEBUG: Processing statement:" (pr-str trimmed))
+
         (if (re-find #"^\$[a-zA-Z_][a-zA-Z0-9_]*\s*=" trimmed)
           ;; Variable assignment
           (let [assignment (parse-assignment-statement statement grammar-string construction-parser)]
@@ -805,20 +786,12 @@
   "Parse multi-step construction with variable assignments and references"
   (let [grammar-string (generate-construction-grammar class-info)
         construction-parser (insta/parser grammar-string :start :MultiStepConstruction)]
-    (println "DEBUG: Generated grammar:")
-    (println grammar-string)
-    (println "DEBUG: Grammar start symbol: :MultiStepConstruction")
-    (println "DEBUG: Raw construction input (repr):" (pr-str construction-input))
-    (println "DEBUG: Raw construction input (with visible whitespace):" (clojure.string/replace (pr-str construction-input) "\n" "\\n"))
+
     ;; Parse the entire input as a MultiStepConstruction
     (let [parse-result (construction-parser construction-input)]
       (if (insta/failure? parse-result)
+        (schema/syntax-error (str "Failed to parse construction: " (insta/get-failure parse-result)))
         (do
-          (println "DEBUG: Parse failure details:")
-          (println (insta/get-failure parse-result))
-          (schema/syntax-error (str "Failed to parse construction: " (insta/get-failure parse-result))))
-        (do
-          (println "DEBUG: Successfully parsed MultiStepConstruction:" parse-result)
           ;; Extract statements from the parsed result
           (let [statements (filter #(and (vector? %) (= (first %) :Statement)) parse-result)
                 assignments (atom [])
@@ -834,7 +807,6 @@
             (let [structured-ast {:type :MultiStepConstruction
                                  :assignments @assignments
                                  :final-construction @final-construction}]
-              (println "DEBUG: Structured AST:" (pr-str structured-ast))
               (schema/syntax-success structured-ast))))))))
 
 (defn parse-construction-impl [schema-input construction-input]

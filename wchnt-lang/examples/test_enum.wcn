@@ -6,15 +6,3 @@
 BuildType = "Dev" | "Local" | "Deploy"
 Config = BuildType/environment
 ```
-
-## Construction
-
-```
-// No construction for this example
-```
-
-## Reactive
-
-```
-// No reactive code for this example
-```

@@ -6,26 +6,3 @@
 GameState = "Not Started" | "In Progress" | "Game Over"
 ```
 
-## Construction
-
-```
-// No construction for this example
-```
-
-## Reactive
-
-```
-// No reactive code for this example
-```
-
-## Imperative
-
-```
-// No imperative code for this example
-```
-
-## Target
-
-```
-// No target code for this example
-``` 

@@ -130,21 +130,18 @@
                                                  implementers (str/split (second parts) #"\s*\|\s*")]
                                              [interface-name (set implementers)])))]
       (if (insta/failure? parse-result)
-        (schema/error-result (str input " is not a valid string in wchnt: " (insta/get-failure parse-result)))
+        (schema/syntax-error (str input " is not a valid string in wchnt: " (insta/get-failure parse-result)))
         (let [classes (walk-tree parse-result interface-implementers)]
-          (schema/success-result classes))))
+          (schema/syntax-success classes))))
     (catch #?(:clj Exception :cljs :default) e
-      (schema/error-result (str "Error during compilation: " e)))))
+      (schema/syntax-error (str "Error during compilation: " e)))))
 
 (defn int-literal->haxe [children]
   (str (first children)))
 
 (defn string-literal->haxe [children]
   ;; The children are [quote content quote], so we want the middle element
-  (println "DEBUG: [string-literal->haxe] children:" (pr-str children))
-  (let [result (str "\"" (second children) "\"")]
-    (println "DEBUG: [string-literal->haxe] result:" (pr-str result))
-    result))
+  (str "\"" (second children) "\""))
 
 (defn enum-value->haxe [tag children enums]
   (if (and (str/ends-with? (name tag) "Value")
@@ -158,9 +155,7 @@
 
 (defn variable-reference->haxe [ast]
   "Convert variable reference AST to Haxe variable name"
-  (println "DEBUG: [variable-reference->haxe] ast:" (pr-str ast))
   (let [var-name (nth ast 2)]  ;; Extract variable name from [:VariableReference "$" "people"]
-    (println "DEBUG: [variable-reference->haxe] extracted var-name:" var-name)
     var-name))
 
 (defn unwrap-args [args]
@@ -206,7 +201,6 @@
               set-calls (map #(let [element-haxe (ast-to-haxe-factory % class-info)]
                                (str ".set(" element-haxe ")")) actual-elements)
               haxe-code (str "new Map<" key-type ", " value-type ">()" (str/join "" set-calls))]
-          (println "DEBUG: [MapConstruction] generated haxe-code:" haxe-code)
           haxe-code)
         ;; Handle as regular class construction
         (let [haxe-args (map-indexed 
@@ -265,7 +259,6 @@
                 set-calls (map #(let [element-haxe (ast-to-haxe-factory % class-info)]
                                  (str ".set(" element-haxe ")")) actual-elements)
                 haxe-code (str "new Map<" key-type ", " value-type ">()" (str/join "" set-calls))]
-            (println "DEBUG: [MapConstruction] generated haxe-code:" haxe-code)
             haxe-code)
 
           ;; Handle XxxToYyyMapElement nodes (e.g., :DirectionToStringMapElement)
@@ -276,7 +269,6 @@
                 key-haxe (ast-to-haxe-factory key class-info)
                 value-haxe (ast-to-haxe-factory value class-info)
                 result (str "[" key-haxe ", " value-haxe "]")]
-            (println "DEBUG: [XxxToYyyMapElement] key:" key-haxe "value:" value-haxe "result:" result)
             result)
 
           ;; Handle XxxArrayElement nodes (e.g., :PlayerArrayElement, :TeamArrayElement)
@@ -332,7 +324,7 @@
   (let [parse-result (parser/parse-construction schema-input construction-input)]
     (if (:success parse-result)
       (let [ast (:ast parse-result)]
-        (println "DEBUG: [generate-construction-factory-impl] AST:" (pr-str ast))
+
         ;; Handle multi-step construction AST
         (if (= (:type ast) :MultiStepConstruction)
           (let [class-info (parser/extract-class-info ((parser/get-parser) schema-input))
@@ -341,21 +333,17 @@
                                       (let [var-name (:name assignment)
                                             construction (:construction assignment)
                                             haxe-value (ast-to-haxe-factory construction class-info)]
-                                        (do (println "DEBUG: [factory] var decl:" var-name "=" haxe-value)
-                                            (str "var " var-name " = " haxe-value ";"))))
+                                        (str "var " var-name " = " haxe-value ";")))
                 ;; Generate final construction
                 final-haxe (ast-to-haxe-factory (:final-construction ast) class-info)]
-            (println "DEBUG: [factory] final construction:" final-haxe)
             (let [factory-code (str "public static function factory() {\n"
                                    "    " (str/join "\n    " variable-declarations) "\n"
                                    "    return " final-haxe ";\n"
                                    "}")]
-                              (println "DEBUG: [factory] generated factory-code:\n" factory-code)
                 (schema/syntax-success ast {:haxe-code factory-code})))
           ;; Handle single construction AST (legacy)
           (let [class-info (parser/extract-class-info ((parser/get-parser) schema-input))
                 haxe-code (ast-to-haxe-factory ast class-info)]
-                          (println "DEBUG: [factory] single construction haxe-code:" haxe-code)
               (schema/syntax-success ast {:haxe-code haxe-code}))))
       parse-result)))
 
@@ -365,11 +353,9 @@
      (try
        (generate-construction-factory-impl schema-input construction-input)
        (catch Exception e
-         (println "DEBUG: caught exception:" e)
          (schema/syntax-error (str "Error generating factory: " (.getMessage e)))))
      :cljs
      (try
        (generate-construction-factory-impl schema-input construction-input)
        (catch :default e
-         (println "DEBUG: caught exception:" e)
          (schema/syntax-error (str "Error generating factory: " (.-message e))))))) 

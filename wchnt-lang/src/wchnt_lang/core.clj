@@ -107,40 +107,32 @@
           (if (:success mainfile-result)
             (let [schema-content (:schema mainfile-result)
                   construction-content (:construction mainfile-result)
-                  _ (println "=== DEBUG: Schema phase ===")
-                  _ (println schema-content)
-                  _ (println "=== DEBUG: Construction phase ===")
-                  _ (println construction-content)
-                  _ (println "=== DEBUG: Attempting to parse schema ===")
-                  parse-result (parser/parse-input schema-content)
-                  _ (println "=== DEBUG: Parse result ===")
-                  _ (println parse-result)
-                  result (compile-to-haxe schema-content)]
-              (if (:success result)
+                  parse-result (parser/parse-input schema-content)]
+              (if (:success parse-result)
+                (let [result (compile-to-haxe schema-content)]
+                  (if (:success result)
+                    (if (not-empty construction-content)
+                      (let [factory-result (haxe-gen/generate-construction-factory schema-content construction-content)]
+                        (if (:success factory-result)
+                          (do
+                            (doseq [class (:ast result)] (println class))
+                            (println (:haxe-code factory-result)))
+                          (do
+                            (println "Construction parsing failed:")
+                            (println (:error factory-result))
+                            (System/exit 1))))
+                      ;; Only schema phase present, print schema Haxe code
+                      (doseq [class (:ast result)] (println class)))
+                    (do
+                      (println "Schema compilation failed:")
+                      (println (:error result))
+                      (System/exit 1))))
                 (do
-                  (println "=== SCHEMA COMPILATION SUCCESS ===")
-                  (doseq [class (:code result)] (println class) (println))
-                  
-                  ;; Process construction phase if present
-                  (when (not-empty construction-content)
-                    (println "=== PROCESSING CONSTRUCTION PHASE ===")
-                    (println "Construction input:" construction-content)
-                    
-                    (let [factory-result (haxe-gen/generate-construction-factory schema-content construction-content)]
-                      (if (:success factory-result)
-                        (do
-                          (println "=== FACTORY GENERATION SUCCESS ===")
-                          (println "Generated Haxe factory code:")
-                          (println (:haxe-code factory-result))
-                          (println "=== END FACTORY CODE ==="))
-                        (do
-                          (println "=== FACTORY GENERATION FAILED ===")
-                          (println "Error:" (:error factory-result)))))))
-                (do
-                  (println "Compilation failed:")
-                  (println (:error result))
+                  (println "Schema parsing failed:")
+                  (println "Input:" schema-content)
+                  (println "Error:" (:error parse-result))
                   (System/exit 1))))
             (do
               (println "Mainfile parsing failed:")
               (println (:error mainfile-result))
-              (System/exit 1)))))))) 
+              (System/exit 1))))))))

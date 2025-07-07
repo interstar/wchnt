@@ -13,5 +13,5 @@ Config2 = {BuildType : String}/environments
 ## Construction
 
 ```
-[:Main [{"0" : 0 "2" : }]]
+[:Main [{"0" : 0 "1" : 1}]]
 ```
