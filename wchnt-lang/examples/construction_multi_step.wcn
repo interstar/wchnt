@@ -1,14 +1,21 @@
+# Example: construction_multi_step.wcn
+
 ## Schema
 
+```
 Person = String/name String/address
 School = [Person]/students
 Team = [Person]/players
 Town = School Team
+```
 
 ## Construction
 
-people = 
-[:Array [:Person "John Smith" "1 The Avenue"]
+```
+$people = 
+[:Array/Person [:Person "John Smith" "1 The Avenue"]
         [:Person "Jane Jones" "43 Long Street"]]
 
-[:Town [:School people] [:Team people]] 
+[:Town [:School $people] [:Team $people]]
+```
+ 

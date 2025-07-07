@@ -2,67 +2,51 @@
 
 This document outlines the future development goals and features for the WCHNT language. The plan is organized by priority and complexity, with immediate goals first and more advanced features later.
 
-## Phase 1: Core Language Enhancements
 
-### 1.1 Enhanced Type System
-- **Generic Types**: Support for generic type parameters
-  ```wchnt
-  Container<T> = T/item [T]/items
-  ```
-- **Nullable Types**: Explicit null handling
-  ```wchnt
-  Person = String/name String?/middleName
-  ```
-- **Type Aliases**: Shorthand for complex types
-  ```wchnt
-  type UserId = String
-  type Email = String
-  Person = UserId/id Email/email
-  ```
+### 1) Fixing construction compilation and unit testing, to make sure it works
 
-### 1.2 Improved Error Handling
-- Better error messages with line numbers and context
-- Syntax validation with helpful suggestions
-- Circular dependency detection with resolution hints
-- Type checking for primitive values
+### 2) we are going to rethink the structure of a WCHNT / assemblage source file.
 
-### 1.3 Code Generation Improvements
-- Generate documentation comments
-- Support for different output formats (Haxe, TypeScript, etc.)
-- Customizable code generation templates
-- Better handling of edge cases
+In particular, we are going for a "literate programming" approach where we will embed code within markdown.
 
-## Phase 2: Class Relationships
+A WCHNT program will look like a markdown file with human readable text.
 
-### 2.1 Reference Associations
-- **Simple References**: Point to other objects without composition
-  ```wchnt
-  Person = String/name ->Company/employer
-  Company = String/name [->Person]/employees
-  ```
-- **Bidirectional References**: Automatic back-references
-  ```wchnt
-  Person = String/name [<->Person]/friends
-  ```
-- **Reference Arrays**: Collections of references
-  ```wchnt
-  Person = String/name [->Address]/addresses
-  Address = String/street [->Person]/residents
-  ```
+We will still use the convention of a level two heading (ie. a heading with two hash symbols in front of it) to separate the phases of our program
 
-### 2.2 Advanced Composition
-- **Optional Components**: Components that may not be present
-  ```wchnt
-  Person = String/name Address?/home
-  ```
-- **Default Values**: Components with default initialization
-  ```wchnt
-  Person = String/name int/age@default(18)
-  ```
-- **Immutable vs Mutable**: Control over object mutability
-  ```wchnt
-  Person = String/name@mutable int/age@immutable
-  ```
+We will put the actual meaningful part of the code in each case within the triple backtack "fence" 
+
+eg. a document will say something like ## Schema then the backtick fence, then the schema code, then close the backticks.
+
+We can have other text in this section too, which is effectively comments.
+
+Then there's the hash-hash Construction header. With more ordinary text and the code in the backtick fences.
+
+Does this make sense.
+
+We're going to add further phases or sections to our code, so for the moment, the definitive 5 sections of a WCHNT program will be
+
+- 1) Schema
+- 2) Construction
+- 3) Reactive
+- 4) Imperative
+- 5) Target
+
+Don't worry what goes into the last 3 yet. But we will now define the document to accept all 5 of these sections.
+
+So ... the first part of the new parsing will be to take this markdown doc (still with a .wcn extension I think.) and extract the 5 code sections from it.
+
+Then we will pass each code section to the approprate parser in our pipeline. 
+
+This changes the initial parsing strategy somewhat. 
+ 
+Note that of all the sections, only the first, the Schema section is required. A file that just contains a Schema will produce a (eg. Haxe) target file that just defines classes. Schema plus Construction is classes plus the factory file. Reactive and Imperative will add methods to the classes. And Target is for extra information.
+
+### 3) context-specific classes
+
+We haven't yet dealt with the context-specific classes in our construction phase. What this will involve is adding an argument to the constructor of each which takes a "parent".
+
+However, because of issues of circularity, we will actually pass a future/promise type object which will get assigned to the context
+
 
 ## Phase 3: Reactive Features
 
@@ -118,109 +102,3 @@ This document outlines the future development goals and features for the WCHNT l
   Person = String/name [->Person]/children@cascade(delete)
   ```
 
-## Phase 5: Persistence and Serialization
-
-### 5.1 Database Mapping
-- **ORM Integration**: Automatic database table generation
-  ```wchnt
-  Person = int/id@id@autoIncrement String/name@column("full_name")
-  ```
-- **Relationship Mapping**: Foreign key and join table generation
-  ```wchnt
-  Person = String/name [->Address]/addresses@manyToMany
-  ```
-
-### 5.2 Serialization Support
-- **JSON Serialization**: Automatic JSON conversion
-  ```wchnt
-  Person = String/name@serialize String/password@noSerialize
-  ```
-- **Custom Serialization**: User-defined serialization formats
-
-## Phase 6: UI Integration
-
-### 6.1 Form Bindings
-- **Automatic Form Generation**: UI forms from WCHNT schemas
-  ```wchnt
-  Person = String/name@formField("Full Name") int/age@formField("Age")@inputType("number")
-  ```
-- **Validation Integration**: Form validation from WCHNT constraints
-
-### 6.2 Display Annotations
-- **UI Hints**: Display and interaction metadata
-  ```wchnt
-  Person = String/name@display("Full Name")@sortable int/age@display("Age")@filterable
-  ```
-
-## Phase 7: Advanced Features
-
-### 7.1 Graph Relationships
-- **Graph Algorithms**: Built-in graph traversal and algorithms
-  ```wchnt
-  Node = String/id [->Node]/neighbors@graph Float/distance@computed
-  ```
-
-### 7.2 Temporal Relationships
-- **Time-based Features**: Temporal data handling
-  ```wchnt
-  Event = DateTime/timestamp@observable Duration/duration@observable Bool/isActive@computed
-  ```
-
-### 7.3 Spatial Relationships
-- **Geospatial Support**: Location-based features
-  ```wchnt
-  Location = Float/latitude@observable Float/longitude@observable [->Location]/nearby@spatial
-  ```
-
-## Implementation Strategy
-
-### Development Approach
-1. **Incremental Development**: Implement features in small, testable increments
-2. **Backward Compatibility**: Ensure new features don't break existing code
-3. **Extensible Design**: Build the language to support future extensions
-4. **Performance Focus**: Maintain fast compilation and runtime performance
-
-### Testing Strategy
-- Comprehensive test suite for each feature
-- Integration tests for complex scenarios
-- Performance benchmarks for code generation
-- User acceptance testing with real-world examples
-
-### Documentation
-- Complete language reference
-- Tutorial series for each major feature
-- Best practices and design patterns
-- Migration guides for breaking changes
-
-## Success Metrics
-
-### Technical Metrics
-- Compilation speed (target: <1 second for typical schemas)
-- Generated code quality (measured by static analysis)
-- Test coverage (target: >90%)
-- Documentation coverage (target: 100% of features)
-
-### User Experience Metrics
-- Learning curve (time to first working schema)
-- Developer productivity (schemas per day)
-- Error rate reduction (fewer compilation errors)
-- Community adoption and feedback
-
-## Timeline
-
-### Short Term (3-6 months)
-- Phase 1 features (Enhanced Type System, Error Handling)
-- Basic reference associations
-- Improved documentation and examples
-
-### Medium Term (6-12 months)
-- Phase 2 and 3 features (Relationships, Reactive)
-- Validation system
-- Initial UI integration
-
-### Long Term (12+ months)
-- Phase 4-7 features (Advanced features)
-- Multiple output format support
-- Ecosystem development (tools, libraries, frameworks)
-
-This plan is a living document that will be updated as the language evolves and new requirements emerge from real-world usage. 

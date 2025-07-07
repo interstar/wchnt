@@ -1,2 +1,20 @@
+# Example: test_enum.wcn
+
+## Schema
+
+```
 BuildType = "Dev" | "Local" | "Deploy"
-Config = BuildType/environment 
+Config = BuildType/environment
+```
+
+## Construction
+
+```
+// No construction for this example
+```
+
+## Reactive
+
+```
+// No reactive code for this example
+```

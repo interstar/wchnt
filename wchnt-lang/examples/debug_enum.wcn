@@ -1,1 +1,8 @@
-BuildType = Dev | Local | Deploy 
+# Example: debug_enum.wcn
+
+## Schema
+
+```
+BuildType = Dev | Local | Deploy
+```
+ 

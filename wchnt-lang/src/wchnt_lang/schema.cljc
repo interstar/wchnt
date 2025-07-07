@@ -30,6 +30,20 @@
     [:success [:= false]]
     [:error string?]]])
 
+;; Mainfile parsing result schema
+(def MainfileParseResult
+  [:or
+   [:map
+    [:success [:= true]]
+    [:schema string?]
+    [:construction string?]
+    [:reactive string?]
+    [:imperative string?]
+    [:target string?]]
+   [:map
+    [:success [:= false]]
+    [:error string?]]])
+
 ;; Validation functions
 (defn valid-compilation-result? [result]
   (m/validate CompilationResult result))
@@ -39,6 +53,9 @@
 
 (defn valid-syntax-result? [result]
   (m/validate SyntaxValidationResult result))
+
+(defn valid-mainfile-parse-result? [result]
+  (m/validate MainfileParseResult result))
 
 ;; Helper functions to create results
 (defn success-result [code]
@@ -57,10 +74,24 @@
   {:status "issues"
    :issues issues})
 
-(defn syntax-success [ast]
-  {:success true
-   :ast ast})
+(defn syntax-success [ast & [additional-data]]
+  (merge {:success true
+          :ast ast}
+         additional-data))
 
 (defn syntax-error [error]
   {:success false
-   :error error}) 
+   :error error})
+
+;; Multi-step construction AST schema
+(def MultiStepConstructionAST
+  [:map
+   [:type [:= :MultiStepConstruction]]
+   [:assignments [:sequential 
+                  [:map
+                   [:name string?]
+                   [:construction any?]]]]
+   [:final-construction any?]])
+
+(defn valid-multi-step-construction? [ast]
+  (m/validate MultiStepConstructionAST ast)) 

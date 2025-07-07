@@ -1,10 +1,15 @@
+# Example: construction_simple.wcn
+
 ## Schema
 
+```
 Game = PlayArea Ball
 PlayArea = Rect
 Rect = int/x int/y int/width int/height
 Ball = int/x int/y int/dx int/dy int/rad
+```
 
 ## Construction
 
+```
 [:Game [:PlayArea [:Rect 0 0 800 600]] [:Ball 100 100 1 1 5]] 

@@ -1,8 +1,17 @@
+# Example: construction_maps.wcn
+
 ## Schema
 
+```
+Main = String/hello Config
 Direction = "Up" | "Down" | "Left" | "Right"
 Config = {Direction : String}/moves
+```
 
 ## Construction
 
-[:Config {Up:"jump", Down:"crouch", Left:"left" Right:"right"}] 
+```
+$controls = [:Map/{Direction:String} Up:"jump", Down:"crouch", Left:"left" Right:"right"]
+[:Main "Hello" [:Config $controls]]
+```
+ 

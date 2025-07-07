@@ -1,1 +1,8 @@
-Config = {String : int} 
+# Example: test_dict_minimal.wcn
+
+## Schema
+
+```
+Config = {String : int}
+```
+ 

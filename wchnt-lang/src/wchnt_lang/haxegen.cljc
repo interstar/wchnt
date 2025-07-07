@@ -141,7 +141,10 @@
 
 (defn string-literal->haxe [children]
   ;; The children are [quote content quote], so we want the middle element
-  (str "\"" (second children) "\""))
+  (println "DEBUG: [string-literal->haxe] children:" (pr-str children))
+  (let [result (str "\"" (second children) "\"")]
+    (println "DEBUG: [string-literal->haxe] result:" (pr-str result))
+    result))
 
 (defn enum-value->haxe [tag children enums]
   (if (and (str/ends-with? (name tag) "Value")
@@ -152,6 +155,13 @@
 (defn local-empty->haxe [ast]
   (let [empty-class (second ast)]
     (str "new " empty-class "()")))
+
+(defn variable-reference->haxe [ast]
+  "Convert variable reference AST to Haxe variable name"
+  (println "DEBUG: [variable-reference->haxe] ast:" (pr-str ast))
+  (let [var-name (nth ast 2)]  ;; Extract variable name from [:VariableReference "$" "people"]
+    (println "DEBUG: [variable-reference->haxe] extracted var-name:" var-name)
+    var-name))
 
 (defn unwrap-args [args]
   (if (and (= 1 (count args))
@@ -172,51 +182,32 @@
                       (= (first first-vector) (keyword ":")))
                (drop 2 first-vector)
                non-string-children)]
-    (println "DEBUG: [construction-node->haxe] class-name=" class-name)
-    (print   "DEBUG: [construction-node->haxe] classes= ") (pprint classes)
-    (print   "DEBUG: [construction-node->haxe] elements= ") (pprint elements)
-    (print   "DEBUG: [construction-node->haxe] args= ") (pprint args)
-    (println "DEBUG: [construction-node->haxe] children=" children)
-    (println "DEBUG: [construction-node->haxe] non-string-children=" non-string-children)
-    (println "DEBUG: [construction-node->haxe] first-vector=" first-vector)
     
     ;; Check if this is an array construction (ends with "ArrayConstruction")
     (if (str/ends-with? (name tag) "ArrayConstruction")
       ;; Handle as array construction
       (let [array-elements (filter vector? children)
-            haxe-elements (map #(ast-to-haxe-factory % class-info) array-elements)]
+            ;; Filter out TypeName nodes and only keep actual array elements
+            actual-elements (filter #(not= (first %) :TypeName) array-elements)
+            haxe-elements (map #(ast-to-haxe-factory % class-info) actual-elements)]
         (str "[" (str/join ", " haxe-elements) "]"))
-      ;; Check if this is a map construction (ends with "MapConstruction")
+              ;; Check if this is a map construction (ends with "MapConstruction")
       (if (str/ends-with? (name tag) "MapConstruction")
         ;; Handle as map construction
-        (let [map-entries (filter vector? children)
-              ;; For map constructions, we need to get the field info from the parent class
-              ;; The map field name is the class-name without "Map" suffix, converted to lowercase
-              field-name (str/lower-case (str/replace class-name "Map" ""))
-              ;; Find the parent class that contains this map field
-              parent-class (first (filter #(some (fn [element] (= (:name element) field-name)) (:elements %)) classes))
-              _ (when (nil? parent-class)
-                  (throw (ex-info (str "Could not find parent class containing map field '" field-name "'") 
-                                 {:field-name field-name :available-classes (map :name classes)})))
-              map-field (first (filter #(= (:name %) field-name) (:elements parent-class)))
-              _ (when (nil? map-field)
-                  (throw (ex-info (str "Could not find map field '" field-name "' in parent class '" (:name parent-class) "'")
-                                 {:field-name field-name :parent-class (:name parent-class) :available-elements (map :name (:elements parent-class))})))
-              key-type (:key-type map-field)
-              _ (when (nil? key-type)
-                  (throw (ex-info (str "Map field '" field-name "' has no key-type information")
-                                 {:field-name field-name :map-field map-field})))
-              value-type (:value-type map-field)
-              _ (when (nil? value-type)
-                  (throw (ex-info (str "Map field '" field-name "' has no value-type information")
-                                 {:field-name field-name :map-field map-field})))
-              haxe-entries (for [i (range 0 (count map-entries) 2)]
-                            (let [key (ast-to-haxe-factory (nth map-entries i) class-info)
-                                  value (ast-to-haxe-factory (nth map-entries (inc i)) class-info)]
-                              (str "[" key ", " value "]")))]
-          (println "DEBUG: [map-construction] key-type =" (pr-str key-type))
-          (println "DEBUG: [map-construction] value-type =" (pr-str value-type))
-          (str "new Map<" key-type ", " value-type ">([" (str/join ", " haxe-entries) "])"))
+        (let [map-elements (filter vector? children)
+              ;; Filter out TypeName nodes and only keep actual map elements
+              actual-elements (filter #(and (vector? %) 
+                                           (re-matches #".*To.*MapElement$" (name (first %)))) map-elements)
+              ;; Extract key and value types from the type information
+              type-info (filter #(and (vector? %) (= (first %) :TypeName)) children)
+              key-type (second (first type-info))
+              value-type (second (second type-info))
+              ;; Generate map entries as .set() calls
+              set-calls (map #(let [element-haxe (ast-to-haxe-factory % class-info)]
+                               (str ".set(" element-haxe ")")) actual-elements)
+              haxe-code (str "new Map<" key-type ", " value-type ">()" (str/join "" set-calls))]
+          (println "DEBUG: [MapConstruction] generated haxe-code:" haxe-code)
+          haxe-code)
         ;; Handle as regular class construction
         (let [haxe-args (map-indexed 
                        (fn [idx arg]
@@ -235,44 +226,150 @@
   (str/join " " (map #(ast-to-haxe-factory % class-info) children)))
 
 (defn ast-to-haxe-factory [ast class-info]
-  "Convert construction AST to Haxe factory function code"
+  "Convert construction AST to Haxe factory function code (handles XxxConstruction, XxxArrayConstruction, etc.)"
   (let [classes (:classes class-info)
-        enums (:enums class-info)
-        disjunctions (:disjunctions class-info)]
+        enums (:enums class-info)]
     (cond
-      (string? ast) ast
+      (string? ast)
+      ast
+
+      (keyword? ast)
+      (name ast)
+
       (vector? ast)
       (let [[tag & children] ast]
-        (case tag
-          :IntLiteral (int-literal->haxe children)
-          :StringLiteral (string-literal->haxe children)
-          :LocalEmpty (local-empty->haxe ast)
-          ;; Enum value
-          (or (enum-value->haxe tag children enums)
-              ;; Construction node
-              (if (str/ends-with? (name tag) "Construction")
-                (construction-node->haxe tag children class-info ast-to-haxe-factory)
-                ;; Generic node
-                (generic-node->haxe children ast-to-haxe-factory class-info)))))
-      (seq? ast) (str/join " " (map #(ast-to-haxe-factory % class-info) ast))
-      :else (str ast))))
+        (cond
+          ;; Handle :Construction wrapper (unwrap, no new)
+          (= tag :Construction)
+          (ast-to-haxe-factory (first children) class-info)
+
+          ;; Handle ArrayConstruction specifically
+          (= tag :ArrayConstruction)
+          (let [array-elements (filter vector? children)
+                ;; Filter out TypeName nodes and only keep actual array elements
+                actual-elements (filter #(not= (first %) :TypeName) array-elements)
+                haxe-elements (map #(ast-to-haxe-factory % class-info) actual-elements)]
+            (str "[" (str/join ", " haxe-elements) "]"))
+
+          ;; Handle MapConstruction specifically
+          (= tag :MapConstruction)
+          (let [map-elements (filter vector? children)
+                ;; Filter out TypeName nodes and only keep actual map elements
+                actual-elements (filter #(and (vector? %) 
+                                             (re-matches #".*To.*MapElement$" (name (first %)))) map-elements)
+                ;; Extract key and value types from the type information
+                type-info (filter #(and (vector? %) (= (first %) :TypeName)) children)
+                key-type (second (first type-info))
+                value-type (second (second type-info))
+                ;; Generate map entries as .set() calls
+                set-calls (map #(let [element-haxe (ast-to-haxe-factory % class-info)]
+                                 (str ".set(" element-haxe ")")) actual-elements)
+                haxe-code (str "new Map<" key-type ", " value-type ">()" (str/join "" set-calls))]
+            (println "DEBUG: [MapConstruction] generated haxe-code:" haxe-code)
+            haxe-code)
+
+          ;; Handle XxxToYyyMapElement nodes (e.g., :DirectionToStringMapElement)
+          (and (keyword? tag) (re-matches #".*To.*MapElement$" (name tag)))
+          (let [key-value-pair (filter vector? children)
+                key (first key-value-pair)
+                value (second key-value-pair)
+                key-haxe (ast-to-haxe-factory key class-info)
+                value-haxe (ast-to-haxe-factory value class-info)
+                result (str "[" key-haxe ", " value-haxe "]")]
+            (println "DEBUG: [XxxToYyyMapElement] key:" key-haxe "value:" value-haxe "result:" result)
+            result)
+
+          ;; Handle XxxArrayElement nodes (e.g., :PlayerArrayElement, :TeamArrayElement)
+          (and (keyword? tag) (re-matches #".*ArrayElement$" (name tag)))
+          (let [class-name (-> (name tag)
+                               (str/replace #"ArrayElement$" ""))
+                haxe-args (map #(ast-to-haxe-factory % class-info) (remove string? children))]
+            (str "new " class-name "(" (str/join ", " haxe-args) ")"))
+
+          ;; Handle XxxArrayConstruction (e.g., :StudentsArrayConstruction)
+          (and (keyword? tag) (re-matches #".*ArrayConstruction$" (name tag)))
+          (let [array-elems (map #(ast-to-haxe-factory % class-info) (remove string? children))]
+            (str "[" (str/join ", " array-elems) "]"))
+
+          ;; Handle XxxConstruction (e.g., :SchoolConstruction), but not ArrayConstruction
+          (and (keyword? tag)
+               (re-matches #".*Construction$" (name tag))
+               (not (re-matches #".*ArrayConstruction$" (name tag))))
+          (let [class-name (-> (name tag)
+                               (str/replace #"Construction$" ""))
+                haxe-args (map #(ast-to-haxe-factory % class-info) (remove string? children))]
+            (str "new " class-name "(" (str/join ", " haxe-args) ")"))
+
+          ;; Handle StringLiteral
+          (= tag :StringLiteral)
+          (string-literal->haxe children)
+
+          ;; Handle IntLiteral
+          (= tag :IntLiteral)
+          (int-literal->haxe children)
+
+          ;; Handle VariableReference
+          (= tag :VariableReference)
+          (variable-reference->haxe ast)
+
+          ;; Handle LocalEmpty
+          (= tag :LocalEmpty)
+          (local-empty->haxe ast)
+
+          ;; Fallback: generic node
+          :else
+          (generic-node->haxe children ast-to-haxe-factory class-info)))
+
+      (seq? ast)
+      (when (and (not (vector? ast)) (not (keyword? ast)))
+        (str/join " " (map #(ast-to-haxe-factory % class-info) ast)))
+
+      :else
+      (str ast))))
+
+(defn generate-construction-factory-impl [schema-input construction-input]
+  "Implementation of generate-construction-factory without exception handling"
+  (let [parse-result (parser/parse-construction schema-input construction-input)]
+    (if (:success parse-result)
+      (let [ast (:ast parse-result)]
+        (println "DEBUG: [generate-construction-factory-impl] AST:" (pr-str ast))
+        ;; Handle multi-step construction AST
+        (if (= (:type ast) :MultiStepConstruction)
+          (let [class-info (parser/extract-class-info ((parser/get-parser) schema-input))
+                ;; Generate variable declarations for assignments
+                variable-declarations (for [assignment (:assignments ast)]
+                                      (let [var-name (:name assignment)
+                                            construction (:construction assignment)
+                                            haxe-value (ast-to-haxe-factory construction class-info)]
+                                        (do (println "DEBUG: [factory] var decl:" var-name "=" haxe-value)
+                                            (str "var " var-name " = " haxe-value ";"))))
+                ;; Generate final construction
+                final-haxe (ast-to-haxe-factory (:final-construction ast) class-info)]
+            (println "DEBUG: [factory] final construction:" final-haxe)
+            (let [factory-code (str "public static function factory() {\n"
+                                   "    " (str/join "\n    " variable-declarations) "\n"
+                                   "    return " final-haxe ";\n"
+                                   "}")]
+                              (println "DEBUG: [factory] generated factory-code:\n" factory-code)
+                (schema/syntax-success ast {:haxe-code factory-code})))
+          ;; Handle single construction AST (legacy)
+          (let [class-info (parser/extract-class-info ((parser/get-parser) schema-input))
+                haxe-code (ast-to-haxe-factory ast class-info)]
+                          (println "DEBUG: [factory] single construction haxe-code:" haxe-code)
+              (schema/syntax-success ast {:haxe-code haxe-code}))))
+      parse-result)))
 
 (defn generate-construction-factory [schema-input construction-input]
   "Generate Haxe factory function from schema and construction input"
-  (try
-    (let [parse-result (parser/parse-construction schema-input construction-input)]
-      (println "DEBUG: parse-result =" parse-result)
-      (println "DEBUG: parse-result success =" (:success parse-result))
-      (if (:success parse-result)
-        (let [ast (:ast parse-result)
-              class-info (parser/extract-class-info ((parser/get-parser) schema-input))
-              haxe-code (ast-to-haxe-factory ast class-info)]
-          (println "DEBUG: generated haxe-code =" haxe-code)
-          (schema/syntax-success {:haxe-code haxe-code
-                                 :ast ast}))
-        (do
-          (println "DEBUG: parse failed, returning parse-result")
-          parse-result)))
-    (catch #?(:clj Exception :cljs :default) e
-      (println "DEBUG: caught exception:" e)
-      (schema/syntax-error (str "Error generating factory: " (.getMessage e)))))) 
+  #?(:clj
+     (try
+       (generate-construction-factory-impl schema-input construction-input)
+       (catch Exception e
+         (println "DEBUG: caught exception:" e)
+         (schema/syntax-error (str "Error generating factory: " (.getMessage e)))))
+     :cljs
+     (try
+       (generate-construction-factory-impl schema-input construction-input)
+       (catch :default e
+         (println "DEBUG: caught exception:" e)
+         (schema/syntax-error (str "Error generating factory: " (.-message e))))))) 

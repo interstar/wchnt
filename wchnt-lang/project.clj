@@ -14,5 +14,6 @@
   :uberjar-name "wchnt-lang-standalone.jar"
   :jar-exclusions [#"\.cljx$"]
   :omit-source true
-  :profiles {:dev {:dependencies [[org.clojure/test.check "1.1.1"]]}
+  :profiles {:dev {:dependencies [[org.clojure/test.check "1.1.1"]]
+                   :plugins [[lein-cloverage "1.2.4"]]}
              :uberjar {:aot :all}})

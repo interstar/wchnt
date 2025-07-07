@@ -1,3 +1,17 @@
+# Example: test_dict.wcn
+
+## Schema
+
+```
+Main = Config Config2
+
 Config = {String : int}/settings
 BuildType = "Dev" | "Local" | "Deploy"
-Config2 = {BuildType : String}/environments 
+Config2 = {BuildType : String}/environments
+```
+
+## Construction
+
+```
+[:Main [{"0" : 0 "2" : }]]
+```

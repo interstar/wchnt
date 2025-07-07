@@ -2,9 +2,10 @@
   (:require [wchnt-lang.parser :as parser]
             [wchnt-lang.haxegen :as haxe-gen]
             [wchnt-lang.eyeball :as eyeball]
+            [wchnt-lang.mainfile :as mainfile]
             [wchnt-lang.schema :as schema]
-            [wchnt-lang.examples :as examples]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            [clojure.java.io :as io]))
 
 ;; Public API for library usage
 
@@ -68,6 +69,26 @@
         (assoc compilation-result :validation validation-result))
       compilation-result)))
 
+;; Mainfile processing functions
+
+(defn process-mainfile
+  "Process a WCHNT mainfile (markdown with embedded code blocks).
+   
+   Args:
+     file-path - Path to the WCHNT mainfile
+   
+   Returns:
+     Map with :success boolean and either parsed sections or :error string"
+  [file-path]
+  (let [parse-result (mainfile/read-mainfile file-path)]
+    (if (:success parse-result)
+      (do
+        ;; Validate the parse result against our schema
+        (when-not (schema/valid-mainfile-parse-result? parse-result)
+          (throw (ex-info "Invalid mainfile parse result" {:result parse-result})))
+        parse-result)
+      parse-result)))
+
 ;; Command-line interface
 
 (defn -main [& args]
@@ -78,45 +99,48 @@
       (println "Usage: lein run <wchnt-source-file>")
       (System/exit 1))
     (let [filename (first args)]
-      (if-not (.exists (clojure.java.io/file filename))
+      (if-not (.exists (io/file filename))
         (do
           (println (str "File not found: " filename))
           (System/exit 1))
-        (let [input (slurp filename)
-              _ (println "=== DEBUG: Input file content ===")
-              _ (println input)
-              _ (println "=== DEBUG: End input ===")
-              phases (parser/split-wchnt-phases input)
-              _ (println "=== DEBUG: Schema phase ===")
-              _ (println (:schema phases))
-              _ (println "=== DEBUG: Construction phase ===")
-              _ (println (:construction phases))
-              _ (println "=== DEBUG: Attempting to parse schema ===")
-              parse-result (parser/parse-input (:schema phases))
-              _ (println "=== DEBUG: Parse result ===")
-              _ (println parse-result)
-              result (compile-to-haxe (:schema phases))]
-          (if (:success result)
+        (let [mainfile-result (process-mainfile filename)]
+          (if (:success mainfile-result)
+            (let [schema-content (:schema mainfile-result)
+                  construction-content (:construction mainfile-result)
+                  _ (println "=== DEBUG: Schema phase ===")
+                  _ (println schema-content)
+                  _ (println "=== DEBUG: Construction phase ===")
+                  _ (println construction-content)
+                  _ (println "=== DEBUG: Attempting to parse schema ===")
+                  parse-result (parser/parse-input schema-content)
+                  _ (println "=== DEBUG: Parse result ===")
+                  _ (println parse-result)
+                  result (compile-to-haxe schema-content)]
+              (if (:success result)
+                (do
+                  (println "=== SCHEMA COMPILATION SUCCESS ===")
+                  (doseq [class (:code result)] (println class) (println))
+                  
+                  ;; Process construction phase if present
+                  (when (not-empty construction-content)
+                    (println "=== PROCESSING CONSTRUCTION PHASE ===")
+                    (println "Construction input:" construction-content)
+                    
+                    (let [factory-result (haxe-gen/generate-construction-factory schema-content construction-content)]
+                      (if (:success factory-result)
+                        (do
+                          (println "=== FACTORY GENERATION SUCCESS ===")
+                          (println "Generated Haxe factory code:")
+                          (println (:haxe-code factory-result))
+                          (println "=== END FACTORY CODE ==="))
+                        (do
+                          (println "=== FACTORY GENERATION FAILED ===")
+                          (println "Error:" (:error factory-result)))))))
+                (do
+                  (println "Compilation failed:")
+                  (println (:error result))
+                  (System/exit 1))))
             (do
-              (println "=== SCHEMA COMPILATION SUCCESS ===")
-              (doseq [class (:code result)] (println class) (println))
-              
-              ;; Process construction phase if present
-              (when (:construction phases)
-                (println "=== PROCESSING CONSTRUCTION PHASE ===")
-                (println "Construction input:" (:construction phases))
-                
-                (let [factory-result (haxe-gen/generate-construction-factory (:schema phases) (:construction phases))]
-                  (if (:success factory-result)
-                    (do
-                      (println "=== FACTORY GENERATION SUCCESS ===")
-                      (println "Generated Haxe factory code:")
-                      (println (:haxe-code factory-result))
-                      (println "=== END FACTORY CODE ==="))
-                    (do
-                      (println "=== FACTORY GENERATION FAILED ===")
-                      (println "Error:" (:error factory-result)))))))
-            (do
-              (println "Compilation failed:")
-              (println (:error result))
+              (println "Mainfile parsing failed:")
+              (println (:error mainfile-result))
               (System/exit 1)))))))) 

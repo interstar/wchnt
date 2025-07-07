@@ -1,7 +1,32 @@
+# Example: construction_arrays.wcn
+
 ## Schema
+
+```
 School = [Person]/students
 Person = String/name
+```
 
 ## Construction
 
-[:School [:Array/students [:Person "John"] [:Person "Jane"]]] 
+```
+[:School [:Array/Person [:Person "John"] [:Person "Jane"]]]
+```
+
+## Reactive
+
+```
+// No reactive code for this example
+```
+
+## Imperative
+
+```
+// No imperative code for this example
+```
+
+## Target
+
+```
+// No target code for this example
+``` 

@@ -128,7 +128,7 @@
   "Split a WCHNT program into schema and construction phases based on explicit markers."
   (let [[schema construction-block] (str/split input #"## Construction")]
     {:schema (-> schema (str/replace #"## Schema" "") str/trim)
-     :construction (str/trim construction-block)}))
+     :construction (if construction-block (str/trim construction-block) "")}))
 
 (defn extract-class-info [ast]
   "Extract class information from parsed schema AST"
@@ -208,34 +208,85 @@
     (some #(= (:name %) element-type) enums) (str element-type "Value")
     :else (str element-type "Construction")))
 
+(defn generate-strict-arg-rules [elements enums disjunctions]
+  "Generate strict grammar rules for class elements (with R prefix)"
+  (for [element elements]
+    (let [element-type (:type element)
+          expected-rule (cond
+                         (= element-type "String") "StringLiteral"
+                         (= element-type "int") "IntLiteral"
+                         (str/starts-with? element-type "Array<") 
+                         (let [inner-type (str/replace (str/replace element-type "Array<" "") ">" "")
+                               element-rule (cond
+                                            (= inner-type "String") "StringLiteral"
+                                            (= inner-type "int") "IntLiteral"
+                                            (some #(= (:name %) inner-type) enums) (str inner-type "Value")
+                                            (some #(= (:name %) inner-type) (map :name disjunctions))
+                                            (let [disjunction (first (filter #(= (:name %) inner-type) disjunctions))
+                                                  implementers (:implementers disjunction)]
+                                              (str "(" (str/join " | " (map #(str "R" % "Construction") implementers)) ")"))
+                                            :else (str "R" inner-type "Construction"))
+                               array-element-rule (str inner-type "ArrayElement")]
+                           (str "ArrayConstruction | (<WS>+ (" (str/join " | " [array-element-rule element-rule]) "))*"))
+                         (str/starts-with? element-type "Map<") (str (clojure.string/capitalize (:name element)) "MapConstruction")
+                         (some #(= (:name %) element-type) enums) (str element-type "Value")
+                         (some #(= (:name %) element-type) (map :name disjunctions))
+                         (let [disjunction (first (filter #(= (:name %) element-type) disjunctions))
+                               implementers (:implementers disjunction)
+                               has-empty-type (:has-empty-type disjunction)]
+                           (if has-empty-type
+                             (str "(" (str/join " | " (map #(str "R" % "Construction") implementers)) " | LocalEmpty)")
+                             (str "(" (str/join " | " (map #(str "R" % "Construction") implementers)) ")")))
+                         :else (str "R" element-type "Construction"))]
+      (str "(" expected-rule " | VariableReference)"))))
+
+(defn generate-relaxed-arg-rules [elements enums disjunctions]
+  "Generate relaxed grammar rules for class elements (without R prefix)"
+  (for [element elements]
+    (let [element-type (:type element)
+          expected-rule (cond
+                         (= element-type "String") "StringLiteral"
+                         (= element-type "int") "IntLiteral"
+                         (str/starts-with? element-type "Array<") 
+                         (let [inner-type (str/replace (str/replace element-type "Array<" "") ">" "")
+                               element-rule (cond
+                                            (= inner-type "String") "StringLiteral"
+                                            (= inner-type "int") "IntLiteral"
+                                            (some #(= (:name %) inner-type) enums) (str inner-type "Value")
+                                            (some #(= (:name %) inner-type) (map :name disjunctions))
+                                            (let [disjunction (first (filter #(= (:name %) inner-type) disjunctions))
+                                                  implementers (:implementers disjunction)]
+                                              (str "(" (str/join " | " (map #(str % "Construction") implementers)) ")"))
+                                            :else (str inner-type "Construction"))
+                               array-element-rule (str inner-type "ArrayElement")]
+                           (str "ArrayConstruction | (<WS>+ (" (str/join " | " [array-element-rule element-rule]) "))*"))
+                         (str/starts-with? element-type "Map<") (str (clojure.string/capitalize (:name element)) "MapConstruction")
+                         (some #(= (:name %) element-type) enums) (str element-type "Value")
+                         (some #(= (:name %) element-type) (map :name disjunctions))
+                         (let [disjunction (first (filter #(= (:name %) element-type) disjunctions))
+                               implementers (:implementers disjunction)
+                               has-empty-type (:has-empty-type disjunction)]
+                           (if has-empty-type
+                             (str "(" (str/join " | " (map #(str % "Construction") implementers)) " | LocalEmpty)")
+                             (str "(" (str/join " | " (map #(str % "Construction") implementers)) ")")))
+                         :else (str element-type "Construction"))]
+      (str "(" expected-rule " | VariableReference)"))))
+
 (defn generate-class-grammar [class enums disjunctions]
-  "Generate a grammar string for a single class"
+  "Generate strict (RTypeConstruction) and relaxed (TypeConstruction) grammar strings for a single class"
   (let [class-name (:name class)
         elements (:elements class)
-        disjunction-names (set (map :name disjunctions))
-        disjunction-map (into {} (map (juxt :name identity) disjunctions))
-        arg-rules (for [element elements]
-                   (let [element-type (:type element)]
-                     (cond
-                       (= element-type "String") "StringLiteral"
-                       (= element-type "int") "IntLiteral"
-                       (str/starts-with? element-type "Array<") 
-                       (str (clojure.string/capitalize (:name element)) "ArrayConstruction")
-                       (str/starts-with? element-type "Map<") 
-                       (str (clojure.string/capitalize (:name element)) "MapConstruction")
-                       (some #(= (:name %) element-type) enums) (str element-type "Value")
-                       (disjunction-names element-type)
-                       (let [disjunction (get disjunction-map element-type)
-                             implementers (:implementers disjunction)
-                             has-empty-type (:has-empty-type disjunction)]
-                         (if has-empty-type
-                           (str "(" (str/join " | " (map #(str % "Construction") implementers)) " | LocalEmpty)")
-                           (str "(" (str/join " | " (map #(str % "Construction") implementers)) ")")))
-                       :else (str element-type "Construction"))))]
-    (if (empty? elements)
-      (str class-name "Construction = '[' ':' '" class-name "' <WS>? ']'")
-      (str class-name "Construction = '[' ':' '" class-name "' <WS>? " 
-           (str/join " <WS>+ " arg-rules) " <WS>? ']'"))))
+        arg-rules (generate-strict-arg-rules elements enums disjunctions)
+        relaxed-args (generate-relaxed-arg-rules elements enums disjunctions)
+        strict-rule (if (empty? elements)
+                      (str "R" class-name "Construction = '[' ':' '" class-name "' <WS>? ']'" )
+                      (str "R" class-name "Construction = '[' ':' '" class-name "' <WS>? "
+                           (str/join " <WS>+ " arg-rules) " <WS>? ']'"))
+        relaxed-rule (if (empty? elements)
+                        (str class-name "Construction = '[' ((':' '" class-name "')?) <WS>? ']'" )
+                        (str class-name "Construction = '[' ((':' '" class-name "')?) <WS>? "
+                             (str/join " <WS>+ " relaxed-args) " <WS>? ']'"))]
+    [strict-rule relaxed-rule]))
 
 (defn generate-enum-grammar [enum]
   "Generate a grammar string for a single enum"
@@ -298,6 +349,145 @@
         rule-name (str (clojure.string/capitalize field-name) "MapConstruction")]
     (str rule-name " = '{' (<WS>? " key-rule " <WS>? ':' <WS>? " value-rule ")* <WS>? '}'")))
 
+(defn generate-array-element-grammar [class enums disjunctions]
+  "Generate array-element grammar strings for a single class (with optional whitespace between arguments)"
+  (let [class-name (:name class)
+        elements (:elements class)
+        arg-rules (generate-relaxed-arg-rules elements enums disjunctions)
+        array-element-rule (if (empty? elements)
+                             (str class-name "ArrayElement = '[' ((':' '" class-name "')?) <WS>? ']'" )
+                             (str class-name "ArrayElement = '[' ((':' '" class-name "')?) <WS>? "
+                                  (str/join " <WS>? " arg-rules) " <WS>? ']'"))]
+    array-element-rule))
+
+(defn generate-class-grammars [classes enums disjunctions]
+  "Generate grammar rules for all classes"
+  (let [sorted-classes (sort-by #(if (= (:type %) :empty) 1 0) classes)
+        class-grammars (mapcat #(let [[strict-rule relaxed-rule] (generate-class-grammar % enums disjunctions)
+                                      _ (println "DEBUG: class grammar for" (:name %) strict-rule relaxed-rule)]
+                                  [strict-rule relaxed-rule])
+                                sorted-classes)]
+    class-grammars))
+
+(defn generate-disjunction-grammars [disjunctions]
+  "Generate grammar rules for disjunctions/interfaces"
+  (let [disjunction-rules (for [disjunction disjunctions]
+                            (let [interface-name (:name disjunction)
+                                  implementers (:implementers disjunction)
+                                  strict-rule (str "R" interface-name "Construction = "
+                                                   (str/join " | " (map #(str "R" % "Construction") implementers)))
+                                  relaxed-rule (str interface-name "Construction = "
+                                                    (str/join " | " (map #(str % "Construction") implementers)))]
+                              (println "DEBUG: disjunction/interface rule for" interface-name "=" strict-rule "and" relaxed-rule)
+                              [strict-rule relaxed-rule]))
+        disjunction-grammars (mapcat identity disjunction-rules)]
+    disjunction-grammars))
+
+(defn generate-map-field-grammars [classes enums disjunctions]
+  "Generate grammar rules for map fields"
+  (let [map-rules (for [class classes
+                       element (:elements class)
+                       :when (str/starts-with? (:type element) "Map<")]
+                   (let [g (generate-map-grammar element classes enums disjunctions)]
+                     (println "DEBUG: map grammar for" (:name element) "=" g)
+                     g))]
+    map-rules))
+
+(defn generate-array-grammars [classes enums disjunctions]
+  "Generate grammar rules for arrays"
+  (let [;; Get all types that can be used in arrays
+        array-element-types (->> (for [class classes
+                                       element (:elements class)
+                                       :when (str/starts-with? (:type element) "Array<")]
+                                   (-> (:type element)
+                                       (str/replace "Array<" "")
+                                       (str/replace ">" "")))
+                                 distinct)
+        ;; Generate array-element versions of construction rules (with optional whitespace)
+        _ (println "DEBUG: array-element-types =" array-element-types)
+        array-element-rules (for [class classes
+                                  :when (some #(= % (str (:name class))) array-element-types)]
+                              (let [rule (generate-array-element-grammar class enums disjunctions)]
+                                (println "DEBUG: Generated array-element rule for" (:name class) "=" rule)
+                                rule))
+        ;; Use array-element versions for array elements
+        array-construction-rule (if (seq array-element-types)
+                                  (str "ArrayConstruction = '[' <WS>? ':' 'Array' '/' TypeName (<WS>? ("
+                                       (str/join " | " (map #(str % "ArrayElement") array-element-types))
+                                       "))* <WS>? ']'")
+                                  "ArrayConstruction = '[' <WS>? ':' 'Array' '/' TypeName <WS>? ']'")
+        _ (println "DEBUG: array-element-rules =" array-element-rules)]
+    {:array-element-rules array-element-rules
+     :array-construction-rule array-construction-rule}))
+
+(defn generate-map-grammars [classes enums disjunctions]
+  "Generate grammar rules for generic maps"
+  (let [;; Get all map types that can be used in generic map constructions
+        map-types (->> (for [class classes
+                             element (:elements class)
+                             :when (str/starts-with? (:type element) "Map<")]
+                         (:type element))
+                       distinct)
+        ;; Generate map element rules for different key-value combinations
+        map-element-rules (for [map-type map-types]
+                            (let [type-parts (str/split (str/replace (str/replace map-type "Map<" "") ">" "") #",")
+                                  key-type (str/trim (first type-parts))
+                                  value-type (str/trim (second type-parts))
+                                  key-rule (cond
+                                            (= key-type "String") "StringLiteral"
+                                            (= key-type "int") "IntLiteral"
+                                            (some #(= (:name %) key-type) enums) (str key-type "Value")
+                                            :else (str key-type "Construction"))
+                                  value-rule (cond
+                                              (= value-type "String") "StringLiteral"
+                                              (= value-type "int") "IntLiteral"
+                                              (str/starts-with? value-type "Array<") "ArrayConstruction"
+                                              (str/starts-with? value-type "Map<") "MapConstruction"
+                                              (some #(= (:name %) value-type) enums) (str value-type "Value")
+                                              :else (str value-type "Construction"))
+                                  rule-name (str key-type "To" value-type "MapElement")]
+                              (str rule-name " = " key-rule " <WS>? ':' <WS>? " value-rule)))
+        ;; Use map-element versions for map elements
+        map-construction-rule (if (seq map-types)
+                                (str "MapConstruction = '[' <WS>? ':' 'Map' '/' '{' TypeName ':' TypeName '}' (<WS>? ("
+                                     (str/join " | " (map #(let [type-parts (str/split (str/replace (str/replace % "Map<" "") ">" "") #",")
+                                                              key-type (str/trim (first type-parts))
+                                                              value-type (str/trim (second type-parts))]
+                                                          (str key-type "To" value-type "MapElement")) map-types))
+                                     "))* <WS>? ']'")
+                                "MapConstruction = '[' <WS>? ':' 'Map' '/' '{' TypeName ':' TypeName '}' <WS>? ']'")
+        _ (println "DEBUG: map-element-rules =" map-element-rules)]
+    {:map-element-rules map-element-rules
+     :map-construction-rule map-construction-rule}))
+
+(defn generate-multi-step-rules [classes]
+  "Generate grammar rules for multi-step constructions"
+  (let [all-construction-types (concat 
+                                (map #(str (:name %) "Construction") classes)
+                                ["ArrayConstruction"]  ;; Include the generic array construction
+                                ["MapConstruction"]  ;; Include the generic map construction
+                                (map #(str (clojure.string/capitalize (:name %)) "MapConstruction")
+                                     (for [class classes
+                                           element (:elements class)
+                                           :when (str/starts-with? (:type element) "Map<")]
+                                       element)))
+        statement-rule (str "Statement = VariableAssignment | (" (str/join " | " all-construction-types) ")")
+        variable-assignment-rule (str "VariableAssignment = '$' VariableName <WS>? '=' <WS>? (" (str/join " | " all-construction-types) ")")
+        multi-step-rules ["MultiStepConstruction = (WS? Statement WS?)*"
+                         statement-rule
+                         variable-assignment-rule
+                         "VariableReference = '$' #'[a-zA-Z_][a-zA-Z0-9_]*'"
+                         "VariableName = #'[a-zA-Z_][a-zA-Z0-9_]*'"]]
+    multi-step-rules))
+
+(defn generate-common-rules []
+  "Generate common grammar rules"
+  ["WS = #'[\\s\\n,]+'"
+   "IntLiteral = #'\\d+'"
+   "StringLiteral = '\"' #'[^\"]*' '\"'"
+   "LocalEmpty = '_'"
+   "TypeName = #'[A-Z][a-zA-Z0-9]*'"])
+
 (defn generate-construction-grammar [class-info]
   "Generate a single composed grammar string for all classes and enums"
   (let [classes (:classes class-info)
@@ -307,59 +497,28 @@
         _ (println "DEBUG: enums=" enums)
         _ (println "DEBUG: disjunctions=" disjunctions)
         
-        ;; Find the first non-empty class as the root (prioritize composition classes over empty classes)
-        root-class (when (seq classes) 
-                     (let [non-empty-classes (filter #(not= (:type %) :empty) classes)]
-                       (if (seq non-empty-classes)
-                         (str (:name (first non-empty-classes)) "Construction")
-                         (str (:name (first classes)) "Construction"))))
+        ;; Start with the assemblage root as the main rule
+        grammar-parts []
         
-        ;; Start with multi-step construction as the root
-        grammar-parts ["MultiStepConstruction = (<NL>? Statement <NL>)*"
-                      "Statement = VariableAssignment | Construction"
-                      "VariableAssignment = VariableName <WS>? '=' <WS>? Construction"
-                      "VariableReference = VariableName"
-                      "VariableName = #'[a-zA-Z_][a-zA-Z0-9_]*'"
-                      "Construction = ArrayConstruction | MapConstruction | ClassConstruction | VariableReference"]
-        
-        ;; Add class grammars (prioritize non-empty classes first)
-        sorted-classes (sort-by #(if (= (:type %) :empty) 1 0) classes)
-        class-grammars (map #(do (let [g (generate-class-grammar % enums disjunctions)] (println "DEBUG: class grammar for" (:name %) "=" g) g)) sorted-classes)
+        ;; Add class grammars
+        class-grammars (generate-class-grammars classes enums disjunctions)
         grammar-parts (concat grammar-parts class-grammars)
         
-        ;; Add disjunction/interface rules (sum types)
-        disjunction-rules (for [disjunction disjunctions]
-                            (let [interface-name (:name disjunction)
-                                  implementers (:implementers disjunction)
-                                  rule (str interface-name "Construction = "
-                                            (str/join " | " (map #(str % "Construction") implementers)))]
-                              (println "DEBUG: disjunction/interface rule for" interface-name "=" rule)
-                              rule))
-        grammar-parts (concat grammar-parts disjunction-rules)
+        ;; Add disjunction/interface rules
+        disjunction-grammars (generate-disjunction-grammars disjunctions)
+        grammar-parts (concat grammar-parts disjunction-grammars)
         
-        ;; Add array construction rules for each array field
-        array-rules (for [class classes
-                         element (:elements class)
-                         :when (str/starts-with? (:type element) "Array<")]
-                     (let [g (generate-array-grammar element classes enums disjunctions)]
-                       (println "DEBUG: array grammar for" (:name element) "=" g)
-                       g))
-        grammar-parts (concat grammar-parts array-rules)
+        ;; Add array grammars
+        array-grammars (generate-array-grammars classes enums disjunctions)
+        grammar-parts (concat grammar-parts (:array-element-rules array-grammars) [(:array-construction-rule array-grammars)])
         
-        ;; Add map construction rules for each map field
-        map-rules (for [class classes
-                       element (:elements class)
-                       :when (str/starts-with? (:type element) "Map<")]
-                   (let [g (generate-map-grammar element classes enums disjunctions)]
-                     (println "DEBUG: map grammar for" (:name element) "=" g)
-                     g))
-        grammar-parts (concat grammar-parts map-rules)
+        ;; Add map grammars (generic first, then specific)
+        map-grammars (generate-map-grammars classes enums disjunctions)
+        grammar-parts (concat grammar-parts (:map-element-rules map-grammars) [(:map-construction-rule map-grammars)])
         
-        ;; Add generic construction rules
-        generic-rules ["ArrayConstruction = '[' <WS>? ':' 'Array' <WS>? Construction* <WS>? ']'"
-                      "MapConstruction = '{' (<WS>? Construction <WS>? ':' <WS>? Construction)* <WS>? '}'"
-                      "ClassConstruction = '[' <WS>? ':' VariableName <WS>? Construction* <WS>? ']'"]
-        grammar-parts (concat grammar-parts generic-rules)
+        ;; Add map construction rules for each map field (specific after generic)
+        map-field-grammars (generate-map-field-grammars classes enums disjunctions)
+        grammar-parts (concat grammar-parts map-field-grammars)
         
         ;; Add enum value rules
         enum-rules (map #(do (let [g (generate-enum-grammar %)] (println "DEBUG: enum grammar for" (:name %) "=" g) g)) enums)
@@ -375,12 +534,12 @@
                                 g))
         grammar-parts (concat grammar-parts disjunction-grammars)
         
+        ;; Add multi-step construction rules
+        multi-step-rules (generate-multi-step-rules classes)
+        grammar-parts (concat grammar-parts multi-step-rules)
+        
         ;; Add common rules
-        common-rules ["WS = #'[\\s,]+'"
-                     "NL = #'\\n+'"
-                     "IntLiteral = #'\\d+'"
-                     "StringLiteral = '\"' #'[^\"]*' '\"'"
-                     "LocalEmpty = '_'"]
+        common-rules (generate-common-rules)
         grammar-parts (concat grammar-parts common-rules)
         
         ;; Join all parts - MultiStepConstruction will be the start symbol
@@ -470,56 +629,98 @@
               :else node))]
     (walk-and-resolve ast)))
 
+(defn assignment-complete? [assignment]
+  "Check if an assignment is complete (balanced brackets and braces)"
+  (and (zero? (:brackets assignment))
+       (zero? (:braces assignment))))
+
+(defn count-brackets [text]
+  "Count opening and closing brackets/braces in text"
+  {:brackets (- (count (re-seq #"\[" text)) (count (re-seq #"\]" text)))
+   :braces (- (count (re-seq #"\{" text)) (count (re-seq #"\}" text)))})
+
+(defn parse-assignment-start [line]
+  "Parse the start of a variable assignment line"
+  (let [trimmed (str/trim line)]
+    (cond
+      ;; Assignment with no content: $var =
+      (re-find #"^\$[a-zA-Z_][a-zA-Z0-9_]*\s*=\s*$" trimmed)
+      (let [[var-name-with-sigil _] (str/split trimmed #"\s*=\s*" 2)
+            var-name (str/trim (subs var-name-with-sigil 1))]
+        {:var-name var-name :text "" :brackets 0 :braces 0})
+      
+      ;; Assignment with content: $var = content
+      (re-find #"^\$[a-zA-Z_][a-zA-Z0-9_]*\s*=" trimmed)
+      (let [[var-name-with-sigil assignment-start] (str/split trimmed #"\s*=\s*" 2)
+            var-name (str/trim (subs var-name-with-sigil 1))
+            assignment-start (str/trim (or assignment-start ""))
+            bracket-counts (count-brackets assignment-start)]
+        {:var-name var-name 
+         :text assignment-start
+         :brackets (:brackets bracket-counts)
+         :braces (:braces bracket-counts)})
+      
+      :else nil)))
+
+(defn continue-assignment [assignment line]
+  "Continue building an assignment with additional line content"
+  (let [trimmed (str/trim line)
+        new-text (str (:text assignment) " " trimmed)
+        new-brackets (+ (:brackets assignment)
+                       (count (re-seq #"\[" trimmed))
+                       (- (count (re-seq #"\]" trimmed))))
+        new-braces (+ (:braces assignment)
+                     (count (re-seq #"\{" trimmed))
+                     (- (count (re-seq #"\}" trimmed))))]
+    (assoc assignment 
+           :text new-text
+           :brackets new-brackets
+           :braces new-braces)))
+
+(defn format-assignment [assignment]
+  "Format an assignment into a string"
+  (str "$" (:var-name assignment) " = " (:text assignment)))
+
+(defn is-construction-line? [line]
+  "Check if a line is a construction (starts with [)"
+  (and (not (str/blank? (str/trim line)))
+       (str/starts-with? (str/trim line) "[")))
+
 (defn join-multi-line-assignments [lines]
   "Join multi-line variable assignments into single lines"
   (loop [remaining lines
          result []
          current-assignment nil]
     (if (empty? remaining)
+      ;; End of input - finish any pending assignment
       (if current-assignment
-        (conj result (:text current-assignment))
+        (conj result (format-assignment current-assignment))
         result)
       (let [line (first remaining)
             trimmed (str/trim line)]
-        (if (and (nil? current-assignment) (re-find #"^[a-zA-Z_][a-zA-Z0-9_]*\s*=\s*$" trimmed))
-          ;; Start of assignment with no content on same line
-          (let [[var-name _] (str/split trimmed #"\s*=\s*" 2)
-                var-name (str/trim var-name)]
-            (recur (rest remaining) result 
-                   {:var-name var-name 
-                    :text ""
-                    :brackets 0
-                    :braces 0}))
-          (if (and (nil? current-assignment) (re-find #"^[a-zA-Z_][a-zA-Z0-9_]*\s*=" trimmed))
-            ;; Start of assignment with content on same line
-            (let [[var-name assignment-start] (str/split trimmed #"\s*=\s*" 2)
-                  var-name (str/trim var-name)
-                  assignment-start (str/trim (or assignment-start ""))]
-              (recur (rest remaining) result 
-                     {:var-name var-name 
-                      :text (if (str/blank? assignment-start) "" assignment-start)
-                      :brackets (count (re-seq #"\[" assignment-start))
-                      :braces (count (re-seq #"\{" assignment-start))}))
-            (if current-assignment
-              ;; Continue assignment
-              (let [new-text (str (:text current-assignment) " " trimmed)
-                    new-brackets (+ (:brackets current-assignment)
-                                   (count (re-seq #"\[" trimmed))
-                                   (- (count (re-seq #"\]" trimmed))))
-                    new-braces (+ (:braces current-assignment)
-                                 (count (re-seq #"\{" trimmed))
-                                 (- (count (re-seq #"\}" trimmed))))]
-                (if (and (zero? new-brackets) (zero? new-braces))
-                  ;; Assignment complete
-                  (recur (rest remaining) (conj result new-text) nil)
-                  ;; Continue building
-                  (recur (rest remaining) result 
-                         (assoc current-assignment 
-                                :text new-text
-                                :brackets new-brackets
-                                :braces new-braces))))
-              ;; Regular line
-              (recur (rest remaining) (conj result trimmed) nil))))))))
+        (cond
+          ;; Start new assignment
+          (and (nil? current-assignment) (parse-assignment-start line))
+          (recur (rest remaining) result (parse-assignment-start line))
+          
+          ;; Continue existing assignment
+          current-assignment
+          (let [updated-assignment (continue-assignment current-assignment line)]
+            (if (assignment-complete? updated-assignment)
+              ;; Assignment complete
+              (recur (rest remaining) 
+                     (conj result (format-assignment updated-assignment)) 
+                     nil)
+              ;; Continue building
+              (recur (rest remaining) result updated-assignment)))
+          
+          ;; Construction line
+          (is-construction-line? line)
+          (recur (rest remaining) (conj result line) nil)
+          
+          ;; Skip empty lines
+          :else
+          (recur (rest remaining) result nil))))))
 
 (defn parse-variable-assignments [lines construction-parser]
   "Parse variable assignments from lines, returning a map of variable assignments and final construction"
@@ -550,27 +751,91 @@
     {:variable-assignments @variable-assignments
      :final-construction @final-construction}))
 
+(defn parse-assignment-statement [statement grammar-string construction-parser]
+  "Parse a single assignment statement (e.g., 'var = construction')"
+  (let [trimmed (str/trim statement)]
+    (if (re-find #"^\$[a-zA-Z_][a-zA-Z0-9_]*\s*=" trimmed)
+      (let [[var-name-with-sigil assignment-text] (str/split trimmed #"\s*=\s*" 2)
+            var-name (str/trim (subs var-name-with-sigil 1))
+            assignment-text (str/trim assignment-text)]
+        (println "DEBUG: Parsing assignment:" var-name "=" assignment-text)
+        (let [assignment-ast (construction-parser assignment-text)]
+          (if (insta/failure? assignment-ast)
+            (do
+              (println "DEBUG: Parse failure for assignment:")
+              (println "Input:" assignment-text)
+              (println "Failure:" (insta/get-failure assignment-ast))
+              (throw (ex-info (str "Failed to parse assignment for '" var-name "': " (insta/get-failure assignment-ast))
+                             {:variable var-name :assignment assignment-text})))
+            (do
+              (println "DEBUG: Successfully parsed assignment AST:" assignment-ast)
+              {:name var-name :construction assignment-ast}))))
+      nil)))
+
+(defn parse-final-construction-statement [statement construction-parser]
+  "Parse a single final construction statement"
+  (let [trimmed (str/trim statement)]
+    (println "DEBUG: Parsing final construction:" trimmed)
+    (let [final-ast (construction-parser trimmed)]
+      (if (insta/failure? final-ast)
+        (throw (ex-info (str "Failed to parse final construction: " (insta/get-failure final-ast))
+                       {:construction trimmed}))
+        final-ast))))
+
+(defn classify-and-parse-statements [statements grammar-string construction-parser]
+  "Parse a list of statements, separating assignments from final construction"
+  (let [assignments (atom [])
+        final-construction (atom nil)]
+    (doseq [statement statements]
+      (let [trimmed (str/trim statement)]
+        (println "DEBUG: Processing statement:" (pr-str trimmed))
+        (if (re-find #"^\$[a-zA-Z_][a-zA-Z0-9_]*\s*=" trimmed)
+          ;; Variable assignment
+          (let [assignment (parse-assignment-statement statement grammar-string construction-parser)]
+            (swap! assignments conj assignment))
+          ;; Final construction
+          (if (nil? @final-construction)
+            (reset! final-construction (parse-final-construction-statement statement construction-parser))
+            (throw (ex-info "Multiple final constructions found - only one allowed"
+                           {:constructions [@final-construction trimmed]}))))))
+    {:assignments @assignments
+     :final-construction @final-construction}))
+
 (defn parse-multi-step-construction [construction-input class-info]
   "Parse multi-step construction with variable assignments and references"
   (let [grammar-string (generate-construction-grammar class-info)
-        construction-parser (insta/parser grammar-string)]
+        construction-parser (insta/parser grammar-string :start :MultiStepConstruction)]
     (println "DEBUG: Generated grammar:")
     (println grammar-string)
-    (println "DEBUG: Trying to parse:" construction-input)
-    (println "DEBUG: Construction input type:" (type construction-input))
-    (println "DEBUG: Construction input as string:" (pr-str construction-input))
-    
-    ;; Parse the entire construction input as a single string
-    ;; The grammar already handles whitespace (including newlines) properly
+    (println "DEBUG: Grammar start symbol: :MultiStepConstruction")
+    (println "DEBUG: Raw construction input (repr):" (pr-str construction-input))
+    (println "DEBUG: Raw construction input (with visible whitespace):" (clojure.string/replace (pr-str construction-input) "\n" "\\n"))
+    ;; Parse the entire input as a MultiStepConstruction
     (let [parse-result (construction-parser construction-input)]
       (if (insta/failure? parse-result)
         (do
-          (println "DEBUG: Parse failure details:" (insta/get-failure parse-result))
-          (throw (ex-info (str "Failed to parse construction: " (insta/get-failure parse-result))
-                         {:construction construction-input :failure parse-result})))
+          (println "DEBUG: Parse failure details:")
+          (println (insta/get-failure parse-result))
+          (schema/syntax-error (str "Failed to parse construction: " (insta/get-failure parse-result))))
         (do
-          (println "DEBUG: Parse result:" parse-result)
-          (schema/syntax-success parse-result))))))
+          (println "DEBUG: Successfully parsed MultiStepConstruction:" parse-result)
+          ;; Extract statements from the parsed result
+          (let [statements (filter #(and (vector? %) (= (first %) :Statement)) parse-result)
+                assignments (atom [])
+                final-construction (atom nil)]
+            (doseq [statement statements]
+              (let [statement-content (second statement)]
+                (if (= (first statement-content) :VariableAssignment)
+                  ;; Handle variable assignment
+                  (let [[_ _ [_ var-name] _ construction-ast] statement-content]
+                    (swap! assignments conj {:name var-name :construction construction-ast}))
+                  ;; Handle final construction
+                  (reset! final-construction statement-content))))
+            (let [structured-ast {:type :MultiStepConstruction
+                                 :assignments @assignments
+                                 :final-construction @final-construction}]
+              (println "DEBUG: Structured AST:" (pr-str structured-ast))
+              (schema/syntax-success structured-ast))))))))
 
 (defn parse-construction-impl [schema-input construction-input]
   "Implementation of parse-construction without exception handling"
