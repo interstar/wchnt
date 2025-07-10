@@ -10,7 +10,7 @@
     (let [schema-input "Person = String String
 Group = [Person]"
           construction-input "$people = [:Group [:Person \"John\" \"Smith\"]]"
-          result (haxe-gen/generate-construction-factory schema-input construction-input)]
+          result (haxe-gen/generate-construction-factory schema-input construction-input {})]
       (is (:success result))
       (is (some? (:haxe-code result)))))
 
@@ -18,14 +18,14 @@ Group = [Person]"
     (let [schema-input "Person = String String
 Group = [Person]"
           construction-input "$people = [:Group [:Person \"John\" \"Smith\"] [:Person \"Jane\" \"Jones\"]]"
-          result (haxe-gen/generate-construction-factory schema-input construction-input)]
+          result (haxe-gen/generate-construction-factory schema-input construction-input {})]
       (is (:success result))
       (is (some? (:haxe-code result)))))
 
   (testing "Return nil for non-assignment statement"
     (let [schema-input "Person = String String"
           construction-input "[:Person]"
-          result (haxe-gen/generate-construction-factory schema-input construction-input)]
+          result (haxe-gen/generate-construction-factory schema-input construction-input {})]
       (is (not (:success result))))))
 
 (deftest test-parse-final-construction-statement
@@ -33,7 +33,7 @@ Group = [Person]"
     (let [schema-input "Person = String String
 Group = [Person]"
           construction-input "[:Group [:Person \"John\" \"Smith\"]]"
-          result (haxe-gen/generate-construction-factory schema-input construction-input)]
+          result (haxe-gen/generate-construction-factory schema-input construction-input {})]
       (is (:success result))
       (is (some? (:haxe-code result))))))
 
@@ -46,28 +46,35 @@ Team = Group
 Town = School Team"
           construction-input "$people = [:Group [:Person \"John\" \"Smith\"]]
 [:Town [:School $people] [:Team $people]]"
-          result (haxe-gen/generate-construction-factory schema-input construction-input)]
+          result (haxe-gen/generate-construction-factory schema-input construction-input {})]
       (is (:success result))
       (is (some? (:haxe-code result))))))
 
 (deftest test-join-multi-line-assignments
-  (testing "Join multi-line assignment"
-          (let [lines ["$people = "
-                 "[:Group [:Person \"John\" \"Smith\"]"
-                 "        [:Person \"Jane\" \"Jones\"]]"
-                 ""
-                 "[:Town [:School people] [:Team people]]"]
-          result (join-multi-line-assignments lines)]
+  (testing "Split multi-line assignment"
+    (let [input "$people = [:Group [:Person \"John\" \"Smith\"] [:Person \"Jane\" \"Jones\"]]. [:Town [:School people] [:Team people]]"
+          result (split-statements input)]
       (is (= 2 (count result)))
       (is (re-find #"people = \[:Group" (first result)))
       (is (re-find #"\[:Town" (second result)))))
 
   (testing "Handle single-line assignments"
-          (let [lines ["$people = [:Group [:Person \"John\" \"Smith\"]]"
-                 "[:Town [:School people] [:Team people]]"]
-          result (join-multi-line-assignments lines)]
+    (let [input "$people = [:Group [:Person \"John\" \"Smith\"]]. [:Town [:School people] [:Team people]]"
+          result (split-statements input)]
+      (println "DEBUG: Input:" input)
+      (println "DEBUG: Result count:" (count result))
+      (println "DEBUG: Result:" result)
       (is (= 2 (count result)))
-      (is (re-find #"people = \[:Group" (first result))))))
+      (is (re-find #"people = \[:Group" (first result)))))
+
+  (testing "Handle full-stops inside strings"
+    (let [input "$msg = \"Hello. World\". [:Person $msg]"
+          result (split-statements input)]
+      (println "DEBUG: Input:" input)
+      (println "DEBUG: Result:" result)
+      (is (= 2 (count result)))
+      (is (re-find (re-pattern "msg = \"Hello\\. World\"") (first result)))
+      (is (re-find (re-pattern "\\[:Person") (second result))))))
 
 (deftest test-valid-multi-step-construction
   (testing "Validate correct multi-step construction AST"

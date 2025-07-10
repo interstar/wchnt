@@ -109,12 +109,13 @@
                   construction-content (:construction mainfile-result)
                   parse-result (parser/parse-input schema-content)]
               (if (:success parse-result)
-                (let [result (compile-to-haxe schema-content)]
-                  (if (:success result)
+                (let [result (compile-to-haxe schema-content)
+                      context-relationships (haxe-gen/build-context-relationships (:ast parse-result))]
+          (if (:success result)
                     (if (not-empty construction-content)
-                      (let [factory-result (haxe-gen/generate-construction-factory schema-content construction-content)]
-                        (if (:success factory-result)
-                          (do
+                      (let [factory-result (haxe-gen/generate-construction-factory schema-content construction-content context-relationships)]
+                  (if (:success factory-result)
+                    (do
                             (doseq [class (:ast result)] (println class))
                             (println (:haxe-code factory-result)))
                           (do
@@ -127,7 +128,7 @@
                       (println "Schema compilation failed:")
                       (println (:error result))
                       (System/exit 1))))
-                (do
+                    (do
                   (println "Schema parsing failed:")
                   (println "Input:" schema-content)
                   (println "Error:" (:error parse-result))
@@ -135,4 +136,4 @@
             (do
               (println "Mainfile parsing failed:")
               (println (:error mainfile-result))
-              (System/exit 1))))))))
+              (System/exit 1)))))))) 

@@ -43,9 +43,37 @@ Note that of all the sections, only the first, the Schema section is required. A
 
 ### 3) context-specific classes
 
-We haven't yet dealt with the context-specific classes in our construction phase. What this will involve is adding an argument to the constructor of each which takes a "parent".
+The new thinking is that, actually all the intermediate stages of construction should be turned into temporary variables.
 
-However, because of issues of circularity, we will actually pass a future/promise type object which will get assigned to the context
+Eg. 
+
+[:Game [:PlayArea [:Rect 0 0 400 500]] [:Ball 20 50 5]]
+
+Should become 
+
+o1 = new Rect(0,0,400,500);
+o2 = new PlayArea(o1);
+o3 = new Ball(20,50,5);
+o4 = new Game(o2,o3);
+
+etc.
+
+If we are consistent in pulling out all objects as separate things, we don't need to worry about identifying the specific objects we have to pull out when they are context-specific.
+
+Now in the case of 
+
+Car = :Engine 
+Engine = int/cylinders
+
+And 
+
+[:Car [:Engine 6]]
+
+We still  end up with
+
+o1 = new Engine(6);
+o2 = new Car(o1);
+o1.setContext(o2);
 
 
 ## Phase 3: Reactive Features

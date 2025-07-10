@@ -93,6 +93,7 @@
     (let [schema "Tree = _ | Node\nNode = int/data Tree/left Tree/right"
           construction "[:Node 4 _ [:Node 6 [:Node 3 _ _] _]]"
           parse-result (parser/parse-construction schema construction)]
+      (println "DEBUG: Recursive parse result:" (pr-str parse-result))
       (is (:success parse-result))
       (is (= :MultiStepConstruction (:type (:ast parse-result)))))))
 
@@ -124,79 +125,35 @@
   (testing "Haxe factory generation from construction AST"
     (let [schema "Game = Rect Ball\nRect = int/x int/y int/width int/height\nBall = int/x int/y int/rad"
           construction "[:Game [:Rect 0 0 800 600] [:Ball 100 100 5]]"
-          result (haxegen/generate-construction-factory schema construction)]
+          result (haxegen/generate-construction-factory schema construction {})]
       (is (:success result))
       (is (string? (:haxe-code result)))
-      (is (str/includes? (:haxe-code result) "new Game("))
-      (is (str/includes? (:haxe-code result) "new Rect("))
-      (is (str/includes? (:haxe-code result) "new Ball("))
-      (is (str/includes? (:haxe-code result) "0, 0, 800, 600"))
-      (is (str/includes? (:haxe-code result) "100, 100, 5")))))
+      (is (str/includes? (:haxe-code result) "var o1 = new Rect(0, 0, 800, 600)"))
+      (is (str/includes? (:haxe-code result) "var o2 = new Ball(100, 100, 5)"))
+      (is (str/includes? (:haxe-code result) "var o3 = new Game(o1, o2)"))
+      (is (str/includes? (:haxe-code result) "return o3")))))
 
 (deftest test-haxe-factory-with-enums
   (testing "Haxe factory generation with enum values"
     (let [schema "Direction = \"Up\" | \"Down\" | \"Left\" | \"Right\"\nGame = Direction/move"
           construction "[:Game Up]"
-          result (haxegen/generate-construction-factory schema construction)]
+          result (haxegen/generate-construction-factory schema construction {})]
       (is (:success result))
-      (is (str/includes? (:haxe-code result) "new Game("))
-      (is (str/includes? (:haxe-code result) "Up")))))
+      (is (str/includes? (:haxe-code result) "var o1 = new Game(Up)"))
+      (is (str/includes? (:haxe-code result) "return o1")))))
 
 (deftest test-haxe-factory-with-context-components
   (testing "Haxe factory generation with context-specific components"
     (let [schema "Game = :Rect Ball\nRect = int/x int/y int/width int/height\nBall = int/x int/y int/rad"
           construction "[:Game [:Rect 0 0 800 600] [:Ball 100 100 5]]"
-          result (haxegen/generate-construction-factory schema construction)]
-      (is (:success result))
-      (is (str/includes? (:haxe-code result) "new LazyContext<Rect>"))
-      (is (str/includes? (:haxe-code result) "new Ball(")))))
-
-(deftest test-assignment-complete?
-  (testing "assignment-complete? returns true for balanced brackets and braces"
-    (is (true? (parser/assignment-complete? {:brackets 0 :braces 0})))
-    (is (false? (parser/assignment-complete? {:brackets 1 :braces 0})))
-    (is (false? (parser/assignment-complete? {:brackets 0 :braces 1})))
-    (is (false? (parser/assignment-complete? {:brackets 1 :braces 1})))))
-
-(deftest test-count-brackets
-  (testing "count-brackets correctly counts bracket balance"
-    (is (= {:brackets 0 :braces 0} (parser/count-brackets "hello")))
-    (is (= {:brackets 1 :braces 0} (parser/count-brackets "[hello")))
-    (is (= {:brackets 0 :braces 0} (parser/count-brackets "[hello]")))
-    (is (= {:brackets 1 :braces 1} (parser/count-brackets "[hello{world")))
-    (is (= {:brackets 0 :braces -1} (parser/count-brackets "[hello{world}]}")))))
-
-(deftest test-parse-assignment-start
-  (testing "parse-assignment-start handles different assignment formats"
-    ;; Assignment with no content
-    (is (= {:var-name "ps" :text "" :brackets 0 :braces 0}
-           (parser/parse-assignment-start "$ps = ")))
-    
-    ;; Assignment with content
-    (is (= {:var-name "ps" :text "[:Array [10 10 \"John\"]]" :brackets 0 :braces 0}
-           (parser/parse-assignment-start "$ps = [:Array [10 10 \"John\"]]")))
-    
-    ;; Not an assignment
-    (is (nil? (parser/parse-assignment-start "[:Game")))
-    (is (nil? (parser/parse-assignment-start "")))))
-
-(deftest test-continue-assignment
-  (testing "continue-assignment properly updates assignment state"
-    (let [initial {:var-name "ps" :text "[:Array" :brackets 1 :braces 0}
-          result (parser/continue-assignment initial "[10 10 \"John\"]")]
-      (is (= "[:Array [10 10 \"John\"]" (:text result)))
-      (is (= 1 (:brackets result)))
-      (is (= 0 (:braces result))))))
-
-(deftest test-format-assignment
-  (testing "format-assignment creates correct string format"
-    (is (= "$ps = [:Array [10 10 \"John\"]]"
-           (parser/format-assignment {:var-name "ps" :text "[:Array [10 10 \"John\"]]"})))))
-
-(deftest test-is-construction-line?
-  (testing "is-construction-line? correctly identifies construction lines"
-    (is (true? (parser/is-construction-line? "[Game")))
-    (is (true? (parser/is-construction-line? "  [:PlayArea")))
-    (is (false? (parser/is-construction-line? "")))
-    (is (false? (parser/is-construction-line? "  ")))
-    (is (false? (parser/is-construction-line? "$ps = "))))) 
+          parse-result (parser/parse-construction schema construction)]
+      (println "DEBUG: Parse result:" (pr-str parse-result))
+      (when (:success parse-result)
+        (println "DEBUG: AST structure:" (pr-str (:ast parse-result))))
+      (let [result (haxegen/generate-construction-factory schema construction {})]
+        (println "DEBUG: Factory result:" (pr-str result))
+        (is (:success result))
+        (is (str/includes? (:haxe-code result) "var o1 = new Rect(0, 0, 800, 600)"))
+        (is (str/includes? (:haxe-code result) "var o2 = new Ball(100, 100, 5)"))
+        (is (str/includes? (:haxe-code result) "var o3 = new Game(o1, o2)"))
+        (is (str/includes? (:haxe-code result) "o1.setContext(o3)"))))))

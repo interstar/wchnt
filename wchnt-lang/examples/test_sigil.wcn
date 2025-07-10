@@ -3,6 +3,12 @@
 ## Schema
 
 ```
-Car = :Engine/engine String/model
-Engine = int/cylinders
+Car = :Engine String/model
+Engine = int/cylinders 
+```
+
+## Construction
+
+```
+[:Car [:Engine 4] "Toyota"]
 ```

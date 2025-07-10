@@ -10,5 +10,5 @@ Person = String/name
 ## Construction
 
 ```
-[:School [:Array/Person [:Person "John"] [:Person "Jane"]]]
+[:School [:Array/Person [:Person "John"] [:Person "Jane"]]] 
 ``` 

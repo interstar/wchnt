@@ -2,40 +2,86 @@
   (:require [clojure.string :as str]
             [instaparse.core :as insta]
             [wchnt-lang.parser :as parser]
-            [wchnt-lang.schema :as schema]
-            [clojure.pprint :refer [pprint]]))
+            [wchnt-lang.schema :as schema]))
 
-(defn generate-haxe-class [class-name elements]
-  (let [has-context-components (some #(= (:sigil %) ":") elements)
-        import-statement (when has-context-components "import wchnt.*;")
+
+(defn build-context-relationships [schema-ast]
+  "Build a map of context-specific classes to their parent classes"
+  (let [context-map (atom {})]
+    (letfn [(walk-for-contexts [node parent-class]
+              (when (vector? node)
+                (let [[tag & children] node]
+                  (case tag
+                    :Schema 
+                    (doseq [child (filter vector? children)]
+                      (walk-for-contexts child parent-class))
+                    :CompositionLine
+                    (let [definee-node (first (filter #(= (first %) :Definee) children))
+                          class-name (second definee-node)
+                          element-nodes (filter #(= (first %) :Element) children)
+                          processed-elements (map wchnt-lang.parser/process-element element-nodes)
+                          context-elements (filter #(= (:sigil %) ":") processed-elements)]
+                      ;; Record context relationships: context-specific components get this class as their context
+                      (doseq [element context-elements]
+                        (swap! context-map assoc (:type element) class-name))
+                      ;; Initialize this class to nil only if it doesn't already have a context
+                      (when (nil? (get @context-map class-name))
+                        (swap! context-map assoc class-name nil))
+                      ;; Recursively check nested contexts
+                      (doseq [child (filter vector? children)]
+                        (walk-for-contexts child class-name)))
+                    :DisjunctionLine
+                    (let [definee-node (first (filter #(= (first %) :Definee) children))
+                          interface-name (second definee-node)]
+                      ;; For disjunctions, we don't need to track contexts
+                      (doseq [child (filter vector? children)]
+                        (walk-for-contexts child parent-class)))
+                    :EnumLine
+                    ;; Enums don't have contexts
+                    nil
+                    ;; Recursively process other nodes
+                    (doseq [child (filter vector? children)]
+                      (walk-for-contexts child parent-class))))
+                ))]
+      (walk-for-contexts schema-ast nil)
+      @context-map)))
+
+(defn generate-haxe-class [class-name elements context-relationships]
+  (let [context-parent (get context-relationships class-name)
+        context-variable (when context-parent (str "the" context-parent))
         fields (for [element elements]
                  (let [field-name (:name element)
                        field-type (:type element)
                        sigil (:sigil element)]
                    (case sigil
-                     ":" (str "    public var " field-name ": LazyContext<" field-type ">;")
+                     ":" (str "    public var " field-name ": " field-type ";")
                      (str "    public var " field-name ": " field-type ";"))))
+        ;; Add context field if this class has a context
+        all-fields (if context-variable
+                     (conj fields (str "    public var " context-variable ": " context-parent ";"))
+                     fields)
         constructor-params (for [element elements]
                             (let [field-name (:name element)
                                   field-type (:type element)
                                   sigil (:sigil element)]
-                              (case sigil
-                                ":" (str "LazyContext<" field-type "> " field-name)
-                                (str field-type " " field-name))))
+                              (str field-type " " field-name)))
         constructor-body (for [element elements]
                           (let [field-name (:name element)
                                 sigil (:sigil element)]
-                            (case sigil
-                              ":" (str "        this." field-name " = " field-name ";")
-                              (str "        this." field-name " = " field-name ";"))))
+                            (str "        this." field-name " = " field-name ";")))
+        ;; Add setContext method if this class has a context
+        setter-method (when context-variable
+                       (str "\n    public function setContext(c: " context-parent ") {\n"
+                            "        this." context-variable " = c;\n"
+                            "    }"))
         class-code (str "class " class-name " {\n"
-                       (when import-statement (str import-statement "\n"))
-                       (str/join "\n" fields)
+                       (str/join "\n" all-fields)
                        "\n\n"
                        "    public function new(" (str/join ", " constructor-params) ") {\n"
                        (str/join "\n" constructor-body)
-                       "\n    }\n"
-                       "}")]
+                       "\n    }"
+                       (or setter-method "")
+                       "\n}")]
     class-code))
 
 (defn generate-haxe-interface [interface-name]
@@ -76,14 +122,14 @@
                        "}")]
     class-code))
 
-(defn walk-tree [node interface-implementers]
+(defn walk-tree [node interface-implementers context-relationships]
   (cond
     (string? node) []
     (vector? node)
     (let [[tag & children] node]
       (case tag
-        :Schema (vec (mapcat #(walk-tree % interface-implementers) (filter vector? children)))
-        :DefLine (walk-tree (first (filter vector? children)) interface-implementers)
+        :Schema (vec (mapcat #(walk-tree % interface-implementers context-relationships) (filter vector? children)))
+        :DefLine (walk-tree (first (filter vector? children)) interface-implementers context-relationships)
         :CompositionLine 
         (let [definee-node (first (filter #(= (first %) :Definee) children))
               class-name (second definee-node)
@@ -95,7 +141,7 @@
                                              interface))
               haxe-class (if interface-to-implement
                           (generate-haxe-class-implementing class-name interface-to-implement processed-elements)
-                          (generate-haxe-class class-name processed-elements))]
+                          (generate-haxe-class class-name processed-elements context-relationships))]
           [haxe-class])
         :DisjunctionLine
         (let [definee-node (first (filter #(= (first %) :Definee) children))
@@ -116,7 +162,7 @@
         :Type []
         :ArrayType []
         :AltName []
-        (vec (mapcat #(walk-tree % interface-implementers) (filter vector? children)))))
+        (vec (mapcat #(walk-tree % interface-implementers context-relationships) (filter vector? children)))))
     :else []))
 
 (defn compile-to-haxe [input]
@@ -128,11 +174,13 @@
                                            (let [parts (str/split (str/trim line) #"\s*=\s*")
                                                  interface-name (first parts)
                                                  implementers (str/split (second parts) #"\s*\|\s*")]
-                                             [interface-name (set implementers)])))]
+                                             [interface-name (set implementers)])))
+          ;; Build context relationships
+          context-relationships (build-context-relationships parse-result)]
       (if (insta/failure? parse-result)
         (schema/syntax-error (str input " is not a valid string in wchnt: " (insta/get-failure parse-result)))
-        (let [classes (walk-tree parse-result interface-implementers)]
-          (schema/syntax-success classes))))
+        (let [classes (walk-tree parse-result interface-implementers context-relationships)]
+          (schema/success-result classes))))
     (catch #?(:clj Exception :cljs :default) e
       (schema/syntax-error (str "Error during compilation: " e)))))
 
@@ -153,10 +201,7 @@
   (let [empty-class (second ast)]
     (str "new " empty-class "()")))
 
-(defn variable-reference->haxe [ast]
-  "Convert variable reference AST to Haxe variable name"
-  (let [var-name (nth ast 2)]  ;; Extract variable name from [:VariableReference "$" "people"]
-    var-name))
+
 
 (defn unwrap-args [args]
   (if (and (= 1 (count args))
@@ -203,16 +248,13 @@
               haxe-code (str "new Map<" key-type ", " value-type ">()" (str/join "" set-calls))]
           haxe-code)
         ;; Handle as regular class construction
-        (let [haxe-args (map-indexed 
-                       (fn [idx arg]
+        (let [haxe-args (map-indexed (fn [idx arg]
                          (let [element (nth elements idx)
                                element-type (:type element)
                                element-name (:name element)
                                sigil (:sigil element)
                                arg-expr (ast-to-haxe-factory arg class-info)]
-                           (if sigil
-                             (str "new LazyContext<" element-type ">(" arg-expr ")")
-                             arg-expr)))
+                                         arg-expr))
                          args)]
           (str "new " class-name "(" (str/join ", " haxe-args) ")"))))))
 
@@ -302,7 +344,8 @@
 
           ;; Handle VariableReference
           (= tag :VariableReference)
-          (variable-reference->haxe ast)
+          (let [var-name (nth ast 2)]  ;; Extract variable name from [:VariableReference "$" "people"]
+            var-name)
 
           ;; Handle LocalEmpty
           (= tag :LocalEmpty)
@@ -319,43 +362,180 @@
       :else
       (str ast))))
 
-(defn generate-construction-factory-impl [schema-input construction-input]
+
+
+
+
+(defn walk-ast-and-build-table [ast class-info context-relationships id-counter parent-id object-table]
+  "Walk through AST once, building object table with abstract IDs on way down, details on way up"
+  (cond
+    (string? ast)
+    [ast id-counter object-table]
+    
+    (keyword? ast)
+    [ast id-counter object-table]
+    
+    (vector? ast)
+    (let [[tag & children] ast]
+      (cond
+        ;; Handle :Construction wrapper (unwrap, no new)
+        (= tag :Construction)
+        (walk-ast-and-build-table (first children) class-info context-relationships id-counter parent-id object-table)
+        
+        ;; Handle XxxConstruction nodes (e.g., :GameConstruction, :RectConstruction)
+        (and (keyword? tag) 
+             (re-matches #".*Construction$" (name tag))
+             (not (re-matches #".*ArrayConstruction$" (name tag))))
+        (let [class-name (str/replace (name tag) "Construction" "")
+              ;; On way down: create abstract ID and record in table
+              current-id (str "id-" id-counter)
+              updated-table (assoc object-table current-id {:parent parent-id :class class-name :var-name nil :ast ast})
+              
+              ;; Process all children recursively
+              [processed-children final-counter child-table] 
+              (reduce (fn [[acc-children acc-counter acc-table] child]
+                        (let [[processed-child new-counter new-table] 
+                              (walk-ast-and-build-table child class-info context-relationships acc-counter current-id acc-table)]
+                          [(conj acc-children processed-child) new-counter new-table]))
+                      [[] (inc id-counter) updated-table]
+                      (remove string? children))
+              
+              ;; On way back up: assign variable name (count existing vars to get next number)
+              existing-vars (filter #(not (nil? (:var-name (val %)))) child-table)
+              current-var (str "o" (inc (count existing-vars)))
+              final-table (assoc child-table current-id {:parent parent-id :class class-name :var-name current-var :ast ast})]
+          [current-var final-counter final-table])
+        
+        ;; Handle other vector nodes recursively
+        :else
+        (let [[processed-children final-counter child-table] 
+              (reduce (fn [[acc-children acc-counter acc-table] child]
+                        (let [[processed-child new-counter new-table] 
+                              (walk-ast-and-build-table child class-info context-relationships acc-counter parent-id acc-table)]
+                          [(conj acc-children processed-child) new-counter new-table]))
+                      [[] id-counter object-table]
+                      children)]
+          [ast final-counter child-table])))
+    
+    :else
+    [ast id-counter object-table]))
+
+(defn generate-statements-from-table [object-table context-relationships class-info]
+  "Generate construction statements and context wiring from the object table"
+  (let [;; Sort objects by variable name to ensure correct order
+        sorted-entries (sort-by #(Integer/parseInt (subs (:var-name (val %)) 1)) object-table)
+        
+        ;; Helper function to process constructor arguments
+        process-constructor-arg (fn [arg]
+                                 (cond
+                                   ;; If it's a vector (object node), find its variable name in the table
+                                   (vector? arg)
+                                   (let [matching-entry (first (filter #(= (:ast (val %)) arg) object-table))]
+                                     (if matching-entry
+                                       (:var-name (val matching-entry))
+                                       (ast-to-haxe-factory arg class-info)))
+                                   ;; If it's a raw number, just convert to string
+                                   (number? arg)
+                                   (str arg)
+                                   ;; Otherwise, use ast-to-haxe-factory
+                                   :else
+                                   (ast-to-haxe-factory arg class-info)))
+        
+        ;; Generate construction statements
+        construction-stmts (map (fn [[id entry]]
+                                 (let [var-name (:var-name entry)
+                                       class-name (:class entry)
+                                       ast (:ast entry)
+                                       ;; Extract constructor arguments (children after the tag)
+                                       constructor-args (rest ast)
+                                       ;; Process arguments: use variable names for objects, values for primitives
+                                       haxe-args (map process-constructor-arg constructor-args)]
+                                   (str "var " var-name " = new " class-name "(" (str/join ", " haxe-args) ");")))
+                               sorted-entries)
+        
+        ;; Generate context wiring statements
+        context-stmts (map (fn [[id entry]]
+                            (let [var-name (:var-name entry)
+                                  class-name (:class entry)
+                                  needs-context (get context-relationships class-name)]
+                              (when needs-context
+                                (let [parent-id (:parent entry)
+                                      parent-entry (get object-table parent-id)
+                                      parent-var (:var-name parent-entry)]
+                                  (str var-name ".setContext(" parent-var ");")))))
+                          sorted-entries)
+        context-stmts (remove nil? context-stmts)]
+    {:construction-stmts construction-stmts :context-stmts context-stmts}))
+
+(defn generate-construction-factory-impl [schema-input construction-input context-relationships]
   "Implementation of generate-construction-factory without exception handling"
   (let [parse-result (parser/parse-construction schema-input construction-input)]
     (if (:success parse-result)
-      (let [ast (:ast parse-result)]
-
-        ;; Handle multi-step construction AST
+      (let [ast (:ast parse-result)
+            class-info (parser/extract-class-info ((parser/get-parser) schema-input))
+            ;; Build context relationships from schema if not provided
+            actual-context-relationships (if (empty? context-relationships)
+                                          (build-context-relationships ((parser/get-parser) schema-input))
+                                          context-relationships)]
+        
+                ;; Handle multi-step construction AST
         (if (= (:type ast) :MultiStepConstruction)
-          (let [class-info (parser/extract-class-info ((parser/get-parser) schema-input))
-                ;; Generate variable declarations for assignments
-                variable-declarations (for [assignment (:assignments ast)]
-                                      (let [var-name (:name assignment)
-                                            construction (:construction assignment)
-                                            haxe-value (ast-to-haxe-factory construction class-info)]
-                                        (str "var " var-name " = " haxe-value ";")))
-                ;; Generate final construction
-                final-haxe (ast-to-haxe-factory (:final-construction ast) class-info)]
-            (let [factory-code (str "public static function factory() {\n"
-                                   "    " (str/join "\n    " variable-declarations) "\n"
-                                   "    return " final-haxe ";\n"
-                                   "}")]
-                (schema/syntax-success ast {:haxe-code factory-code})))
+          (let [;; Process assignments first
+                assignment-results (map #(walk-ast-and-build-table (:construction %) class-info actual-context-relationships 1 nil {})
+                                       (:assignments ast))
+                assignment-tables (map last assignment-results)
+                combined-assignment-table (apply merge assignment-tables)
+                
+                ;; Process final construction
+                [final-var final-counter final-table] 
+                (walk-ast-and-build-table (:final-construction ast) class-info actual-context-relationships 
+                                         (inc (count combined-assignment-table)) nil combined-assignment-table)
+                
+                ;; Generate statements from the complete table
+                {:keys [construction-stmts context-stmts]} (generate-statements-from-table final-table actual-context-relationships class-info)
+                
+                ;; Get the root object (highest variable number)
+                root-var (apply max-key #(Integer/parseInt (subs % 1)) 
+                               (map #(:var-name (val %)) final-table))
+                
+                factory-code (str "public static function factory() {\n"
+                                 "    " (str/join "\n    " construction-stmts) "\n"
+                                 (when (seq context-stmts) (str "    " (str/join "\n    " context-stmts) "\n"))
+                                 "    return " root-var ";\n"
+                                 "}")]
+            (schema/syntax-success ast {:haxe-code factory-code}))
+          
           ;; Handle single construction AST (legacy)
-          (let [class-info (parser/extract-class-info ((parser/get-parser) schema-input))
-                haxe-code (ast-to-haxe-factory ast class-info)]
-              (schema/syntax-success ast {:haxe-code haxe-code}))))
+          (let [;; Build object table
+                [final-var final-counter object-table] 
+                (walk-ast-and-build-table ast class-info actual-context-relationships 1 nil {})
+                
+                ;; Generate statements from the table
+                {:keys [construction-stmts context-stmts]} (generate-statements-from-table object-table actual-context-relationships class-info)
+                
+                ;; Get the root object
+                root-var (apply max-key #(Integer/parseInt (subs % 1)) 
+                               (map #(:var-name (val %)) object-table))
+                
+                factory-code (str "public static function factory() {\n"
+                                 "    " (str/join "\n    " construction-stmts) "\n"
+                                 (when (seq context-stmts) (str "    " (str/join "\n    " context-stmts) "\n"))
+                                 "    return " root-var ";\n"
+                                 "}")]
+            (schema/syntax-success ast {:haxe-code factory-code}))))
       parse-result)))
 
-(defn generate-construction-factory [schema-input construction-input]
+(defn generate-construction-factory [schema-input construction-input context-relationships]
   "Generate Haxe factory function from schema and construction input"
   #?(:clj
      (try
-       (generate-construction-factory-impl schema-input construction-input)
+       (generate-construction-factory-impl schema-input construction-input context-relationships)
        (catch Exception e
          (schema/syntax-error (str "Error generating factory: " (.getMessage e)))))
      :cljs
      (try
-       (generate-construction-factory-impl schema-input construction-input)
+       (generate-construction-factory-impl schema-input construction-input context-relationships)
        (catch :default e
          (schema/syntax-error (str "Error generating factory: " (.-message e))))))) 
+
+ 

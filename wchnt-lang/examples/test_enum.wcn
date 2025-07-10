@@ -4,5 +4,5 @@
 
 ```
 BuildType = "Dev" | "Local" | "Deploy"
-Config = BuildType/environment
+Config = BuildType/environment 
 ```

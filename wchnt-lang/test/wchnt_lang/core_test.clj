@@ -9,7 +9,9 @@
             [wchnt-lang.examples :refer [example-game-schema
                                         example-person-schema
                                         example-shape-schema]]
-            [wchnt-lang.schema :as schema]))
+            [wchnt-lang.schema :as schema]
+            [wchnt-lang.parser :as parser]
+            [wchnt-lang.haxegen :as haxegen]))
 
 (deftest test-get-parser
   (testing "Parser retrieval"
@@ -229,5 +231,18 @@ Player = String/name int/score"
           result (compile-to-haxe input)]
       (is (:success result))
       (is (some #(str/includes? % "public var stringToInt: Map<String, int>") (:code result))))))
+
+(deftest test-build-context-relationships
+  (testing "Context relationships for simple schema"
+    (let [schema-str "Car = :Engine\nEngine = int/cylinders"
+          schema-ast ((wchnt-lang.parser/get-parser) schema-str)
+          context-map (wchnt-lang.haxegen/build-context-relationships schema-ast)]
+      (is (= {"Car" nil, "Engine" "Car"} context-map))))
+
+  (testing "Context relationships for nested schema"
+    (let [schema-str "A = :B\nB = :C\nC = int/value"
+          schema-ast ((wchnt-lang.parser/get-parser) schema-str)
+          context-map (wchnt-lang.haxegen/build-context-relationships schema-ast)]
+      (is (= {"A" nil, "B" "A", "C" "B"} context-map)))))
 
 (run-tests)

@@ -17,9 +17,9 @@ Scores = int/home int/away
 ## Construction
 
 ```
-$ps = [:Array/Player [10 10 "John"] [50 70 "Sally"]]
+$ps = [:Array/Player [10 10 "John"] [50 70 "Sally"]].
 
-$scores = [:Scores 0 0]
+$scores = [:Scores 0 0].
 
 [:Game 
   [:PlayArea [0 0 500 400]]

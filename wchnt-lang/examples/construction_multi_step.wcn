@@ -13,8 +13,9 @@ Town = School Team
 
 ```
 $people = 
-[:Array/Person [:Person "John Smith" "1 The Avenue"]
-        [:Person "Jane Jones" "43 Long Street"]]
+[:Array/Person 
+   [:Person "John Smith" "1 The Avenue"]
+   [:Person "Jane Jones" "43 Long Street"]].
 
 [:Town [:School $people] [:Team $people]]
 ```
