@@ -1,6 +1,7 @@
 (ns wchnt-lang.api
   (:require [wchnt-lang.core :as core]
             [wchnt-lang.parser :as parser]
+            [wchnt-lang.compiler :as compiler]
             [instaparse.core :as instaparse])
   (:import (java.util ArrayList HashMap)
            (java.util.function Function))
@@ -84,4 +85,6 @@
   (try
     parser/schema-grammar
     (catch Exception e
-      (str "Error getting grammar: " (.getMessage e))))) 
+      (str "Error getting grammar: " (.getMessage e)))))
+
+ 

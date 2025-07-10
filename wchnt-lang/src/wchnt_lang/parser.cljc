@@ -226,7 +226,7 @@
                                             :else (str "R" inner-type "Construction"))
                                array-element-rule (str inner-type "ArrayElement")]
                            (str "ArrayConstruction | (<WS>+ (" (str/join " | " [array-element-rule element-rule]) "))*"))
-                         (str/starts-with? element-type "Map<") (str (clojure.string/capitalize (:name element)) "MapConstruction")
+                         (str/starts-with? element-type "Map<") (str "(MapConstruction | " (clojure.string/capitalize (:name element)) "MapConstruction)")
                          (some #(= (:name %) element-type) enums) (str element-type "Value")
                          (some #(= (:name %) element-type) (map :name disjunctions))
                          (let [disjunction (first (filter #(= (:name %) element-type) disjunctions))
@@ -258,7 +258,7 @@
                                             :else (str inner-type "Construction"))
                                array-element-rule (str inner-type "ArrayElement")]
                            (str "ArrayConstruction | (<WS>+ (" (str/join " | " [array-element-rule element-rule]) "))*"))
-                         (str/starts-with? element-type "Map<") (str (clojure.string/capitalize (:name element)) "MapConstruction")
+                         (str/starts-with? element-type "Map<") (str "(MapConstruction | " (clojure.string/capitalize (:name element)) "MapConstruction)")
                          (some #(= (:name %) element-type) enums) (str element-type "Value")
                          (some #(= (:name %) element-type) (map :name disjunctions))
                          (let [disjunction (first (filter #(= (:name %) element-type) disjunctions))
@@ -268,7 +268,7 @@
                              (str "(" (str/join " | " (map #(str % "Construction") implementers)) " | LocalEmpty)")
                              (str "(" (str/join " | " (map #(str % "Construction") implementers)) ")")))
                          :else (str element-type "Construction"))]
-      (str "(" expected-rule " | VariableReference)"))))
+      (str "(" expected-rule " | LocalEmpty | VariableReference)"))))
 
 (defn generate-class-grammar [class enums disjunctions]
   "Generate strict (RTypeConstruction) and relaxed (TypeConstruction) grammar strings for a single class"
@@ -465,8 +465,8 @@
                                            :when (str/starts-with? (:type element) "Map<")]
                                        element)))
         statement-rule (str "Statement = VariableAssignment | (" (str/join " | " all-construction-types) ")")
-        variable-assignment-rule (str "VariableAssignment = '$' VariableName <WS>? '=' <WS>? (" (str/join " | " all-construction-types) ")")
-        multi-step-rules ["MultiStepConstruction = (WS? Statement WS?)*"
+        variable-assignment-rule (str "VariableAssignment = '$' VariableName <WS>? '=' <WS>? (StringLiteral | IntLiteral | VariableReference | (" (str/join " | " all-construction-types) "))")
+        multi-step-rules ["MultiStepConstruction = (WS? Statement WS? (<'.'> WS?)*)*"
                          statement-rule
                          variable-assignment-rule
                          "VariableReference = '$' #'[a-zA-Z_][a-zA-Z0-9_]*'"
@@ -479,7 +479,8 @@
    "IntLiteral = #'\\d+'"
    "StringLiteral = '\"' #'[^\"]*' '\"'"
    "LocalEmpty = '_'"
-   "TypeName = #'[A-Z][a-zA-Z0-9]*'"])
+   "TypeName = #'[a-zA-Z][a-zA-Z0-9]*'"
+  ])
 
 (defn generate-construction-grammar [class-info]
   "Generate a single composed grammar string for all classes and enums"
@@ -618,8 +619,6 @@
               :else node))]
     (walk-and-resolve ast)))
 
-
-
 (defn split-statements [input-string]
   "Split input string into statements using full-stop as separator, treating newlines as whitespace.
    Ignores full-stops inside quoted strings."
@@ -659,32 +658,41 @@
 
 
 
+
+
+
+
 (defn parse-multi-step-construction [construction-input class-info]
   "Parse multi-step construction with variable assignments and references"
   (let [grammar-string (generate-construction-grammar class-info)
-        construction-parser (insta/parser grammar-string :start :MultiStepConstruction)]
-
-    ;; Parse the entire input as a MultiStepConstruction
-    (let [parse-result (construction-parser construction-input)]
-      (if (insta/failure? parse-result)
-        (schema/syntax-error (str "Failed to parse construction: " (insta/get-failure parse-result)))
-        (do
-          ;; Extract statements from the parsed result
-          (let [statements (filter #(and (vector? %) (= (first %) :Statement)) parse-result)
-                assignments (atom [])
-                final-construction (atom nil)]
-            (doseq [statement statements]
-              (let [statement-content (second statement)]
+        construction-parser (insta/parser grammar-string :start :Statement)
+        statements (split-statements construction-input)
+        assignments (atom [])
+        final-construction (atom nil)]
+    
+    ;; Parse each statement individually
+    (loop [remaining-statements statements]
+      (if (empty? remaining-statements)
+        ;; All statements parsed successfully
+        (let [structured-ast {:type :MultiStepConstruction
+                             :assignments @assignments
+                             :final-construction @final-construction}]
+          (schema/syntax-success structured-ast))
+        (let [statement (first remaining-statements)
+              parse-result (construction-parser statement)]
+          (if (insta/failure? parse-result)
+            (schema/syntax-error (str "Failed to parse statement: " statement " - " (insta/get-failure parse-result)))
+            (do
+              ;; Process the parsed statement
+              (let [statement-content (second parse-result)]
                 (if (= (first statement-content) :VariableAssignment)
                   ;; Handle variable assignment
                   (let [[_ _ [_ var-name] _ construction-ast] statement-content]
                     (swap! assignments conj {:name var-name :construction construction-ast}))
                   ;; Handle final construction
-                  (reset! final-construction statement-content))))
-            (let [structured-ast {:type :MultiStepConstruction
-                                 :assignments @assignments
-                                 :final-construction @final-construction}]
-              (schema/syntax-success structured-ast))))))))
+                  (reset! final-construction statement-content)))
+              ;; Continue with remaining statements
+              (recur (rest remaining-statements)))))))))
 
 (defn parse-construction-impl [schema-input construction-input]
   "Implementation of parse-construction without exception handling"

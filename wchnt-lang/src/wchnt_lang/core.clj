@@ -4,6 +4,7 @@
             [wchnt-lang.eyeball :as eyeball]
             [wchnt-lang.mainfile :as mainfile]
             [wchnt-lang.schema :as schema]
+            [wchnt-lang.compiler :as compiler]
             [clojure.string :as str]
             [clojure.java.io :as io]))
 
@@ -89,51 +90,91 @@
         parse-result)
       parse-result)))
 
+;; Printing functions for different output modes
+
+(defn print-complete-haxe-file
+  "Print the complete Haxe file body (classes + factory + main function)"
+  [haxe-file-content]
+  (println haxe-file-content))
+
+(defn print-verbose-compilation
+  "Print verbose compilation details showing each phase"
+  [schema-content construction-content schema-result factory-result]
+  (println "## Schema")
+  (println "```")
+  (println schema-content)
+  (println "```")
+  (println)
+  (println "## Generated Haxe Classes")
+  (doseq [class (:code schema-result)] (println class))
+  (when (not-empty construction-content)
+    (do
+      (println)
+      (println "## Construction")
+      (println "```")
+      (println construction-content)
+      (println "```")
+      (println)
+      (println "## Factory Function")
+      (println (:code factory-result))))
+  (println)
+  (println "## Main Function")
+  (println "public static function main() {")
+  (println "    return factory();")
+  (println "}"))
+
+(defn print-compilation-error
+  "Print detailed error information when compilation fails"
+  [error-message phase input-content]
+  (println "Compilation failed during" phase "phase:")
+  (println error-message)
+  (when input-content
+    (println)
+    (println "Input that caused the error:")
+    (println "```")
+    (println input-content)
+    (println "```")))
+
 ;; Command-line interface
 
 (defn -main [& args]
-  ;; This ensures the gen-class is loaded
-  (require 'wchnt-lang.api)
-  (if (empty? args)
-    (do
-      (println "Usage: lein run <wchnt-source-file>")
-      (System/exit 1))
-    (let [filename (first args)]
-      (if-not (.exists (io/file filename))
-        (do
-          (println (str "File not found: " filename))
-          (System/exit 1))
-        (let [mainfile-result (process-mainfile filename)]
-          (if (:success mainfile-result)
-            (let [schema-content (:schema mainfile-result)
-                  construction-content (:construction mainfile-result)
-                  parse-result (parser/parse-input schema-content)]
-              (if (:success parse-result)
-                (let [result (compile-to-haxe schema-content)
-                      context-relationships (haxe-gen/build-context-relationships (:ast parse-result))]
-          (if (:success result)
-                    (if (not-empty construction-content)
-                      (let [factory-result (haxe-gen/generate-construction-factory schema-content construction-content context-relationships)]
-                  (if (:success factory-result)
-                    (do
-                            (doseq [class (:ast result)] (println class))
-                            (println (:haxe-code factory-result)))
-                          (do
-                            (println "Construction parsing failed:")
-                            (println (:error factory-result))
-                            (System/exit 1))))
-                      ;; Only schema phase present, print schema Haxe code
-                      (doseq [class (:ast result)] (println class)))
-                    (do
-                      (println "Schema compilation failed:")
-                      (println (:error result))
-                      (System/exit 1))))
-                    (do
-                  (println "Schema parsing failed:")
-                  (println "Input:" schema-content)
-                  (println "Error:" (:error parse-result))
-                  (System/exit 1))))
-            (do
-              (println "Mainfile parsing failed:")
-              (println (:error mainfile-result))
-              (System/exit 1)))))))) 
+  (let [args (vec args)]
+    (if (empty? args)
+      (do
+        (println "Usage: lein run [--verbose] <wchnt-source-file>")
+        (System/exit 1))
+      (let [verbose? (some #{"--verbose"} args)
+            filename (if verbose? (second args) (first args))]
+        (if-not (.exists (io/file filename))
+          (do
+            (println (str "File not found: " filename))
+            (System/exit 1))
+          (let [mainfile-result (process-mainfile filename)]
+            (if (:success mainfile-result)
+              (let [schema-content (:schema mainfile-result)
+                    construction-content (:construction mainfile-result)]
+                (if verbose?
+                  ;; Verbose mode: show each phase
+                  (let [schema-result (compiler/compile-schema-phase schema-content)]
+                    (if (:success schema-result)
+                      (if (not-empty construction-content)
+                        (let [factory-result (compiler/compile-construction-phase schema-content construction-content)]
+                          (if (:success factory-result)
+                            (print-verbose-compilation schema-content construction-content schema-result factory-result)
+                            (do
+                              (print-compilation-error (:error factory-result) "construction" construction-content)
+                              (System/exit 1))))
+                        (print-verbose-compilation schema-content "" schema-result {:code "// No construction phase" :success true}))
+                      (do
+                        (print-compilation-error (:error schema-result) "schema" schema-content)
+                        (System/exit 1))))
+                  ;; Default mode: show only complete Haxe file
+                  (let [complete-result (compiler/compile-complete-program schema-content construction-content)]
+                    (if (:success complete-result)
+                      (print-complete-haxe-file (:code complete-result))
+                      (do
+                        (print-compilation-error (:error complete-result) "compilation" (str "Schema:\n" schema-content "\n\nConstruction:\n" construction-content))
+                        (System/exit 1))))))
+              (do
+                (print-compilation-error (:error mainfile-result) "file parsing" filename)
+                (System/exit 1)))))))))

@@ -157,3 +157,27 @@
         (is (str/includes? (:haxe-code result) "var o2 = new Ball(100, 100, 5)"))
         (is (str/includes? (:haxe-code result) "var o3 = new Game(o1, o2)"))
         (is (str/includes? (:haxe-code result) "o1.setContext(o3)"))))))
+
+(deftest test-map-construction-with-commas
+  (testing "Map construction parsing with optional commas"
+    (let [schema "Main = String/hello Config\nDirection = \"Up\" | \"Down\" | \"Left\" | \"Right\"\nConfig = {Direction : String}/moves"
+          construction-with-commas "$controls = [:Map/{Direction:String} Up:\"jump\", Down:\"crouch\", Left:\"left\" Right:\"right\"].\n[:Main \"Hello\" [:Config $controls]]"
+          construction-no-commas "$controls = [:Map/{Direction:String} Up:\"jump\" Down:\"crouch\" Left:\"left\" Right:\"right\"].\n[:Main \"Hello\" [:Config $controls]]"
+          grammar-result (parser/schema-to-construction-grammar schema)]
+      (println "DEBUG: Grammar result:" (pr-str grammar-result))
+      (when (:success grammar-result)
+        (println "DEBUG: Generated grammar:")
+        (println (:grammar (:ast grammar-result))))
+      ;; Test with commas
+      (let [parse-result (parser/parse-construction schema construction-with-commas)]
+        (println "DEBUG: Map construction parse result (with commas):" (pr-str parse-result))
+        (when (not (:success parse-result))
+          (println "FULL ERROR (with commas):")
+          (println (:error parse-result))))
+      ;; Test without commas
+      (let [parse-result (parser/parse-construction schema construction-no-commas)]
+        (println "DEBUG: Map construction parse result (no commas):" (pr-str parse-result))
+        (when (not (:success parse-result))
+          (println "FULL ERROR (no commas):")
+          (println (:error parse-result))))))
+)

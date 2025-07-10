@@ -1,4 +1,4 @@
-(ns wchnt_lang.construction_parsing
+(ns wchnt-lang.construction-parsing
   (:require [clojure.test :refer :all]
             [wchnt-lang.parser :refer :all]
             [wchnt-lang.schema :refer :all]
@@ -39,42 +39,47 @@ Group = [Person]"
 
 (deftest test-classify-and-parse-statements
   (testing "Parse mixed assignment and final construction statements using WCHNT pattern"
-    (let [schema-input "Person = String String
-Group = [Person]
-School = Group
-Team = Group
-Town = School Team"
-          construction-input "$people = [:Group [:Person \"John\" \"Smith\"]]
-[:Town [:School $people] [:Team $people]]"
+    (let [schema-input "Person = String String\nGroup = [Person]\nSchool = Group\nTeam = Group\nTown = School Team"
+          construction-input "$people = [:Group [:Person \"John\" \"Smith\"]]. [:Town [:School $people] [:Team $people]]"
           result (haxe-gen/generate-construction-factory schema-input construction-input {})]
+      (when (not (:success result))
+        (println "DEBUG: Error in classify-and-parse-statements:" (:error result)))
       (is (:success result))
       (is (some? (:haxe-code result))))))
 
 (deftest test-join-multi-line-assignments
-  (testing "Split multi-line assignment"
-    (let [input "$people = [:Group [:Person \"John\" \"Smith\"] [:Person \"Jane\" \"Jones\"]]. [:Town [:School people] [:Team people]]"
-          result (split-statements input)]
-      (is (= 2 (count result)))
-      (is (re-find #"people = \[:Group" (first result)))
-      (is (re-find #"\[:Town" (second result)))))
+  (testing "Parse multi-line assignment with full-stop separator"
+    (let [schema "Person = String String\nGroup = [Person]\nSchool = Group\nTeam = Group\nTown = School Team"
+          input "$people = [:Group [:Person \"John\" \"Smith\"] [:Person \"Jane\" \"Jones\"]]. [:Town [:School $people] [:Team $people]]"
+          result (parse-construction schema input)]
+      (when (not (:success result))
+        (println "DEBUG: Error in multi-line assignment:" (:error result)))
+      (is (:success result))
+      (is (= :MultiStepConstruction (:type (:ast result))))
+      (is (= 1 (count (:assignments (:ast result)))))
+      (is (= "people" (:name (first (:assignments (:ast result))))))))
 
-  (testing "Handle single-line assignments"
-    (let [input "$people = [:Group [:Person \"John\" \"Smith\"]]. [:Town [:School people] [:Team people]]"
-          result (split-statements input)]
-      (println "DEBUG: Input:" input)
-      (println "DEBUG: Result count:" (count result))
-      (println "DEBUG: Result:" result)
-      (is (= 2 (count result)))
-      (is (re-find #"people = \[:Group" (first result)))))
+  (testing "Handle single-line assignments with full-stop separator"
+    (let [schema "Person = String String\nGroup = [Person]\nSchool = Group\nTeam = Group\nTown = School Team"
+          input "$people = [:Group [:Person \"John\" \"Smith\"]]. [:Town [:School $people] [:Team $people]]"
+          result (parse-construction schema input)]
+      (when (not (:success result))
+        (println "DEBUG: Error in single-line assignment:" (:error result)))
+      (is (:success result))
+      (is (= :MultiStepConstruction (:type (:ast result))))
+      (is (= 1 (count (:assignments (:ast result)))))
+      (is (= "people" (:name (first (:assignments (:ast result))))))))
 
   (testing "Handle full-stops inside strings"
-    (let [input "$msg = \"Hello. World\". [:Person $msg]"
-          result (split-statements input)]
-      (println "DEBUG: Input:" input)
-      (println "DEBUG: Result:" result)
-      (is (= 2 (count result)))
-      (is (re-find (re-pattern "msg = \"Hello\\. World\"") (first result)))
-      (is (re-find (re-pattern "\\[:Person") (second result))))))
+    (let [schema "Person = String"
+          input "$msg = \"Hello. World\". [:Person $msg]"
+          result (parse-construction schema input)]
+      (when (not (:success result))
+        (println "DEBUG: Error in full-stops inside strings:" (:error result)))
+      (is (:success result))
+      (is (= :MultiStepConstruction (:type (:ast result))))
+      (is (= 1 (count (:assignments (:ast result)))))
+      (is (= "msg" (:name (first (:assignments (:ast result)))))))))
 
 (deftest test-valid-multi-step-construction
   (testing "Validate correct multi-step construction AST"
@@ -91,29 +96,18 @@ Town = School Team"
 
 (deftest test-variable-reference-parsing
   (testing "Parse variable reference with $ sigil"
-    (let [grammar-string "Construction = VariableReference | PersonConstruction
-                         VariableReference = '$' VariableName
-                         VariableName = #'[a-zA-Z_][a-zA-Z0-9_]*'
-                         PersonConstruction = '[' ':' 'Person' <WS>? StringLiteral <WS>+ StringLiteral <WS>? ']'
-                         StringLiteral = '\"' #'[^\"]*' '\"'
-                         WS = #'[\\s,]+'"
+    (let [grammar-string "Construction = VariableReference | PersonConstruction\n                         VariableReference = '$' VariableName\n                         VariableName = #'[a-zA-Z_][a-zA-Z0-9_]*'\n                         PersonConstruction = '[' ':' 'Person' <WS>? StringLiteral <WS>+ StringLiteral <WS>? ']'\n                         StringLiteral = '\"' #'[^\"]*' '\"'\n                         WS = #'[\\s,]+'"
           construction-parser (insta/parser grammar-string)
           result (construction-parser "$people")]
       (is (not (insta/failure? result)))
-      (is (= [:VariableReference "$" "people"] result))))
+      (is (= [:Construction [:VariableReference "$" [:VariableName "people"]]] result))))
 
   (testing "Parse class construction with variable reference"
-    (let [grammar-string "Construction = VariableReference | PersonConstruction | SchoolConstruction
-                         VariableReference = '$' VariableName
-                         VariableName = #'[a-zA-Z_][a-zA-Z0-9_]*'
-                         PersonConstruction = '[' ':' 'Person' <WS>? StringLiteral <WS>+ StringLiteral <WS>? ']'
-                         SchoolConstruction = '[' ':' 'School' <WS>? VariableReference <WS>? ']'
-                         StringLiteral = '\"' #'[^\"]*' '\"'
-                         WS = #'[\\s,]+'"
+    (let [grammar-string "Construction = VariableReference | PersonConstruction | SchoolConstruction\n                         VariableReference = '$' VariableName\n                         VariableName = #'[a-zA-Z_][a-zA-Z0-9_]*'\n                         PersonConstruction = '[' ':' 'Person' <WS>? StringLiteral <WS>+ StringLiteral <WS>? ']'\n                         SchoolConstruction = '[' ':' 'School' <WS>? VariableReference <WS>? ']'\n                         StringLiteral = '\"' #'[^\"]*' '\"'\n                         WS = #'[\\s,]+'"
           construction-parser (insta/parser grammar-string)
           result (construction-parser "[:School $people]")]
       (is (not (insta/failure? result)))
-      (is (= [:SchoolConstruction "[" ":" "School" [:VariableReference "$" "people"] "]"] result))))
+      (is (= [:Construction [:SchoolConstruction "[" ":" "School" [:VariableReference "$" [:VariableName "people"]] "]"]] result))))
 
   (testing "Reject variable reference without $ sigil"
     (let [grammar-string "Construction = VariableReference | PersonConstruction
