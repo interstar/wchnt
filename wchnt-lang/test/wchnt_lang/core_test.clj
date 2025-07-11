@@ -56,7 +56,9 @@
       (is (str/includes? game-class "playArea: PlayArea"))
       (is (str/includes? game-class "ball: Ball"))
       (is (str/includes? game-class "this.playArea = playArea"))
-      (is (str/includes? game-class "this.ball = ball")))))
+      (is (str/includes? game-class "this.ball = ball"))
+      ;; Assert that ArrayExtensions is NOT present
+      (is (not-any? #(str/includes? % "class ArrayExtensions") (:code result))))))
 
 (deftest test-array-compilation
   (testing "Array type compilation"
@@ -64,7 +66,9 @@
           result (compile-to-haxe input)]
       (is (:success result))
       (is (some #(str/includes? % "public var name: String") (:code result)))
-      (is (some #(str/includes? % "public var addresses: Array<Address>") (:code result))))))
+      (is (some #(str/includes? % "public var addresses: Array<Address>") (:code result)))
+      ;; Assert that ArrayExtensions IS present
+      (is (some #(str/includes? % "class ArrayExtensions") (:code result))))))
 
 (deftest test-disjunction-compilation
   (testing "Interface disjunction compilation"

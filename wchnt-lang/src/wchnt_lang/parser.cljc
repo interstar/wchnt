@@ -4,29 +4,28 @@
             [wchnt-lang.schema :as schema]))
 
 (def schema-grammar
-  "Schema = DefLine (<NL> DefLine)* <NL>?
-   DefLine = CompositionLine | DisjunctionLine | EnumLine
-   CompositionLine = Definee <SPACE> '=' <SPACE> Element (<SPACE> Element)* <SPACE>?
-   DisjunctionLine = Definee <SPACE> '=' <SPACE> Element (<SPACE> '|' <SPACE> Element)+ <SPACE>?
-   EnumLine = Definee <SPACE> '=' <SPACE> '\"' EnumValue '\"' (<SPACE> '|' <SPACE> '\"' EnumValue '\"')+ <SPACE>?
-   Definee = Name
-   <Name> = #'[A-Za-z][A-Za-z0-9_]*'
-   NL = #'\\n+'
-   Element = Sigil? TypeMarker ('/' AltName)?
-   SPACE = #'\\s+'
-   TypeMarker = Name | ArrayType | DictType | EmptyType
-   ArrayType = '[' Type ']'
-   Type = Name
-   DictType = '{' <SPACE>? KeyType <SPACE>? ':' <SPACE>? DValType <SPACE>? '}'
-   KeyType = Name 
-   DValType = Name
-   AltName = Name
-   EnumValue =  #'[^\"]+'
-   Sigil = ':'  | '@' | '$'
-   EmptyType = '_'
-   ")
-
-
+  "
+Schema = DefLine (<NL> DefLine)* <NL>?
+DefLine = CompositionLine | DisjunctionLine | EnumLine
+CompositionLine = Definee <SPACE> '=' <SPACE> Element (<SPACE> Element)* <SPACE>?
+DisjunctionLine = Definee <SPACE> '=' <SPACE> Element (<SPACE> '|' <SPACE> Element)+ <SPACE>?
+EnumLine = Definee <SPACE> '=' <SPACE> '\"' EnumValue '\"' (<SPACE> '|' <SPACE> '\"' EnumValue '\"')+ <SPACE>?
+Definee = Name
+<Name> = #'[A-Za-z][A-Za-z0-9_]*'
+NL = #'\n+'
+Element = ((Sigil Type) | TypeMarker) ('/' AltName)?
+SPACE = #'\\s+'
+TypeMarker = Name | ArrayType | MapType | EmptyType
+ArrayType = <'['> (Type | MapType) <']'>
+Type = Name
+MapType =  <'{'> KeyType <SPACE>? <':'> <SPACE>? ValType <'}'>
+KeyType = Name 
+ValType = Name | ArrayType 
+AltName = Name
+EnumValue =  #'[^\"]+'
+Sigil = ':'  | '@' | '$'
+EmptyType = '_'
+")
 
 (defn get-parser []
   (insta/parser schema-grammar))
@@ -38,7 +37,7 @@
     (vector? tree) (or (some #(find-node tag %) (rest tree))
                        (when (= (first tree) :ArrayType)
                          (find-node tag (rest tree)))
-                       (when (= (first tree) :DictType)
+                       (when (= (first tree) :MapType)
                          (find-node tag (rest tree))))
     (seq? tree) (some #(find-node tag %) tree)
     :else nil))
@@ -51,64 +50,89 @@
 (defn process-element [children]
   (let [sigil-node (find-node :Sigil children)
         type-marker-node (find-node :TypeMarker children)
+        type-node (find-node :Type children)
         alt-name-node (find-node :AltName children)
         sigil (when sigil-node (second sigil-node))
         type-name (cond
-                   ;; DictType
-                   (and type-marker-node (= (first (first (rest type-marker-node))) :DictType))
-                   (let [dict-node (first (rest type-marker-node))
-                         key-type-node (find-node :KeyType dict-node)
-                         val-type-node (find-node :DValType dict-node)
+                   ;; MapType (from TypeMarker) - convert to Map<Key,Value> format
+                   (and type-marker-node (= (first (first (rest type-marker-node))) :MapType))
+                   (let [map-node (first (rest type-marker-node))
+                         key-type-node (find-node :KeyType map-node)
+                         val-type-node (find-node :ValType map-node)
                          key-type (when key-type-node (second key-type-node))
-                         val-type (when val-type-node (second val-type-node))]
+                         val-type (cond
+                                  ;; If val-type-node is an ArrayType, convert to Array<Type> format
+                                  (and val-type-node (vector? (second val-type-node)) 
+                                       (= (first (second val-type-node)) :ArrayType))
+                                  (let [array-node (second val-type-node)
+                                        inner-type-node (find-node :Type (rest array-node))
+                                        inner-type (when inner-type-node (second inner-type-node))]
+                                    (str "Array<" inner-type ">"))
+                                  ;; Otherwise use the value directly
+                                  val-type-node (second val-type-node)
+                                  :else nil)]
                      (str "Map<" key-type ", " val-type ">"))
-                   ;; ArrayType
+                   ;; ArrayType (from TypeMarker) - convert to Array<Type> format
                    (and type-marker-node (= (first (first (rest type-marker-node))) :ArrayType))
                    (let [array-node (first (rest type-marker-node))
-                         inner-type (second (find-node :Type (rest array-node)))]
+                         inner-type-node (find-node :Type (rest array-node))
+                         inner-type (when inner-type-node (second inner-type-node))]
                      (str "Array<" inner-type ">"))
-                   ;; EmptyType
+                   ;; EmptyType (from TypeMarker)
                    (and type-marker-node (= (first (first (rest type-marker-node))) :EmptyType))
-                   "_Empty"  ;; This will be replaced with the actual interface name during disjunction processing
-                   ;; Simple Type (string or :Name)
+                   "_Empty"
+                   ;; Simple Type from TypeMarker (string or :Name)
                    (and type-marker-node (string? (second type-marker-node)))
                    (second type-marker-node)
                    (and type-marker-node (= (first (first (rest type-marker-node))) :Name))
                    (second (first (rest type-marker-node)))
+                   ;; Simple Type from (Sigil? Type) structure
+                   (and type-node (string? (second type-node)))
+                   (second type-node)
                    ;; Fallback
                    :else nil)
         alt-name (when alt-name-node (second alt-name-node))
         base-type-name (cond
-                        ;; DictType
-                        (and type-marker-node (= (first (first (rest type-marker-node))) :DictType))
-                        (let [dict-node (first (rest type-marker-node))
-                              key-type-node (find-node :KeyType dict-node)
-                              val-type-node (find-node :DValType dict-node)
+                        ;; MapType (from TypeMarker)
+                        (and type-marker-node (= (first (first (rest type-marker-node))) :MapType))
+                        (let [map-node (first (rest type-marker-node))
+                              key-type-node (find-node :KeyType map-node)
+                              val-type-node (find-node :ValType map-node)
                               key-type (when key-type-node (second key-type-node))
-                              val-type (when val-type-node (second val-type-node))]
+                              val-type (cond
+                                       ;; If val-type-node is an ArrayType, extract the inner type
+                                       (and val-type-node (vector? (second val-type-node)) 
+                                            (= (first (second val-type-node)) :ArrayType))
+                                       (second (find-node :Type (rest (second val-type-node))))
+                                       ;; Otherwise use the value directly
+                                       val-type-node (second val-type-node)
+                                       :else nil)]
                           (str (camel-case key-type) "To" (clojure.string/capitalize (camel-case val-type))))
-                        ;; ArrayType
+                        ;; ArrayType (from TypeMarker)
                         (and type-marker-node (= (first (first (rest type-marker-node))) :ArrayType))
                         (let [array-node (first (rest type-marker-node))]
                           (second (find-node :Type (rest array-node))))
-                        ;; EmptyType
+                        ;; EmptyType (from TypeMarker)
                         (and type-marker-node (= (first (first (rest type-marker-node))) :EmptyType))
-                        "_Empty"  ;; This will be replaced with the actual interface name during disjunction processing
-                        ;; Simple Type (string or :Name)
+                        "_Empty"
+                        ;; Simple Type from TypeMarker (string or :Name)
                         (and type-marker-node (string? (second type-marker-node)))
                         (second type-marker-node)
                         (and type-marker-node (= (first (first (rest type-marker-node))) :Name))
                         (second (first (rest type-marker-node)))
+                        ;; Simple Type from (Sigil? Type) structure
+                        (and type-node (string? (second type-node)))
+                        (second type-node)
                         :else nil)
-        ;; Extract key and value types for DictType
-        key-type (when (and type-marker-node (= (first (first (rest type-marker-node))) :DictType))
-                   (let [dict-node (first (rest type-marker-node))
-                         key-type-node (find-node :KeyType dict-node)]
+        ;; Extract key and value types for MapType
+        key-type (when (and type-marker-node (= (first (first (rest type-marker-node))) :MapType))
+                   (let [map-node (first (rest type-marker-node))
+                         key-type-node (find-node :KeyType map-node)]
                      (when key-type-node (second key-type-node))))
-        value-type (when (and type-marker-node (= (first (first (rest type-marker-node))) :DictType))
-                     (let [dict-node (first (rest type-marker-node))
-                           val-type-node (find-node :DValType dict-node)]
-                       (when val-type-node (second val-type-node))))
+        value-type (when (and type-marker-node (= (first (first (rest type-marker-node))) :MapType))
+                    (let [map-node (first (rest type-marker-node))
+                          val-type-node (find-node :ValType map-node)]
+                      (when val-type-node (second val-type-node))))
         result {:type type-name
                :name (or alt-name (when base-type-name (str (clojure.string/lower-case (subs base-type-name 0 1)) (subs base-type-name 1))))
                :sigil sigil
@@ -226,7 +250,11 @@
                                             :else (str "R" inner-type "Construction"))
                                array-element-rule (str inner-type "ArrayElement")]
                            (str "ArrayConstruction | (<WS>+ (" (str/join " | " [array-element-rule element-rule]) "))*"))
-                         (str/starts-with? element-type "Map<") (str "(MapConstruction | " (clojure.string/capitalize (:name element)) "MapConstruction)")
+                         (str/starts-with? element-type "Map<") 
+                         (let [key-type (:key-type element)
+                               value-type (:value-type element)
+                               map-rule-name (str key-type "To" (clojure.string/capitalize value-type) "MapConstruction")]
+                           (str "(MapConstruction | " map-rule-name ")"))
                          (some #(= (:name %) element-type) enums) (str element-type "Value")
                          (some #(= (:name %) element-type) (map :name disjunctions))
                          (let [disjunction (first (filter #(= (:name %) element-type) disjunctions))
@@ -258,7 +286,11 @@
                                             :else (str inner-type "Construction"))
                                array-element-rule (str inner-type "ArrayElement")]
                            (str "ArrayConstruction | (<WS>+ (" (str/join " | " [array-element-rule element-rule]) "))*"))
-                         (str/starts-with? element-type "Map<") (str "(MapConstruction | " (clojure.string/capitalize (:name element)) "MapConstruction)")
+                         (str/starts-with? element-type "Map<") 
+                         (let [key-type (:key-type element)
+                               value-type (:value-type element)
+                               map-rule-name (str key-type "To" (clojure.string/capitalize value-type) "MapConstruction")]
+                           (str "(MapConstruction | " map-rule-name ")"))
                          (some #(= (:name %) element-type) enums) (str element-type "Value")
                          (some #(= (:name %) element-type) (map :name disjunctions))
                          (let [disjunction (first (filter #(= (:name %) element-type) disjunctions))
@@ -388,6 +420,33 @@
                      g))]
     map-rules))
 
+(defn generate-type-based-map-rules [classes enums disjunctions]
+  "Generate type-based map construction rules (e.g., StringToIntMapConstruction)"
+  (let [map-types (->> (for [class classes
+                             element (:elements class)
+                             :when (str/starts-with? (:type element) "Map<")]
+                         (:type element))
+                       distinct)
+        type-based-rules (for [map-type map-types]
+                          (let [type-parts (str/split (str/replace (str/replace map-type "Map<" "") ">" "") #",")
+                                key-type (str/trim (first type-parts))
+                                value-type (str/trim (second type-parts))
+                                rule-name (str key-type "To" (clojure.string/capitalize value-type) "MapConstruction")
+                                key-rule (cond
+                                         (= key-type "String") "StringLiteral"
+                                         (= key-type "int") "IntLiteral"
+                                         (some #(= (:name %) key-type) enums) (str key-type "Value")
+                                         :else (str key-type "Construction"))
+                                value-rule (cond
+                                           (= value-type "String") "StringLiteral"
+                                           (= value-type "int") "IntLiteral"
+                                           (str/starts-with? value-type "Array<") "ArrayConstruction"
+                                           (str/starts-with? value-type "Map<") "MapConstruction"
+                                           (some #(= (:name %) value-type) enums) (str value-type "Value")
+                                           :else (str value-type "Construction"))]
+                            (str rule-name " = <'{'> (<WS>? " key-rule " <WS>? <':'> <WS>? " value-rule ")* <WS>? <'}'>")))]
+    type-based-rules))
+
 (defn generate-array-grammars [classes enums disjunctions]
   "Generate grammar rules for arrays"
   (let [;; Get all types that can be used in arrays
@@ -511,6 +570,10 @@
         ;; Add map construction rules for each map field (specific after generic)
         map-field-grammars (generate-map-field-grammars classes enums disjunctions)
         grammar-parts (concat grammar-parts map-field-grammars)
+        
+        ;; Add type-based map construction rules
+        type-based-map-rules (generate-type-based-map-rules classes enums disjunctions)
+        grammar-parts (concat grammar-parts type-based-map-rules)
         
         ;; Add enum value rules
         enum-rules (map #(generate-enum-grammar %) enums)
