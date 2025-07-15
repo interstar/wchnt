@@ -523,10 +523,10 @@ EmptyType = '_'
                                            :when (str/starts-with? (:type element) "Map<")]
                                        element)))
         statement-rule (str "Statement = VariableAssignment | (" (str/join " | " all-construction-types) ")")
-        variable-assignment-rule (str "VariableAssignment = '$' VariableName <WS>? '=' <WS>? (StringLiteral | IntLiteral | FloatLiteral | BoolLiteral | VariableReference | (" (str/join " | " all-construction-types) "))")
+        variable-assignment-rule (str "VariableAssignment = <'$'> VariableName <WS>? <'='> <WS>? (StringLiteral | IntLiteral | FloatLiteral | BoolLiteral | VariableReference | (" (str/join " | " all-construction-types) "))")
         single-statement-rules [statement-rule
                                variable-assignment-rule
-                               "VariableReference = '$' #'[a-zA-Z_][a-zA-Z0-9_]*'"
+                               "VariableReference = <'$'> #'[a-zA-Z_][a-zA-Z0-9_]*'"
                                "VariableName = #'[a-zA-Z_][a-zA-Z0-9_]*'"]]
     single-statement-rules))
 
@@ -708,13 +708,16 @@ EmptyType = '_'
                                     final-statement)
                 ;; Extract assignments from assignment statements
                 assignments (map (fn [ast]
-                                  (if (and (vector? ast) (= (first ast) :VariableAssignment))
-                                    (let [[_ & children] ast
-                                          var-name-node (first (filter #(= (first %) :VariableName) children))
-                                          value-node (first (filter #(not= (first %) :VariableName) children))]
-                                      (when (and var-name-node value-node)
-                                        {:name (second var-name-node)
-                                         :construction value-node}))
+                                  (if (and (vector? ast) (= (first ast) :Statement))
+                                    (let [statement-content (second ast)]
+                                      (if (and (vector? statement-content) (= (first statement-content) :VariableAssignment))
+                                        (let [[_ & children] statement-content
+                                              var-name-node (first (filter #(= (first %) :VariableName) children))
+                                              value-node (first (filter #(not= (first %) :VariableName) children))]
+                                          (when (and var-name-node value-node)
+                                            {:name (second var-name-node)
+                                             :construction value-node}))
+                                        nil))
                                     nil))
                                 assignment-statements)
                 valid-assignments (filter some? assignments)]
