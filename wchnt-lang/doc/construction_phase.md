@@ -113,7 +113,7 @@ hoping that the names of the arguments determine which paramater they'll be boun
 
 4) What about collections like arrays and dictionaries?
 
-We'll need a special notation for them. I'm not 100% sure about this. Still thinking.
+We'll need a special notation for them. The current thinking is.
   
 
 Game = [Ball]/balls {int:Direction}/keys
@@ -123,11 +123,10 @@ Direction = "Up" | "Down" | "Left" | "Right"
 Then we have to write something like 
 
 [:Game 
-  [:Array/balls [:Ball 10 10 1 1 5] [:Ball 50 50 1 -1 5] [:Ball 100 100 -1 -1 5]]
-  [:Map/keys {38:Up, 40:Down, 37:Left, 39:Right}]
+  [:Array/Ball [:Ball 10 10 1 1 5] [:Ball 50 50 1 -1 5] [:Ball 100 100 -1 -1 5]]
+  [:Map/{int:Direction} {38:Up, 40:Down, 37:Left, 39:Right}]
 ] 
 
-I'm still not completely committed to this notation. If you can see problems with it, or have good suggestions for alternatives, then I'd like to hear them.
 
 5) Do the object or class relations we represent by sigils in the schema make any difference here? 
 
@@ -146,10 +145,10 @@ Person = Name Address
 
 The construction will look something like
 
-students =
-[:Array [:Person "John Smith" "1 The Avenue"]
-        [:Person "Jane Jones" "43 Long Street"]]
-[:School students]
+$students =
+[:Array/Person [:Person "John Smith" "1 The Avenue"]
+               [:Person "Jane Jones" "43 Long Street"]]
+[:School $students]
 
 In other words, we can subassemblages to names, using the "name =" syntax. These subassemblages are precisely for objects which are not components of another object, and need to be reused in multiple places.
 
@@ -157,8 +156,8 @@ Note that the construction phase of our program is simply a sequence of these co
 
 Using the multi-step construction is not due to the object relationship being association. You could equally construct the assemblage like this
 
-[:School [:Array/students [:Person "John Smith" "1 The Avenue"]
-                          [:Person "Jane Jones" "43 Long Street"]]] 
+[:School [:Array/Person [:Person "John Smith" "1 The Avenue"]
+                        [:Person "Jane Jones" "43 Long Street"]]] 
 
 
 
@@ -172,19 +171,19 @@ Person = Name Address
 and then
 
 [:Town
-[:School [:Array/students [:Person "John Smith" "1 The Avenue"]
-                          [:Person "Jane Jones" "43 Long Street"]]]
-[:FootballTeam [:Array/players [:Person "John Smith" "1 The Avenue"] [:Person "Jane Jones" "43 Long Street"] ]]
+[:School [:Array/Person [:Person "John Smith" "1 The Avenue"]
+                        [:Person "Jane Jones" "43 Long Street"]]]
+[:FootballTeam [:Array/Person [:Person "John Smith" "1 The Avenue"] [:Person "Jane Jones" "43 Long Street"] ]]
 ]
 
 Then the Person objects in the students list would be completely different from the Person objects in the players lists.
 
 OTOH
 
-people = 
-[:Array [:Person "John Smith" "1 The Avenue"]
-        [:Person "Jane Jones" "43 Long Street"]]
-[:Town [:School people] [:FootballTeam people]]
+$people = 
+[:Array/Person [:Person "John Smith" "1 The Avenue"]
+               [:Person "Jane Jones" "43 Long Street"]]
+[:Town [:School $people] [:FootballTeam $people]]
 
 Then the students and players would be the same people.
 
@@ -196,11 +195,15 @@ Context specific components (starting with the colon sigil)
 
 Car = :Engine
 
-are special in the sense that this tells WCHNT that an Engine can only exist as a component of a Car. It can therefore see the Car it is part of by being given a default instance variable or attribute called contextCar. (This name is generated automatically)
+are special in the sense that this tells WCHNT that an Engine can only exist as a component of a Car. It can therefore see the Car it is part of, by being given a default instance variable or attribute called theCar. (This name is generated automatically)
 
-This creates the problem of a circularity during construction. We can't create the Car without passing it an Engine. But we also can't create the Engine without passing it the Car. We will solve this with something like a Promise/Future/Thunk like mechanism. The construction will initially construct the Engine, passing it an object that represents something to become available later. By the time the construction is finished, the Car object will be available. 
+This creates the problem of a circularity during construction. We can't create the Car without passing it an Engine. But we also can't create the Engine without passing it the Car. 
 
-Getting this exactly right is still going to be complicated. But I think conceptually this will work.
+We've now decided that context-specific classes such as engine will get a setContext() method.
+
+Because WCHNT is a real language that compiles to Haxe, we can have the types. So in the case of Engine, the context, theCar is of type Car. And the setContext method takes a Car as argument.
+
+In the construction we create all the objects and then finally wire the hierarchy of contexts.
 
 8) Talking of circularity, there's another issue of circularity which we haven't touched on.
 
@@ -332,6 +335,124 @@ And we'll run through the construction-factory, turning all those calls into Hax
 3. Add variable reference resolution
 4. Add comprehensive tests for the construction phase
 5. Clean up debug output and add proper error handling
+
+---
+
+## Implementation Pipeline
+
+### Overview
+
+The construction phase implementation follows a four-stage pipeline that transforms WCHNT construction syntax into executable Haxe code:
+
+1. **Raw Parsing Stage**: Raw construction text → Instaparse vector AST
+2. **AST Processing Stage**: Instaparse vector AST → Processed AST  
+3. **Object Table Building Stage**: Processed AST → ObjectConstructionTable
+4. **Code Generation Stage**: ObjectConstructionTable → Haxe factory code
+
+### Stage 1: Raw Parsing (`parser.cljc`)
+
+**Input**: Raw construction string (e.g., `"[:Game [:Rect 0 0 800 600] [:Ball 100 100 5]]"`)
+
+**Key Functions**:
+- `parse-construction(schema, construction)` - Main entry point
+- `parse-multi-step-construction(construction, class-info)` - Parses with variable assignments
+- `get-construction-parser(schema-input)` - Generates and returns Instaparse parser
+
+**Output**: Raw Instaparse vector AST (e.g., `[:MultiStepConstruction [:Statement [:GameConstruction ...]]]`)
+
+**Data Flow**: 
+- Raw text → Instaparse hiccup-style vector
+
+### Stage 2: AST Processing (`parser.cljc`)
+
+**Input**: Raw Instaparse vector AST from Stage 1
+
+**Key Functions**:
+- `extract-assignments-from-ast(raw-ast)` - Extracts variable assignments from Instaparse output
+- `extract-final-construction-from-ast(raw-ast)` - Extracts final construction from Instaparse output
+
+**Output**: Processed AST with structure:
+```clojure
+{:type :MultiStepConstruction
+ :assignments [{:name "people" :construction [...]}]
+ :final-construction [...]}
+```
+
+**Data Flow**: 
+- Instaparse vector → Processed map with assignments separated
+
+### Stage 3: Object Table Building (`haxegen.cljc`)
+
+**Input**: Processed AST from Stage 2
+
+**Key Functions**:
+- `walk-ast-and-build-table(ast, class-info, context-relationships, ...)` - Main builder function
+- `collect-ast-nodes(ast, ...)` - First pass: collects all objects with abstract IDs
+- `assign-variable-names(object-table)` - Second pass: assigns variable names (o1, o2, etc.)
+
+**Output**: `ObjectConstructionResult` - a tuple containing:
+```clojure
+[root-id           ; String ID of root object
+ final-counter     ; Integer for next available ID  
+ object-table      ; ObjectConstructionTable (ID -> Entry mapping)
+ variable-mapping] ; Map of variable names to values
+```
+
+**ObjectConstructionTable Structure**:
+```clojure
+{"id-1" {:parent "id-2"     ; Parent object ID (for context)
+         :class "Rect"       ; Class name to instantiate
+         :var-name "o1"      ; Variable name for Haxe code
+         :ast [...]}         ; Original AST node
+ "id-2" {:parent nil
+         :class "Game" 
+         :var-name "o3"
+         :ast [...]}}
+```
+
+### Stage 4: Code Generation (`haxegen.cljc`)
+
+**Input**: ObjectConstructionTable from Stage 3
+
+**Key Functions**:
+- `generate-statements-from-table(object-table, context-relationships, class-info, variable-mapping)` - Main generator
+- `generate-construction-factory(schema, construction, context-relationships)` - Entry point for factory generation
+
+**Output**: Haxe factory function code:
+```haxe
+public static function factory() {
+    var o1 = new Rect(0, 0, 800, 600);
+    var o2 = new Ball(100, 100, 5);
+    var o3 = new Game(o1, o2);
+    o1.setContext(o3);  // Context wiring
+    return o3;
+}
+```
+
+### Data Structure Schemas (`schema.cljc`)
+
+The pipeline uses these validated data structures:
+
+- **ObjectConstructionEntry**: Individual object construction details
+- **ObjectConstructionTable**: Complete mapping of object IDs to construction details  
+- **ObjectConstructionResult**: Complete result from object table building stage
+
+### Key Design Principles
+
+1. **Separation of Concerns**: Each stage has a single responsibility
+2. **Rich Data Structures**: ObjectConstructionTable contains all information needed for code generation
+3. **Context Awareness**: Parent-child relationships are tracked for context wiring
+4. **Variable Management**: Automatic variable name assignment and dependency ordering
+5. **Validation**: Malli schemas ensure data structure integrity throughout the pipeline
+
+### Error Handling
+
+- **Stage 1**: Syntax errors from Instaparse parsing
+- **Stage 2**: Structural errors in AST processing  
+- **Stage 3**: Object table building errors
+- **Stage 4**: Code generation errors and context relationship issues
+
+Each stage returns structured results with `:success`/`:error` keys for proper error propagation.
 
 
 

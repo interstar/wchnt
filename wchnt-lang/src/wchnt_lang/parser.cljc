@@ -1,7 +1,11 @@
 (ns wchnt-lang.parser
   (:require [instaparse.core :as insta]
             [clojure.string :as str]
+            [wchnt-lang.pipeline :as P]
             [wchnt-lang.schema :as schema]))
+
+;; Grammar for splitting construction statements
+
 
 (def schema-grammar
   "
@@ -27,7 +31,8 @@ Sigil = ':'  | '@' | '$'
 EmptyType = '_'
 ")
 
-(defn get-parser []
+(defn get-schema-parser []
+  "Get the schema parser for parsing WCHNT schema definitions"
   (insta/parser schema-grammar))
 
 
@@ -140,17 +145,13 @@ EmptyType = '_'
                :value-type value-type}]
     result))
 
-(defn parse-input [input]
-  (let [parse-result ((get-parser) input)]
+(defn schema-wchnt->schema-ast [input]
+  (let [parse-result ((get-schema-parser) input)]
     (if (insta/failure? parse-result)
-      (schema/syntax-error (str (insta/get-failure parse-result)))
-      (schema/syntax-success parse-result))))
+      (P/fail-cargo (str "Schema parsing failed: " (insta/get-failure parse-result)))
+      (P/success-cargo parse-result))))
 
-(defn split-wchnt-phases [input]
-  "Split a WCHNT program into schema and construction phases based on explicit markers."
-  (let [[schema construction-block] (str/split input #"## Construction")]
-    {:schema (-> schema (str/replace #"## Schema" "") str/trim)
-     :construction (if construction-block (str/trim construction-block) "")}))
+
 
 (defn extract-class-info [ast]
   "Extract class information from parsed schema AST"
@@ -216,11 +217,20 @@ EmptyType = '_'
        :disjunctions @disjunction-list
        :interface-implementers @interface-implementers})))
 
+;; Platform literal type management
+(defn primitive-type->literal-rule [type-name]
+  "Convert a primitive type name to its corresponding grammar literal rule name"
+  (case type-name
+    "String" "StringLiteral"
+    "Int" "IntLiteral"
+    "Float" "FloatLiteral"
+    "Bool" "BoolLiteral"
+    nil))
+
 (defn element-type-to-rule [element-type enums]
   "Convert an element type to its corresponding grammar rule name"
   (cond
-    (= element-type "String") "StringLiteral"
-    (= element-type "int") "IntLiteral"
+    (primitive-type->literal-rule element-type) (primitive-type->literal-rule element-type)
     (str/starts-with? element-type "Array<") 
     (let [inner-type (str/replace (str/replace element-type "Array<" "") ">" "")
           inner-rule (element-type-to-rule inner-type enums)]
@@ -235,13 +245,11 @@ EmptyType = '_'
   (for [element elements]
     (let [element-type (:type element)
           expected-rule (cond
-                         (= element-type "String") "StringLiteral"
-                         (= element-type "int") "IntLiteral"
+                         (primitive-type->literal-rule element-type) (primitive-type->literal-rule element-type)
                          (str/starts-with? element-type "Array<") 
                          (let [inner-type (str/replace (str/replace element-type "Array<" "") ">" "")
                                element-rule (cond
-                                            (= inner-type "String") "StringLiteral"
-                                            (= inner-type "int") "IntLiteral"
+                                            (primitive-type->literal-rule inner-type) (primitive-type->literal-rule inner-type)
                                             (some #(= (:name %) inner-type) enums) (str inner-type "Value")
                                             (some #(= (:name %) inner-type) (map :name disjunctions))
                                             (let [disjunction (first (filter #(= (:name %) inner-type) disjunctions))
@@ -271,13 +279,11 @@ EmptyType = '_'
   (for [element elements]
     (let [element-type (:type element)
           expected-rule (cond
-                         (= element-type "String") "StringLiteral"
-                         (= element-type "int") "IntLiteral"
+                         (primitive-type->literal-rule element-type) (primitive-type->literal-rule element-type)
                          (str/starts-with? element-type "Array<") 
                          (let [inner-type (str/replace (str/replace element-type "Array<" "") ">" "")
                                element-rule (cond
-                                            (= inner-type "String") "StringLiteral"
-                                            (= inner-type "int") "IntLiteral"
+                                            (primitive-type->literal-rule inner-type) (primitive-type->literal-rule inner-type)
                                             (some #(= (:name %) inner-type) enums) (str inner-type "Value")
                                             (some #(= (:name %) inner-type) (map :name disjunctions))
                                             (let [disjunction (first (filter #(= (:name %) inner-type) disjunctions))
@@ -333,8 +339,7 @@ EmptyType = '_'
         inner-type (str/replace (str/replace element-type "Array<" "") ">" "")
         ;; Determine what construction rule to use for the inner type
         element-rule (cond
-                      (= inner-type "String") "StringLiteral"
-                      (= inner-type "int") "IntLiteral"
+                      (primitive-type->literal-rule inner-type) (primitive-type->literal-rule inner-type)
                       (str/starts-with? inner-type "Array<") 
                       (let [nested-inner-type (str/replace (str/replace inner-type "Array<" "") ">" "")
                             nested-rule (element-type-to-rule nested-inner-type enums)]
@@ -362,13 +367,11 @@ EmptyType = '_'
         value-type (str/trim (second type-parts))
         ;; Determine construction rules for key and value types
         key-rule (cond
-                  (= key-type "String") "StringLiteral"
-                  (= key-type "int") "IntLiteral"
+                  (primitive-type->literal-rule key-type) (primitive-type->literal-rule key-type)
                   (some #(= (:name %) key-type) enums) (str key-type "Value")
                   :else (str key-type "Construction"))
         value-rule (cond
-                    (= value-type "String") "StringLiteral"
-                    (= value-type "int") "IntLiteral"
+                    (primitive-type->literal-rule value-type) (primitive-type->literal-rule value-type)
                     (str/starts-with? value-type "Array<") 
                     (let [inner-type (str/replace (str/replace value-type "Array<" "") ">" "")
                           inner-rule (element-type-to-rule inner-type enums)]
@@ -433,13 +436,11 @@ EmptyType = '_'
                                 value-type (str/trim (second type-parts))
                                 rule-name (str key-type "To" (clojure.string/capitalize value-type) "MapConstruction")
                                 key-rule (cond
-                                         (= key-type "String") "StringLiteral"
-                                         (= key-type "int") "IntLiteral"
+                                         (primitive-type->literal-rule key-type) (primitive-type->literal-rule key-type)
                                          (some #(= (:name %) key-type) enums) (str key-type "Value")
                                          :else (str key-type "Construction"))
                                 value-rule (cond
-                                           (= value-type "String") "StringLiteral"
-                                           (= value-type "int") "IntLiteral"
+                                           (primitive-type->literal-rule value-type) (primitive-type->literal-rule value-type)
                                            (str/starts-with? value-type "Array<") "ArrayConstruction"
                                            (str/starts-with? value-type "Map<") "MapConstruction"
                                            (some #(= (:name %) value-type) enums) (str value-type "Value")
@@ -486,13 +487,11 @@ EmptyType = '_'
                                   key-type (str/trim (first type-parts))
                                   value-type (str/trim (second type-parts))
                                   key-rule (cond
-                                            (= key-type "String") "StringLiteral"
-                                            (= key-type "int") "IntLiteral"
+                                            (primitive-type->literal-rule key-type) (primitive-type->literal-rule key-type)
                                             (some #(= (:name %) key-type) enums) (str key-type "Value")
                                             :else (str key-type "Construction"))
                                   value-rule (cond
-                                              (= value-type "String") "StringLiteral"
-                                              (= value-type "int") "IntLiteral"
+                                              (primitive-type->literal-rule value-type) (primitive-type->literal-rule value-type)
                                               (str/starts-with? value-type "Array<") "ArrayConstruction"
                                               (str/starts-with? value-type "Map<") "MapConstruction"
                                               (some #(= (:name %) value-type) enums) (str value-type "Value")
@@ -512,8 +511,8 @@ EmptyType = '_'
     {:map-element-rules map-element-rules
      :map-construction-rule map-construction-rule}))
 
-(defn generate-multi-step-rules [classes]
-  "Generate grammar rules for multi-step constructions"
+(defn generate-single-statement-rules [classes]
+  "Generate grammar rules for single statements (assignment OR construction)"
   (let [all-construction-types (concat 
                                 (map #(str (:name %) "Construction") classes)
                                 ["ArrayConstruction"]  ;; Include the generic array construction
@@ -524,18 +523,19 @@ EmptyType = '_'
                                            :when (str/starts-with? (:type element) "Map<")]
                                        element)))
         statement-rule (str "Statement = VariableAssignment | (" (str/join " | " all-construction-types) ")")
-        variable-assignment-rule (str "VariableAssignment = '$' VariableName <WS>? '=' <WS>? (StringLiteral | IntLiteral | VariableReference | (" (str/join " | " all-construction-types) "))")
-        multi-step-rules ["MultiStepConstruction = (WS? Statement WS? (<'.'> WS?)*)*"
-                         statement-rule
-                         variable-assignment-rule
-                         "VariableReference = '$' #'[a-zA-Z_][a-zA-Z0-9_]*'"
-                         "VariableName = #'[a-zA-Z_][a-zA-Z0-9_]*'"]]
-    multi-step-rules))
+        variable-assignment-rule (str "VariableAssignment = '$' VariableName <WS>? '=' <WS>? (StringLiteral | IntLiteral | FloatLiteral | BoolLiteral | VariableReference | (" (str/join " | " all-construction-types) "))")
+        single-statement-rules [statement-rule
+                               variable-assignment-rule
+                               "VariableReference = '$' #'[a-zA-Z_][a-zA-Z0-9_]*'"
+                               "VariableName = #'[a-zA-Z_][a-zA-Z0-9_]*'"]]
+    single-statement-rules))
 
 (defn generate-common-rules []
   "Generate common grammar rules"
   ["WS = #'[\\s\\n,]+'"
    "IntLiteral = #'\\d+'"
+   "FloatLiteral = #'\\d+\\.\\d+'"
+   "BoolLiteral = 'true' | 'false'"
    "StringLiteral = '\"' #'[^\"]*' '\"'"
    "LocalEmpty = '_'"
    "TypeName = #'[a-zA-Z][a-zA-Z0-9]*'"
@@ -588,192 +588,142 @@ EmptyType = '_'
                                 g))
         grammar-parts (concat grammar-parts disjunction-grammars)
         
-        ;; Add multi-step construction rules
-        multi-step-rules (generate-multi-step-rules classes)
-        grammar-parts (concat grammar-parts multi-step-rules)
+        ;; Add single statement rules
+        single-statement-rules (generate-single-statement-rules classes)
+        grammar-parts (concat grammar-parts single-statement-rules)
         
         ;; Add common rules
         common-rules (generate-common-rules)
         grammar-parts (concat grammar-parts common-rules)
         
-        ;; Join all parts - MultiStepConstruction will be the start symbol
+        ;; Join all parts - Statement will be the start symbol
         composed-grammar (str/join "\n" grammar-parts)]
     composed-grammar))
 
-(defn schema-to-construction-grammar-impl [schema-input]
+
+
+(defn schema-to-construction-grammar [schema-ast]
   "Implementation of schema-to-construction-grammar without exception handling"
-  (let [parse-result ((get-parser) schema-input)]
-    (if (insta/failure? parse-result)
-      (schema/syntax-error (str "Schema parsing failed: " (insta/get-failure parse-result)))
-      (let [class-info (extract-class-info parse-result)
-            grammar-string (generate-construction-grammar class-info)]
-        (schema/syntax-success {:grammar grammar-string
-                                :class-info class-info})))))
+  (let [class-info (extract-class-info schema-ast)
+        grammar-string (generate-construction-grammar class-info)]
+    (P/success-cargo
+     {:grammar grammar-string
+      :class-info class-info})))
 
-(defn schema-to-construction-grammar [schema-input]
-  "Convert WCHNT schema to construction grammar"
-  #?(:clj
-     (try
-       (schema-to-construction-grammar-impl schema-input)
-       (catch Exception e
-         (schema/syntax-error (str "Error generating construction grammar: " (.getMessage e)))))
-     :cljs
-     (try
-       (schema-to-construction-grammar-impl schema-input)
-       (catch :default e
-         (schema/syntax-error (str "Error generating construction grammar: " (.-message e)))))))
 
-(defn walk-and-resolve [node context classes interface-to-empty]
-  "Helper function to walk AST and resolve LocalEmpty nodes"
-  (cond
-    (string? node) node
-    (vector? node)
-    (let [[tag & children] node]
-      (case tag
-        :LocalEmpty
-        (let [expected-type context
-              empty-class (get interface-to-empty expected-type)]
-          (if empty-class
-            [:LocalEmpty empty-class] ; Keep LocalEmpty tag but add resolved class
-            [:LocalEmpty "Unknown"])) ; Fallback if no empty class found
-        ;; For construction nodes, pass context to children
-        (if (str/ends-with? (name tag) "Construction")
-          (let [class-name (str/replace (name tag) "Construction" "")
-                class-info (first (filter #(= (:name %) class-name) classes))
-                element-types (map :type (:elements class-info))
-                resolved-children (map-indexed 
-                                   (fn [idx child] 
-                                     (walk-and-resolve child (nth element-types idx nil) classes interface-to-empty))
-                                   children)]
-            (vec (cons tag resolved-children)))
-          ;; For other nodes, just walk children without context
-          (vec (cons tag (map #(walk-and-resolve % nil classes interface-to-empty) children)))))
-    (seq? node) (map #(walk-and-resolve % context classes interface-to-empty) node)
-    :else node)))
 
-(defn resolve-local-empty [ast class-info]
-  "Post-process AST to replace LocalEmpty nodes with appropriate empty classes"
-  (let [classes (:classes class-info)
-        interface-implementers (:interface-implementers class-info)
-        ;; Build lookup: interface-name -> empty-class-name
-        interface-to-empty (into {} 
-                                (for [class classes
-                                      :when (= (:type class) :empty)
-                                      :when (seq (:implements class))]
-                                  [(:implements class) (:name class)]))]
-    (walk-and-resolve ast nil classes interface-to-empty)))
 
-(defn resolve-variable-references [ast variable-assignments class-info]
-  "Walk through AST and replace variable references with their actual values"
-  (letfn [(walk-and-resolve [node]
-            (cond
-              (string? node) 
-              ;; Check if this string is a variable name
-              (if (contains? variable-assignments node)
-                (do
-              
-                  (get variable-assignments node))
-                node)
-              (vector? node)
-              (let [[tag & children] node]
-                (vec (cons tag (map walk-and-resolve children))))
-              (seq? node) 
-              (map walk-and-resolve node)
-              :else node))]
-    (walk-and-resolve ast)))
 
 (defn split-statements [input-string]
-  "Split input string into statements using full-stop as separator, treating newlines as whitespace.
-   Ignores full-stops inside quoted strings."
-  (let [chars (vec input-string)
-        len (count chars)]
-    (loop [i 0
-           current-statement []
-           statements []
-           in-string false
-           escape-next false]
-      (if (>= i len)
-        ;; End of input - add final statement if not empty
-        (let [final-statements (if (seq current-statement)
-                                (conj statements (str/trim (str/join current-statement)))
-                                statements)]
-          (filter seq final-statements))
-        (let [char (nth chars i)]
-          (cond
-            ;; Handle escape sequences
-            escape-next
-            (recur (inc i) (conj current-statement char) statements in-string false)
-            
-            ;; Handle string boundaries
-            (= char \")
-            (recur (inc i) (conj current-statement char) statements (not in-string) false)
-            
-            ;; Handle full-stop (statement separator) - only if not in a string
-            (and (= char \.) (not in-string))
-            (let [statement (str/trim (str/join current-statement))]
-              (if (seq statement)
-                (recur (inc i) [] (conj statements statement) false false)
-                (recur (inc i) [] statements false false)))
-            
-            ;; All other characters
-            :else
-            (recur (inc i) (conj current-statement char) statements in-string (= char \\))))))))
+  "Split input string into statements. A statement ends at any full stop not in a string and not between two digits.
+   If there are no full stops, treat the entire string as a single statement."
+  (println "DEBUG: split-statements input:" (pr-str input-string))
+  (let [trimmed-input (str/trim input-string)]
+    (if (str/blank? trimmed-input)
+      []
+      (let [chars (vec trimmed-input)
+            len (count chars)]
+        (loop [i 0
+               current-statement []
+               statements []
+               in-string false
+               escape-next false
+               found-full-stop false]
+          (if (>= i len)
+            ;; End of input - add final statement if not empty
+            (let [final-statements (if (seq current-statement)
+                                    (conj statements (str/trim (apply str current-statement)))
+                                    statements)]
+              (let [result (filter seq (map str/trim final-statements))]
+                (println "DEBUG: split-statements result:" (pr-str result))
+                result))
+            (let [char (nth chars i)]
+              (cond
+                ;; Handle escape sequences
+                escape-next
+                (recur (inc i) (conj current-statement char) statements in-string false found-full-stop)
+                
+                ;; Handle string boundaries
+                (= char \")
+                (recur (inc i) (conj current-statement char) statements (not in-string) false found-full-stop)
+                
+                ;; Handle full-stop (statement separator) - only if not in a string and not between two digits
+                (and (= char \.) (not in-string))
+                (let [prev-char (when (> i 0) (nth chars (dec i)))
+                      next-char (when (< (inc i) len) (nth chars (inc i)))
+                      is-between-digits (and prev-char next-char (Character/isDigit prev-char) (Character/isDigit next-char))]
+                  (if is-between-digits
+                    ;; This is a decimal point in a float, not a statement separator
+                    (recur (inc i) (conj current-statement char) statements in-string false found-full-stop)
+                    ;; This is a statement separator
+                    (let [statement (str/trim (apply str current-statement))
+                          ;; skip whitespace after the dot
+                          next-i (loop [j (inc i)]
+                                   (if (and (< j len) (Character/isWhitespace (nth chars j)))
+                                     (recur (inc j))
+                                     j))]
+                      (recur next-i [] (if (seq statement) (conj statements statement) statements) false false true))))
+                
+                ;; All other characters
+                :else
+                (recur (inc i) (conj current-statement char) statements in-string (= char \\) found-full-stop)))))))))
 
 
 
 
 
+(defn parse-construction-pure [{:keys [schema-ast construction]}]
+  "Pure transformation: parse construction using split-statements approach.
+  Input: {:schema-ast schema-ast :construction construction-string}
+  Output: parsed construction AST with assignments and final construction"
+  (let [class-info (extract-class-info schema-ast)
+        grammar-string (generate-construction-grammar class-info)
+        statement-parser (insta/parser grammar-string :start :Statement)
+        statements (split-statements construction)]
+    (P/run statements
+      ;; Validate we have at least one statement
+      (P/validator #(not (empty? %)) "No statements found in construction")
+      
+      ;; Parse each statement individually
+      (P/processor 
+        (fn [statements]
+          (map-indexed 
+            (fn [idx statement]
+              (let [parse-result (statement-parser statement)]
+                (if (insta/failure? parse-result)
+                  (P/fail-cargo (str "Failed to parse statement " (inc idx) ": " (insta/get-failure parse-result)))
+                  parse-result)))
+            statements))
+        "Parse each statement")
+      
+      ;; Extract assignments and final construction
+      (P/processor 
+        (fn [successful-parses]
+          (let [;; All but the last are assignments
+                assignment-statements (butlast successful-parses)
+                final-statement (last successful-parses)
+                ;; Extract the actual construction from the statement
+                final-construction (if (and (vector? final-statement) (= (first final-statement) :Statement))
+                                    (second final-statement) ; Get the construction node from [:Statement construction]
+                                    final-statement)
+                ;; Extract assignments from assignment statements
+                assignments (map (fn [ast]
+                                  (if (and (vector? ast) (= (first ast) :VariableAssignment))
+                                    (let [[_ & children] ast
+                                          var-name-node (first (filter #(= (first %) :VariableName) children))
+                                          value-node (first (filter #(not= (first %) :VariableName) children))]
+                                      (when (and var-name-node value-node)
+                                        {:name (second var-name-node)
+                                         :construction value-node}))
+                                    nil))
+                                assignment-statements)
+                valid-assignments (filter some? assignments)]
+            {:type :MultiStepConstruction
+             :assignments valid-assignments
+             :final-construction final-construction}))
+        "Extract assignments and final construction")
+        (P/show "The final construction")
+        )    
+        ))
 
 
-(defn parse-multi-step-construction [construction-input class-info]
-  "Parse multi-step construction with variable assignments and references"
-  (let [grammar-string (generate-construction-grammar class-info)
-        construction-parser (insta/parser grammar-string :start :Statement)
-        statements (split-statements construction-input)
-        assignments (atom [])
-        final-construction (atom nil)]
-    
-    ;; Parse each statement individually
-    (loop [remaining-statements statements]
-      (if (empty? remaining-statements)
-        ;; All statements parsed successfully
-        (let [structured-ast {:type :MultiStepConstruction
-                             :assignments @assignments
-                             :final-construction @final-construction}]
-          (schema/syntax-success structured-ast))
-        (let [statement (first remaining-statements)
-              parse-result (construction-parser statement)]
-          (if (insta/failure? parse-result)
-            (schema/syntax-error (str "Failed to parse statement: " statement " - " (insta/get-failure parse-result)))
-            (do
-              ;; Process the parsed statement
-              (let [statement-content (second parse-result)]
-                (if (= (first statement-content) :VariableAssignment)
-                  ;; Handle variable assignment
-                  (let [[_ _ [_ var-name] _ construction-ast] statement-content]
-                    (swap! assignments conj {:name var-name :construction construction-ast}))
-                  ;; Handle final construction
-                  (reset! final-construction statement-content)))
-              ;; Continue with remaining statements
-              (recur (rest remaining-statements)))))))))
-
-(defn parse-construction-impl [schema-input construction-input]
-  "Implementation of parse-construction without exception handling"
-  (let [parse-result ((get-parser) schema-input)]
-    (if (insta/failure? parse-result)
-      (schema/syntax-error (str "Schema parsing failed: " (insta/get-failure parse-result)))
-      (let [class-info (extract-class-info parse-result)]
-        (parse-multi-step-construction construction-input class-info)))))
-
-(defn parse-construction [schema-input construction-input]
-  "Parse construction syntax using schema-generated grammar"
-  #?(:clj
-     (try
-       (parse-construction-impl schema-input construction-input)
-       (catch Exception e
-         (schema/syntax-error (str "Error parsing construction: " (.getMessage e)))))
-     :cljs
-     (try
-       (parse-construction-impl schema-input construction-input)
-       (catch :default e
-         (schema/syntax-error (str "Error parsing construction: " (.-message e)))))))

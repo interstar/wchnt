@@ -2,22 +2,32 @@
   (:require [clojure.string :as str]
             [instaparse.core :as insta]
             [wchnt-lang.parser :as parser]
+            [wchnt-lang.pipeline :as P]
             [wchnt-lang.schema :as schema]))
 
 ;; Import find-node from parser
 (def find-node wchnt-lang.parser/find-node)
 
+
+(defn primitive-type->to-construction-expr [field-name field-type]
+  "Generate the toConstruction expression for a primitive type field"
+  (case field-type
+    "String" (str "\"\" + this." field-name " + \"\"")
+    "Int" (str "this." field-name)
+    "Float" (str "this." field-name)
+    "Bool" (str "this." field-name)
+    nil))
+
 ;; Helper to convert parsed type ASTs to Haxe type strings
 (defn type-ast->haxe-type [t]
   (cond
-    (string? t) (if (= t "int") "int" t)
+    (string? t) t
     (and (vector? t) (= (first t) :ArrayType))
     (let [type-node (find-node :Type (rest t))
           inner-type (when type-node (second type-node))]
       (str "Array<" (type-ast->haxe-type inner-type) ">"))
     (and (vector? t) (= (first t) :Type))
-    (let [type-name (second t)]
-      (if (= type-name "int") "int" type-name))
+    (second t)
     (and (vector? t) (= (first t) :MapType))
     (let [key-type-node (find-node :KeyType (rest t))
           val-type-node (find-node :ValType (rest t))
@@ -75,12 +85,11 @@
   (for [element elements]
     (let [field-name (:name element)
           field-type (type-ast->haxe-type (:type element))]
+      (or (primitive-type->to-construction-expr field-name field-type)
       (cond
-        (= field-type "String") (str "\"\" + this." field-name " + \"\"")
-        (= field-type "Int") (str "this." field-name)
         (str/starts-with? field-type "Array<") (str "this." field-name ".toConstruction(depth + 1)")
         (str/starts-with? field-type "Map<") (str "this." field-name ".toConstruction(depth + 1)")
-        :else (str "this." field-name ".toConstruction(depth + 1)")))))
+            :else (str "this." field-name ".toConstruction(depth + 1)"))))))
 
 (defn generate-to-construction-method [class-name to-construction-parts]
   "Generate the toConstruction method string with proper string concatenation"
@@ -224,25 +233,9 @@
         (vec (mapcat #(walk-tree % interface-implementers context-relationships) (filter vector? children)))))
     :else []))
 
-(defn compile-to-haxe [input]
-  (try
-    (let [parse-result ((parser/get-parser) input)
-          ;; First pass: collect interface-to-implementers mapping from disjunction lines
-          interface-implementers (into {} (for [line (str/split-lines input)
-                                               :when (str/includes? line "|")]
-                                           (let [parts (str/split (str/trim line) #"\s*=\s*")
-                                                 interface-name (first parts)
-                                                 implementers (str/split (second parts) #"\s*\|\s*")]
-                                             [interface-name (set implementers)])))
-          ;; Build context relationships
-          context-relationships (build-context-relationships parse-result)]
-      (if (insta/failure? parse-result)
-        (schema/syntax-error (str input " is not a valid string in wchnt: " (insta/get-failure parse-result)))
-        (let [classes (walk-tree parse-result interface-implementers context-relationships)
-              ;; Check if schema contains arrays
-              has-arrays (str/includes? input "[")
-              ;; Add array toConstruction extension only if needed
-              array-extension "// Extension methods for Array toConstruction
+(defn array-extensions-class []
+  "Return the Haxe code for ArrayExtensions class for toConstruction."
+  "// Extension methods for Array toConstruction
 class ArrayExtensions {
     public static function toConstruction<T>(arr: Array<T>, depth: Int = 0): String {
         var ind = \"\" + '  '.repeat(depth);
@@ -260,14 +253,33 @@ class ArrayExtensions {
         result += nl + ind + ']';
         return result;
     }
-}"]
-          (schema/success-result (if has-arrays 
-                                   (conj classes array-extension)
-                                   classes)))))
-    (catch #?(:clj Exception :cljs :default) e
-      (schema/syntax-error (str "Error during compilation: " e)))))
+}")
+
+(defn schema-ast->haxe [schema-ast]
+  "Convert schema AST to Haxe classes. Returns a string of Haxe code."
+  (let [interface-implementers {}
+        context-relationships (build-context-relationships schema-ast)
+        classes (walk-tree schema-ast interface-implementers context-relationships)
+        has-arrays (letfn [(has-array-type? [node]
+                              (cond
+                                (vector? node)
+                                (let [[tag & children] node]
+                                  (or (= tag :ArrayType)
+                                      (some has-array-type? children)))
+                                :else false))]
+                     (has-array-type? schema-ast))
+        array-extension (array-extensions-class)
+        all-classes (if has-arrays (conj classes array-extension) classes)
+                joined-classes (str/join "\n\n" all-classes)]
+    joined-classes))
 
 (defn int-literal->haxe [children]
+  (str (first children)))
+
+(defn float-literal->haxe [children]
+  (str (first children)))
+
+(defn bool-literal->haxe [children]
   (str (first children)))
 
 (defn string-literal->haxe [children]
@@ -424,6 +436,14 @@ class ArrayExtensions {
           ;; Handle IntLiteral
           (= tag :IntLiteral)
           (int-literal->haxe children)
+
+          ;; Handle FloatLiteral
+          (= tag :FloatLiteral)
+          (float-literal->haxe children)
+
+          ;; Handle BoolLiteral
+          (= tag :BoolLiteral)
+          (bool-literal->haxe children)
 
           ;; Handle VariableReference
           (= tag :VariableReference)
@@ -636,60 +656,67 @@ class ArrayExtensions {
   (let [parse-result (parser/parse-construction schema-input construction-input)]
     (if (:success parse-result)
       (let [ast (:ast parse-result)
-            class-info (parser/extract-class-info ((parser/get-parser) schema-input))
+            class-info (parser/extract-class-info ((parser/get-schema-parser) schema-input))
             ;; Build context relationships from schema if not provided
-            actual-context-relationships (if (empty? context-relationships)
-                                          (build-context-relationships ((parser/get-parser) schema-input))
-                                          context-relationships)]
+            actual-context-relationships
+            (if (empty? context-relationships)
+              (build-context-relationships ((parser/get-schema-parser) schema-input))
+              context-relationships)]
         
         ;; Handle multi-step construction AST
         (if (= (:type ast) :MultiStepConstruction)
           (let [;; Process assignments first and build variable mapping
-                assignment-results (loop [assignments (:assignments ast)
-                                        results []
-                                        global-counter 1]
-                                    (if (empty? assignments)
-                                      results
-                                      (let [assignment (first assignments)
-                                            result (walk-ast-and-build-table (:construction assignment) class-info actual-context-relationships global-counter nil {} {})
-                                            next-counter (nth result 1)]
-                                        (recur (rest assignments)
-                                               (conj results result)
-                                               next-counter))))
+                assignment-results
+                (loop [assignments (:assignments ast)
+                       results []
+                       global-counter 1]
+                  (if (empty? assignments)
+                    results
+                    (let [assignment (first assignments)
+                          result (walk-ast-and-build-table
+                                  (:construction assignment)
+                                  class-info actual-context-relationships
+                                  global-counter nil {} {})
+                          next-counter (nth result 1)]
+                      (recur (rest assignments)
+                             (conj results result)
+                             next-counter))))
                 assignment-tables (map #(nth % 2) assignment-results)
                 assignment-mappings (map #(nth % 3) assignment-results)
                 combined-assignment-table (apply merge assignment-tables)
                 combined-variable-mapping (apply merge assignment-mappings)
                 
                 ;; Simple sequential mapping: first assignment gets o1, second gets o2, etc.
-                variable-name-mapping (into {} 
-                                          (for [[idx assignment] (map-indexed vector (:assignments ast))]
-                                            (let [var-name (:name assignment)
-                                                  var-num (inc idx)]
-                                              [(str "$" var-name) (str "o" var-num)])))
+                variable-name-mapping
+                (into {} 
+                      (for [[idx assignment] (map-indexed vector (:assignments ast))]
+                        (let [var-name (:name assignment)
+                              var-num (inc idx)]
+                          [(str "$" var-name) (str "o" var-num)])))
                 
                 ;; Process final construction with the variable mapping
                 [final-var final-counter final-table final-mapping] 
-                (walk-ast-and-build-table (:final-construction ast) class-info actual-context-relationships 
-                                         (inc (count combined-assignment-table)) nil combined-assignment-table variable-name-mapping)
+                (walk-ast-and-build-table
+                 (:final-construction ast) class-info actual-context-relationships 
+                 (inc (count combined-assignment-table)) nil combined-assignment-table variable-name-mapping)
                 
                 ;; Generate statements from the complete table
                 {:keys [construction-stmts context-stmts]} (generate-statements-from-table final-table actual-context-relationships class-info variable-name-mapping)
                 
                 ;; Get the root object from the final construction
                 root-var (let [final-construction (:final-construction ast)
-                              root-entry (first (filter #(= (:ast (val %)) final-construction) final-table))]
-                          (if root-entry
-                            (:var-name (val root-entry))
-                            (apply max-key #(Integer/parseInt (subs % 1)) 
-                                   (map #(:var-name (val %)) final-table))))
+                               root-entry (first (filter #(= (:ast (val %)) final-construction) final-table))]
+                           (if root-entry
+                             (:var-name (val root-entry))
+                             (apply max-key #(Integer/parseInt (subs % 1)) 
+                                    (map #(:var-name (val %)) final-table))))
                 
                 factory-code (str "public static function factory() {\n"
-                                 "    " (str/join "\n    " construction-stmts) "\n"
+                                  "  " (str/join "\n    " construction-stmts) "\n"
                                  (when (seq context-stmts) (str "    " (str/join "\n    " context-stmts) "\n"))
                                  "    return " root-var ";\n"
                                  "}")]
-            (schema/syntax-success ast {:haxe-code factory-code}))
+            (P/success-cargo factory-code))
           
           ;; Handle single construction AST (legacy)
           (let [;; Build object table
@@ -711,7 +738,7 @@ class ArrayExtensions {
                                  (when (seq context-stmts) (str "    " (str/join "\n    " context-stmts) "\n"))
                                  "    return " root-var ";\n"
                                  "}")]
-            (schema/syntax-success ast {:haxe-code factory-code}))))
+            (P/success-cargo factory-code))))
       parse-result)))
 
 (defn generate-construction-factory [schema-input construction-input context-relationships]
@@ -720,9 +747,78 @@ class ArrayExtensions {
      (try
        (generate-construction-factory-impl schema-input construction-input context-relationships)
        (catch Exception e
-         (schema/syntax-error (str "Error generating factory: " (.getMessage e)))))
+         (P/fail-cargo (str "Error generating factory: " (.getMessage e)))))
      :cljs
      (try
        (generate-construction-factory-impl schema-input construction-input context-relationships)
        (catch :default e
-         (schema/syntax-error (str "Error generating factory: " (.-message e)))))))
+         (P/fail-cargo (str "Error generating factory: " (.-message e)))))))
+
+(defn- haxe-factory-from-multistep [ast class-info context-relationships]
+  (let [assignment-results (loop [assignments (:assignments ast)
+                                  results []
+                                  global-counter 1]
+                             (if (empty? assignments)
+                               results
+                               (let [assignment (first assignments)
+                                     result (walk-ast-and-build-table (:construction assignment) class-info context-relationships global-counter nil {} {})
+                                     next-counter (nth result 1)]
+                                 (recur (rest assignments)
+                                        (conj results result)
+                                        next-counter))))
+        assignment-tables (map #(nth % 2) assignment-results)
+        assignment-mappings (map #(nth % 3) assignment-results)
+        combined-assignment-table (apply merge assignment-tables)
+        combined-variable-mapping (apply merge assignment-mappings)
+        variable-name-mapping (into {}
+                                   (for [[idx assignment] (map-indexed vector (:assignments ast))]
+                                     [(str "$" (:name assignment)) (str "o" (inc idx))]))
+        [final-var final-counter final-table final-mapping]
+        (walk-ast-and-build-table (:final-construction ast) class-info context-relationships
+                                 (inc (count combined-assignment-table)) nil combined-assignment-table variable-name-mapping)
+        {:keys [construction-stmts context-stmts]} (generate-statements-from-table final-table context-relationships class-info variable-name-mapping)
+        root-var (let [final-construction (:final-construction ast)
+                        root-entry (first (filter #(= (:ast (val %)) final-construction) final-table))]
+                   (if root-entry
+                     (:var-name (val root-entry))
+                     (apply max-key #(Integer/parseInt (subs % 1))
+                            (map #(:var-name (val %)) final-table))))
+        factory-code (str "public static function factory() {\n"
+                          "    " (str/join "\n    " construction-stmts) "\n"
+                          (when (seq context-stmts) (str "    " (str/join "\n    " context-stmts) "\n"))
+                          "    return " root-var ";\n"
+                          "}")]
+    factory-code))
+
+(defn- haxe-factory-from-single [ast class-info context-relationships]
+  (let [ast (:ast ast)
+        [final-var final-counter object-table final-mapping]
+        (walk-ast-and-build-table ast class-info context-relationships 1 nil {} {})
+        {:keys [construction-stmts context-stmts]} (generate-statements-from-table object-table context-relationships class-info {})
+        root-var (let [root-entry (first (filter #(= (:ast (val %)) ast) object-table))]
+                   (if root-entry
+                     (:var-name (val root-entry))
+                     (apply max-key #(Integer/parseInt (subs % 1))
+                            (map #(:var-name (val %)) object-table))))
+        factory-code (str "public static function factory() {\n"
+                          "    " (str/join "\n    " construction-stmts) "\n"
+                          (when (seq context-stmts) (str "    " (str/join "\n    " context-stmts) "\n"))
+                          "    return " root-var ";\n"
+                          "}")]
+    factory-code))
+
+(defn generate-construction-factory-pure [parsed-ast class-info context-relationships]
+  "Pure transformation: generate Haxe factory function from parsed construction AST.
+  Input: parsed construction AST, class-info, context-relationships
+  Output: Haxe factory function string"
+  (let [ast-type (:type parsed-ast)
+        actual-context-relationships (if (empty? context-relationships)
+                                      (build-context-relationships ((parser/get-schema-parser) ""))
+                                      context-relationships)]
+    (cond
+      (= ast-type :MultiStepConstruction)
+      (haxe-factory-from-multistep parsed-ast class-info actual-context-relationships)
+      (= ast-type :SingleConstruction)
+      (haxe-factory-from-single parsed-ast class-info actual-context-relationships)
+      :else (throw (ex-info "Unknown construction AST type" {:ast-type ast-type :parsed-ast parsed-ast}))))
+)

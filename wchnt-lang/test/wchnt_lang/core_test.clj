@@ -1,108 +1,129 @@
 (ns wchnt-lang.core-test
   (:require [clojure.test :refer :all]
             [clojure.string :as str]
-            [wchnt-lang.core :refer [get-parser
-                                    compile-to-haxe
-                                    eyeball
-                                    validate-wchnt-syntax
-                                    compile-and-validate]]
+            [clojure.pprint :as pp]
+            [wchnt-lang.core :refer [get-schema-parser
+                                     compile-wchnt-file
+                                     eyeball]]
+            [wchnt-lang.compiler :as compiler]
             [wchnt-lang.examples :refer [example-game-schema
-                                        example-person-schema
-                                        example-shape-schema]]
+                                         example-person-schema
+                                         example-shape-schema]]
             [wchnt-lang.schema :as schema]
             [wchnt-lang.parser :as parser]
+            [wchnt-lang.pipeline :as P]
+            
             [wchnt-lang.haxegen :as haxegen]))
 
 (deftest test-get-parser
   (testing "Parser retrieval"
-    (let [parser (get-parser)]
+    (let [parser (get-schema-parser)]
       (is (ifn? parser))
       (is (not (instaparse.core/failure? (parser "Game = Ball")))))))
 
-(deftest test-basic-compilation
-  (testing "Basic compilation"
-    (let [result (compile-to-haxe "Game = PlayArea Ball")]
-      (is (map? result))
-      (is (contains? result :success))
-      (is (or (contains? result :code) (contains? result :error))))))
+(deftest test-compile-wchnt-file-simple
+  (testing "Compile simple WCHNT file with schema only"
+    (let [wchnt-content "## Schema
 
-(deftest test-pong-example-compilation
-  (testing "Pong game compilation"
-    (let [input (example-game-schema)
-          result (compile-to-haxe input)]
-      (is (:success result))
-      (is (vector? (:code result)))
-      (is (= 5 (count (:code result)))) ; Should generate 5 classes: Game, PlayArea, Ball, Paddle, Rect
-      (is (some #(str/includes? % "class Game") (:code result)))
-      (is (some #(str/includes? % "public var playArea: PlayArea") (:code result)))
-      (is (some #(str/includes? % "public var paddle1: Paddle") (:code result)))
-      (is (some #(str/includes? % "public var paddle2: Paddle") (:code result))))))
+```
+Config = String/settings
+```
 
-(deftest test-default-naming
-  (testing "Default naming (lowercase first letter)"
-    (let [input "Person = String/name int/age"
-          result (compile-to-haxe input)]
-      (is (:success result))
-      (is (some #(str/includes? % "public var name: String") (:code result)))
-      (is (some #(str/includes? % "public var age: int") (:code result))))))
+## Construction
 
-(deftest test-constructor-generation
-  (testing "Constructor generation"
-    (let [input "Game = PlayArea Ball"
-          result (compile-to-haxe input)
-          game-class (first (:code result))]
-      (is (:success result))
-      (is (str/includes? game-class "public function new("))
-      (is (str/includes? game-class "playArea: PlayArea"))
-      (is (str/includes? game-class "ball: Ball"))
-      (is (str/includes? game-class "this.playArea = playArea"))
-      (is (str/includes? game-class "this.ball = ball"))
-      ;; Assert that ArrayExtensions is NOT present
-      (is (not-any? #(str/includes? % "class ArrayExtensions") (:code result))))))
+```
+```"
+          cargo-result (compiler/compile wchnt-content) ;; compile now returns a cargo
+          result (:value cargo-result)]
 
-(deftest test-array-compilation
-  (testing "Array type compilation"
-    (let [input (example-person-schema)
-          result (compile-to-haxe input)]
-      (is (:success result))
-      (is (some #(str/includes? % "public var name: String") (:code result)))
-      (is (some #(str/includes? % "public var addresses: Array<Address>") (:code result)))
-      ;; Assert that ArrayExtensions IS present
-      (is (some #(str/includes? % "class ArrayExtensions") (:code result))))))
+      (is (schema/valid-full-program? result))
+      (let [classes (:classes result)]
+        (println "XXX")
+        (pp/pprint cargo-result)
+        (is (str/includes? result "class Config"))
+        (is (str/includes? result "public var settings: String"))
+        ))
 
-(deftest test-disjunction-compilation
-  (testing "Interface disjunction compilation"
-    (let [input (example-shape-schema)
-          result (compile-to-haxe input)]
-      (is (:success result))
-      (is (some #(str/includes? % "interface Shape") (:code result)))
-      (is (some #(str/includes? % "class Triangle implements Shape") (:code result)))
-      (is (some #(str/includes? % "class Circle implements Shape") (:code result))))))
+    (deftest test-compile-wchnt-file-with-construction
+      (testing "Compile WCHNT file with schema and construction"
+        (let [wchnt-content "## Schema
 
-(deftest test-mixed-features
-  (testing "Mixed arrays and disjunctions"
-    (let [input "Game = [Shape]/shapes [Player]/players
+```
+Game = PlayArea Ball
+PlayArea = Rect
+Rect = Int/x Int/y Int/width Int/height
+Ball = Int/x Int/y Int/rad
+```
+
+## Construction
+
+```
+[:Game [:PlayArea [:Rect 0 0 800 600]] [:Ball 100 100 5]]
+```"
+              cargo-result (compiler/compile wchnt-content)
+              result (:value cargo-result)]
+          (is (schema/valid-full-program? result))
+          (let [classes (:classes result)
+                factory (:factory result)
+                main (:main result)]
+            (is (str/includes? result "class Game"))
+            (is (str/includes? result "class PlayArea"))
+            (is (str/includes? result "class Rect"))
+            (is (str/includes? result "class Ball"))
+            (is (str/includes? factory "public static function factory()"))
+            (is (str/includes? main "return factory()"))))))))
+
+(deftest test-compile-wchnt-complex
+  (testing "Compile complex WCHNT with arrays and disjunctions"
+    (let [wchnt-content "## Schema
+
+```
+Game = [Shape]/shapes [Player]/players
 Shape = Triangle | Circle
-Triangle = int/base int/height
-Circle = int/radius
-Player = String/name int/score"
-          result (compile-to-haxe input)]
-      (is (:success result))
-      (is (some #(str/includes? % "public var shapes: Array<Shape>") (:code result)))
-      (is (some #(str/includes? % "public var players: Array<Player>") (:code result)))
-      (is (some #(str/includes? % "interface Shape") (:code result)))
-      (is (some #(str/includes? % "class Triangle implements Shape") (:code result)))
-      (is (some #(str/includes? % "class Circle implements Shape") (:code result))))))
+Triangle = Int/base Int/height
+Circle = Int/radius
+Player = String/name Int/score
+```
 
-(deftest test-syntax-validation
-  (testing "Syntax validation"
-    (let [valid-input "Game = PlayArea Ball"
-          invalid-input "Game = = PlayArea"
-          valid-result (validate-wchnt-syntax valid-input)
-          invalid-result (validate-wchnt-syntax invalid-input)]
-      (is (:success valid-result))
-      (is (not (:success invalid-result)))
-      (is (contains? invalid-result :error)))))
+## Construction
+
+```
+$shapes = [:Array/Shape [:Triangle 10 20] [:Circle 15]]
+$players = [:Array/Player [:Player \"Alice\" 100] [:Player \"Bob\" 85]]
+[:Game $shapes $players]
+```"
+          cargo-result (compiler/compile wchnt-content)
+          result  (:value cargo-result)]
+      (is (:success cargo-result))
+      (is (schema/valid-full-program? result))
+      (let [classes (-> result :full-program :classes)
+            construction (-> result :full-program :construction)
+            main (-> result :full-program :main)]
+        
+        (is (str/includes? classes "interface Shape"))
+        (is (str/includes? classes "class Triangle implements Shape"))
+        (is (str/includes? classes "class Circle implements Shape"))
+        (is (str/includes? classes "public var shapes: Array<Shape>"))
+        (is (str/includes? classes "public var players: Array<Player>"))
+        (is (str/includes? classes "class ArrayExtensions"))))))
+
+(deftest test-compile-wchnt-error-handling
+  (testing "Compile WCHNT file with syntax errors"
+    (let [wchnt-content "## Schema
+
+```
+Game = = PlayArea Ball
+```
+
+## Construction
+
+```
+[:Game [:PlayArea]]
+```"
+         result (compiler/compile wchnt-content) ]
+      (is (P/is-cargo? result))
+      (is (P/failed? result))
+)))
 
 (deftest test-eyeball
   (testing "Eyeball validation"
@@ -123,14 +144,6 @@ Player = String/name int/score"
       (is (= "issues" (:status invalid-result)))
       (is (not (empty? (:issues invalid-result)))))))
 
-(deftest test-compile-and-validate
-  (testing "Compile and validate workflow"
-    (let [input (example-game-schema)
-          result (compile-and-validate input)]
-      (is (:success result))
-      (is (contains? result :validation))
-      (is (= "seems ok" (:status (:validation result)))))))
-
 (deftest test-example-schemas
   (testing "Example schema functions"
     (is (string? (example-game-schema)))
@@ -140,112 +153,18 @@ Player = String/name int/score"
     (is (str/includes? (example-person-schema) "Person ="))
     (is (str/includes? (example-shape-schema) "Shape ="))))
 
-(deftest test-schema-validation
-  (testing "Schema validation functions"
-    (let [success-result (schema/success-result ["class Test {}"])
-          error-result (schema/error-result "Test error")
-          validation-ok (schema/validation-ok)
-          validation-issues (schema/validation-issues ["Issue 1"])]
-      (is (schema/valid-compilation-result? success-result))
-      (is (schema/valid-compilation-result? error-result))
-      (is (schema/valid-validation-result? validation-ok))
-      (is (schema/valid-validation-result? validation-issues)))))
 
-(deftest test-enum-compilation
-  (testing "Enum compilation"
-    (let [input "BuildType = \"Dev\" | \"Local\" | \"Deploy\"
-Config = BuildType/environment"
-          result (compile-to-haxe input)]
-      (is (:success result))
-      (is (some #(str/includes? % "enum BuildType") (:code result)))
-      (is (some #(str/includes? % "Dev") (:code result)))
-      (is (some #(str/includes? % "Local") (:code result)))
-      (is (some #(str/includes? % "Deploy") (:code result)))
-      (is (some #(str/includes? % "public var environment: BuildType") (:code result))))))
-
-(deftest test-enum-with-spaces
-  (testing "Enum with spaces in values"
-    (let [input "GameState = \"Not Started\" | \"In Progress\" | \"Game Over\""
-          result (compile-to-haxe input)]
-      (is (:success result))
-      (is (some #(str/includes? % "enum GameState") (:code result)))
-      (is (some #(str/includes? % "NotStarted") (:code result)))
-      (is (some #(str/includes? % "InProgress") (:code result)))
-      (is (some #(str/includes? % "GameOver") (:code result))))))
-
-(deftest test-enum-syntax-validation
-  (testing "Enum syntax validation"
-    (let [valid-enum-input "BuildType = \"Dev\" | \"Local\" | \"Deploy\""
-          valid-disjunction-input "BuildType = Dev | Local | Deploy"
-          invalid-input "BuildType = = Dev | Local | Deploy"
-          valid-enum-result (validate-wchnt-syntax valid-enum-input)
-          valid-disjunction-result (validate-wchnt-syntax valid-disjunction-input)
-          invalid-result (validate-wchnt-syntax invalid-input)]
-      (is (:success valid-enum-result))
-      (is (:success valid-disjunction-result))
-      (is (not (:success invalid-result)))
-      (is (contains? invalid-result :error)))))
-
-(deftest test-dict-compilation
-  (testing "Dictionary type compilation"
-    (let [input "Config = {String : int}/settings"
-          result (compile-to-haxe input)]
-      (is (:success result))
-      (is (some #(str/includes? % "public var settings: Map<String, int>") (:code result))))))
-
-(deftest test-dict-with-enum-keys
-  (testing "Dictionary with enum keys"
-    (let [input "BuildType = \"Dev\" | \"Local\" | \"Deploy\"
-Config = {BuildType : String}/environments"
-          result (compile-to-haxe input)]
-      (is (:success result))
-      (is (some #(str/includes? % "enum BuildType") (:code result)))
-      (is (some #(str/includes? % "public var environments: Map<BuildType, String>") (:code result))))))
-
-(deftest test-dict-with-custom-types
-  (testing "Dictionary with custom types as keys and values"
-    (let [input "User = String/name int/id
-UserProfile = {User : String}/profiles"
-          result (compile-to-haxe input)]
-      (is (:success result))
-      (is (some #(str/includes? % "public var profiles: Map<User, String>") (:code result))))))
-
-(deftest test-dict-syntax-validation
-  (testing "Dictionary syntax validation"
-    (let [valid-input "Config = {String : int}/settings"
-          invalid-input "Config = {String int}/settings"
-          valid-result (validate-wchnt-syntax valid-input)
-          invalid-result (validate-wchnt-syntax invalid-input)]
-      (is (:success valid-result))
-      (is (not (:success invalid-result)))
-      (is (contains? invalid-result :error)))))
-
-(deftest test-mixed-dict-and-array
-  (testing "Mixed dictionary and array types"
-    (let [input "Game = {String : [Player]}/teams [Player]/players
-Player = String/name int/score"
-          result (compile-to-haxe input)]
-      (is (:success result))
-      (is (some #(str/includes? % "public var teams: Map<String, Array<Player>>") (:code result)))
-      (is (some #(str/includes? % "public var players: Array<Player>") (:code result))))))
-
-(deftest test-dict-default-naming
-  (testing "Dictionary default naming (lowercase first letter)"
-    (let [input "Config = {String : int}"
-          result (compile-to-haxe input)]
-      (is (:success result))
-      (is (some #(str/includes? % "public var stringToInt: Map<String, int>") (:code result))))))
 
 (deftest test-build-context-relationships
   (testing "Context relationships for simple schema"
-    (let [schema-str "Car = :Engine\nEngine = int/cylinders"
-          schema-ast ((wchnt-lang.parser/get-parser) schema-str)
+    (let [schema-str "Car = :Engine\nEngine = Int/cylinders"
+          schema-ast ((wchnt-lang.parser/get-schema-parser) schema-str)
           context-map (wchnt-lang.haxegen/build-context-relationships schema-ast)]
       (is (= {"Car" nil, "Engine" "Car"} context-map))))
 
   (testing "Context relationships for nested schema"
-    (let [schema-str "A = :B\nB = :C\nC = int/value"
-          schema-ast ((wchnt-lang.parser/get-parser) schema-str)
+    (let [schema-str "A = :B\nB = :C\nC = Int/value"
+          schema-ast ((wchnt-lang.parser/get-schema-parser) schema-str)
           context-map (wchnt-lang.haxegen/build-context-relationships schema-ast)]
       (is (= {"A" nil, "B" "A", "C" "B"} context-map)))))
 

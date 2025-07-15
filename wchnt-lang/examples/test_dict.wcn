@@ -13,5 +13,5 @@ Config2 = {BuildType : String}/environments
 ## Construction
 
 ```
-[:Main [{"0" : 0 "1" : 1}]]
+[:Main [:Config [:Map/{String:int} "0":0 "1":1]] [:Config2 [:Map/{BuildType:String} Dev:"dev" Local:"local" Deploy:"deploy"]]]
 ```

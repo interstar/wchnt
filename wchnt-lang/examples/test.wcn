@@ -5,13 +5,13 @@
 ```
 Game = PlayArea Ball [Team]/teams [Player]/players Scores
 PlayArea = Rect
-Rect = int/x int/y int/width int/height
+Rect = Int/x Int/y Int/width Int/height
 Ball = Football | Rugbyball
-Football = int/x int/y int/radius
-Rugbyball = int/x int/y int/xrad int/yrad
-Player = int/x int/y String/name
+Football = Int/x Int/y Int/radius
+Rugbyball = Int/x Int/y Int/xrad Int/yrad
+Player = Int/x Int/y String/name
 Team = String/name [Player]/players
-Scores = int/home int/away
+Scores = Int/home Int/away
 ```
 
 ## Construction

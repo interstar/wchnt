@@ -1,7 +1,8 @@
 (ns wchnt_lang.mainfile_test
   (:require [clojure.test :refer :all]
             [wchnt-lang.mainfile :refer :all]
-            [wchnt-lang.schema :as schema]))
+            [wchnt-lang.schema :as schema]
+            [wchnt-lang.pipeline :as p]))
 
 (deftest test-parse-mainfile-schema-validation
   (testing "parse-mainfile result conforms to MainfileParseResult schema"
@@ -39,16 +40,17 @@ Person = String String
       ;; Test successful result conforms to schema
       (is (:success valid-result))
       (is (schema/valid-mainfile-parse-result? valid-result))
-      (is (= "Person = String String\nGroup = [Person]" (:schema valid-result)))
-      (is (= "$people = [:Group [:Person \"John\" \"Smith\"]]\n[:Town [:School $people] [:Team $people]]" (:construction valid-result)))
-      (is (= "" (:reactive valid-result)))
-      (is (= "" (:imperative valid-result)))
-      (is (= "" (:target valid-result)))
+      (let [value (:value valid-result)]
+        (is (= "Person = String String\nGroup = [Person]" (:schema value)))
+        (is (= "$people = [:Group [:Person \"John\" \"Smith\"]]\n[:Town [:School $people] [:Team $people]]" (:construction value)))
+        (is (= "" (:reactive value)))
+        (is (= "" (:imperative value)))
+        (is (= "" (:target value))))
       
       ;; Test error result conforms to schema
       (is (not (:success invalid-result)))
       (is (schema/valid-mainfile-parse-result? invalid-result))
-      (is (and (:error invalid-result) (re-find #"order|sequence" (:error invalid-result)))))))
+      (is (and (seq (:errors invalid-result)) (re-find #"order|sequence" (first (:errors invalid-result))))))))
 
 (deftest test-parse-mainfile-basic
   (testing "Parse a basic mainfile with Schema and Construction sections"
@@ -87,11 +89,12 @@ Imperative code will go here.
 Target configuration will go here."
           result (parse-mainfile content)]
       (is (:success result))
-      (is (= "Person = String String\nGroup = [Person]" (:schema result)))
-      (is (= "$people = [:Group [:Person \"John\" \"Smith\"]]\n[:Town [:School $people] [:Team $people]]" (:construction result)))
-      (is (= "" (:reactive result)))
-      (is (= "" (:imperative result)))
-      (is (= "" (:target result))))))
+      (let [value (:value result)]
+        (is (= "Person = String String\nGroup = [Person]" (:schema value)))
+        (is (= "$people = [:Group [:Person \"John\" \"Smith\"]]\n[:Town [:School $people] [:Team $people]]" (:construction value)))
+        (is (= "" (:reactive value)))
+        (is (= "" (:imperative value)))
+        (is (= "" (:target value)))))))
 
 (deftest test-parse-mainfile-schema-only
   (testing "Parse a mainfile with only Schema section (required)"
@@ -107,11 +110,12 @@ Group = [Person]
 Some additional text here."
           result (parse-mainfile content)]
       (is (:success result))
-      (is (= "Person = String String\nGroup = [Person]" (:schema result)))
-      (is (= "" (:construction result)))
-      (is (= "" (:reactive result)))
-      (is (= "" (:imperative result)))
-      (is (= "" (:target result))))))
+      (let [value (:value result)]
+        (is (= "Person = String String\nGroup = [Person]" (:schema value)))
+        (is (= "" (:construction value)))
+        (is (= "" (:reactive value)))
+        (is (= "" (:imperative value)))
+        (is (= "" (:target value)))))))
 
 (deftest test-parse-mainfile-missing-schema
   (testing "Fail when Schema section is missing"
@@ -130,7 +134,7 @@ $people = [:Group [:Person \"John\" \"Smith\"]]
 ```"
           result (parse-mainfile content)]
       (is (not (:success result)))
-      (is (and (:error result) (re-find #"Schema.*required" (:error result)))))))
+      (is (and (seq (:errors result)) (re-find #"Schema.*required" (first (:errors result))))))))
 
 (deftest test-parse-mainfile-multiple-code-blocks
   (testing "Fail when section has multiple code blocks"
@@ -149,7 +153,7 @@ Entity = Person | Group
 ```"
           result (parse-mainfile content)]
       (is (not (:success result)))
-      (is (and (:error result) (re-find #"multiple.*code.*blocks" (:error result)))))))
+      (is (and (seq (:errors result)) (re-find #"multiple.*code.*blocks" (first (:errors result)))))))
 
 (deftest test-parse-mainfile-wrong-order
   (testing "Fail when sections are in wrong order"
@@ -169,7 +173,7 @@ Group = [Person]
 ```"
           result (parse-mainfile content)]
       (is (not (:success result)))
-      (is (and (:error result) (re-find #"order|sequence" (:error result)))))))
+      (is (and (seq (:errors result)) (re-find #"order|sequence" (first (:errors result))))))))
 
 (deftest test-parse-mainfile-ignore-language-hints
   (testing "Ignore language hints in code blocks"
@@ -188,8 +192,9 @@ $people = [:Group [:Person \"John\" \"Smith\"]]
 ```"
           result (parse-mainfile content)]
       (is (:success result))
-      (is (= "Person = String String" (:schema result)))
-      (is (= "$people = [:Group [:Person \"John\" \"Smith\"]]" (:construction result))))))
+      (let [value (:value result)]
+        (is (= "Person = String String" (:schema value)))
+        (is (= "$people = [:Group [:Person \"John\" \"Smith\"]]" (:construction value)))))))
 
 (deftest test-parse-mainfile-empty-sections
   (testing "Handle empty sections gracefully"
@@ -210,11 +215,12 @@ Person = String String
 ## Target"
           result (parse-mainfile content)]
       (is (:success result))
-      (is (= "Person = String String" (:schema result)))
-      (is (= "" (:construction result)))
-      (is (= "" (:reactive result)))
-      (is (= "" (:imperative result)))
-      (is (= "" (:target result))))))
+      (let [value (:value result)]
+        (is (= "Person = String String" (:schema value)))
+        (is (= "" (:construction value)))
+        (is (= "" (:reactive value)))
+        (is (= "" (:imperative value)))
+        (is (= "" (:target value)))))))
 
 (deftest test-parse-mainfile-malformed-markdown
   (testing "Fail fast on malformed markdown"
@@ -229,4 +235,4 @@ Person = String String
 "
           result (parse-mainfile content)]
       (is (not (:success result)))
-      (is (and (:error result) (re-find #"unclosed.*code.*block" (:error result))))))) 
+      (is (and (seq (:errors result)) (re-find #"unclosed.*code.*block" (first (:errors result))))))))

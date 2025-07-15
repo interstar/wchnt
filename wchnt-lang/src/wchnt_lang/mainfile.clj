@@ -1,5 +1,6 @@
 (ns wchnt-lang.mainfile
-  (:require [clojure.string :as str]))
+  (:require [clojure.string :as str]
+            [wchnt-lang.pipeline :as p]))
 
 (def section-order ["schema" "construction" "reactive" "imperative" "target"])
 
@@ -121,18 +122,17 @@
     (let [sections (extract-code-blocks content)
           validation-error (validate-sections sections)]
       (if validation-error
-        {:success false :error validation-error}
+        (p/fail-cargo validation-error)
         (let [section-map (into {} sections)]
-          {:success true
-           :schema (get section-map "schema" "")
+          (p/success-cargo {:schema (get section-map "schema" "")
            :construction (get section-map "construction" "")
            :reactive (get section-map "reactive" "")
            :imperative (get section-map "imperative" "")
-           :target (get section-map "target" "")})))
+                           :target (get section-map "target" "")}))))
     (catch clojure.lang.ExceptionInfo e
-      {:success false :error (.getMessage e)})
+      (p/fail-cargo (.getMessage e)))
     (catch Exception e
-      {:success false :error (str "Malformed markdown: " (.getMessage e))})))
+      (p/fail-cargo (str "Malformed markdown: " (.getMessage e))))))
 
 (defn read-mainfile [file-path]
   "Read and parse a WCHNT mainfile from the filesystem"
@@ -140,4 +140,4 @@
     (let [content (slurp file-path)]
       (parse-mainfile content))
     (catch Exception e
-      {:success false :error (str "Error reading file: " (.getMessage e))}))) 
+      (p/fail-cargo (str "Error reading file: " (.getMessage e)))))) 

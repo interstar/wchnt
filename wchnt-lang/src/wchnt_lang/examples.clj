@@ -5,9 +5,9 @@
   []
   "Game = PlayArea Ball Paddle/paddle1 Paddle/paddle2
 PlayArea = Rect
-Ball = int/x int/y int/dx int/dy int/rad
-Paddle = int/x int/y
-Rect = int/x int/y int/width int/height")
+Ball = Int/x Int/y Int/dx Int/dy Int/rad
+Paddle = Int/x Int/y
+Rect = Int/x Int/y Int/width Int/height")
 
 (defn example-person-schema
   "Returns an example WCHNT schema with arrays."
@@ -19,17 +19,17 @@ Address = String/street String/city String/zipCode")
   "Returns an example WCHNT schema with interface disjunctions."
   []
   "Shape = Triangle | Circle
-Triangle = int/base int/height
-Circle = int/radius")
+Triangle = Int/base Int/height
+Circle = Int/radius")
 
 (defn example-complex-schema
   "Returns a more complex example combining multiple features."
   []
   "Game = PlayArea Ball [Team] [Player]
 PlayArea = Rect
-Rect = int/x int/y int/width int/height
+Rect = Int/x Int/y Int/width Int/height
 Ball = Football | Rugbyball
-Football = int/x int/y int/radius
-Rugbyball = int/x int/y int/xrad int/yrad
-Player = int/x int/y String/name
+Football = Int/x Int/y Int/radius
+Rugbyball = Int/x Int/y Int/xrad Int/yrad
+Player = Int/x Int/y String/name
 Team = [Player]") 
