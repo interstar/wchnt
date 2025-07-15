@@ -21,6 +21,7 @@ The pipeline short-circuits on failure: if :success is false, later stages are s
    [:errors [:sequential string?]]
    [:warnings [:sequential string?]]
    [:stash [:map]]
+   [:log [:sequential string?]]
    ]
   )
 
@@ -30,14 +31,16 @@ The pipeline short-circuits on failure: if :success is false, later stages are s
    :value v
    :errors []
    :warnings []
-   :stash {}})
+   :stash {}
+   :log []})
 
 (defn fail-cargo [e]
   {:success false
    :value nil
    :errors [e]
    :warnings []
-   :stash {}})
+   :stash {}
+   :log []})
 
 (defn is-cargo? [c] (m/validate Cargo c))
 (defn failed? [c] (not (:success c)))
@@ -57,13 +60,15 @@ The pipeline short-circuits on failure: if :success is false, later stages are s
    :value    initial-value
    :errors   []
    :warnings []
-   :stash     {}}"
+   :stash     {}
+   :log       []}"
   [initial-value]
   {:success  true
    :value    initial-value
    :errors   []
    :warnings []
-   :stash     {}})
+   :stash     {}
+   :log       []})
 
 
 (defn throw-pass [ctx type label f]
@@ -82,7 +87,7 @@ The pipeline short-circuits on failure: if :success is false, later stages are s
   "Wraps a function f as a processor stage.
 
   - Applies f to (:value ctx) if :success is true.
-  - If f returns a Cargo, merges it with current context (preserving stash).
+  - If f returns a Cargo, merges it with current context (preserving stash and log).
   - If f returns a plain value, wraps it in a new Cargo.
   - If f throws or fails, sets :success false, :value nil, and adds an error message.
 
@@ -159,27 +164,23 @@ The pipeline short-circuits on failure: if :success is false, later stages are s
 (defn trace [label]
   (fn [ctx]
     (println "TRACE: " label)
-    ctx))
+    (update ctx :log conj (str "TRACE: " label))))
 
-(defn show
-  "Prints the value coming through"
+(defn log
+  "Logs the value with label and adds to log"
   [label]
   (fn [ctx]
     (throw-pass
-     ctx "Show" ""
-     (fn [ctx label]
-       (println "SHOW : " label)
-       (pp/pprint (:value ctx))
-       ctx))))
+     ctx "Log" ""
+     (fn [ctx _]
+       (update ctx :log conj (str "LOG : " label "\n" (with-out-str (pp/pprint (:value ctx)))))))))
 
-(defn show-all
-  "Prints the whole cargo coming through
+(defn log-all
+  "Logs the whole cargo with label and adds to log
    Even if :success is false"
   [label]
   (fn [ctx]
-    (println "SHOW : " label)
-    (pp/pprint ctx)
-    ctx))
+    (update ctx :log conj (str "LOG ALL : " label "\n" (with-out-str (pp/pprint ctx))))))
 
 (declare continue)
 
@@ -190,9 +191,6 @@ The pipeline short-circuits on failure: if :success is false, later stages are s
     (throw-pass
      ctx "When-Do" ""
      (fn [ctx label]
-       (println "WHEN DO BEFORE CONDITION TEST")
-       (println (p? (:value ctx)))
-       (println ctx)
        (if-not
            (p? (:value ctx))
            (do

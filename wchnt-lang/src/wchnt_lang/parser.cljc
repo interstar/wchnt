@@ -811,8 +811,6 @@ EmptyType = '_'
                :assignments valid-assignments
                :final-construction final-construction})))
         "Extract assignments and final construction")
-        (P/show "The final construction")
-        )    
-        ))
+      (P/log "The final construction"))))
 
 
