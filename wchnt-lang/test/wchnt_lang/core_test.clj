@@ -38,8 +38,7 @@ Config = String/settings
 
       (is (schema/valid-full-program? result))
       (let [classes (:classes result)]
-        (println "XXX")
-        (pp/pprint cargo-result)
+
         (is (str/includes? result "class Config"))
         (is (str/includes? result "public var settings: String"))
         ))
@@ -96,9 +95,9 @@ $players = [:Array/Player [:Player \"Alice\" 100] [:Player \"Bob\" 85]]
           result  (:value cargo-result)]
       (is (:success cargo-result))
       (is (schema/valid-full-program? result))
-      (let [classes (-> result :full-program :classes)
-            construction (-> result :full-program :construction)
-            main (-> result :full-program :main)]
+      (let [classes (:classes result)
+            factory (:factory result)
+            main (:main result)]
         
         (is (str/includes? classes "interface Shape"))
         (is (str/includes? classes "class Triangle implements Shape"))

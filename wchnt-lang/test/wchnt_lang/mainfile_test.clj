@@ -4,6 +4,8 @@
             [wchnt-lang.schema :as schema]
             [wchnt-lang.pipeline :as p]))
 
+
+
 (deftest test-parse-mainfile-schema-validation
   (testing "parse-mainfile result conforms to MainfileParseResult schema"
     (let [valid-content "# WCHNT Program
@@ -52,6 +54,7 @@ Person = String String
       (is (schema/valid-mainfile-parse-result? invalid-result))
       (is (and (seq (:errors invalid-result)) (re-find #"order|sequence" (first (:errors invalid-result))))))))
 
+
 (deftest test-parse-mainfile-basic
   (testing "Parse a basic mainfile with Schema and Construction sections"
     (let [content "# WCHNT Program
@@ -96,6 +99,7 @@ Target configuration will go here."
         (is (= "" (:imperative value)))
         (is (= "" (:target value)))))))
 
+
 (deftest test-parse-mainfile-schema-only
   (testing "Parse a mainfile with only Schema section (required)"
     (let [content "# WCHNT Program
@@ -117,6 +121,8 @@ Some additional text here."
         (is (= "" (:imperative value)))
         (is (= "" (:target value)))))))
 
+
+
 (deftest test-parse-mainfile-missing-schema
   (testing "Fail when Schema section is missing"
     (let [content "# WCHNT Program
@@ -135,6 +141,10 @@ $people = [:Group [:Person \"John\" \"Smith\"]]
           result (parse-mainfile content)]
       (is (not (:success result)))
       (is (and (seq (:errors result)) (re-find #"Schema.*required" (first (:errors result))))))))
+
+
+
+
 
 (deftest test-parse-mainfile-multiple-code-blocks
   (testing "Fail when section has multiple code blocks"
@@ -155,25 +165,8 @@ Entity = Person | Group
       (is (not (:success result)))
       (is (and (seq (:errors result)) (re-find #"multiple.*code.*blocks" (first (:errors result)))))))
 
-(deftest test-parse-mainfile-wrong-order
-  (testing "Fail when sections are in wrong order"
-    (let [content "# WCHNT Program
+  )
 
-## Construction
-
-```
-$people = [:Group [:Person \"John\" \"Smith\"]]
-```
-
-## Schema
-
-```
-Person = String String
-Group = [Person]
-```"
-          result (parse-mainfile content)]
-      (is (not (:success result)))
-      (is (and (seq (:errors result)) (re-find #"order|sequence" (first (:errors result))))))))
 
 (deftest test-parse-mainfile-ignore-language-hints
   (testing "Ignore language hints in code blocks"
@@ -195,6 +188,28 @@ $people = [:Group [:Person \"John\" \"Smith\"]]
       (let [value (:value result)]
         (is (= "Person = String String" (:schema value)))
         (is (= "$people = [:Group [:Person \"John\" \"Smith\"]]" (:construction value)))))))
+
+
+(deftest test-parse-mainfile-wrong-order
+  (testing "Fail when sections are in wrong order"
+    (let [content "# WCHNT Program
+
+## Construction
+
+```
+$people = [:Group [:Person \"John\" \"Smith\"]]
+```
+
+## Schema
+
+```
+Person = String String
+Group = [Person]
+```"
+          result (parse-mainfile content)]
+      (is (not (:success result)))
+      (is (and (seq (:errors result)) (re-find #"order|sequence" (first (:errors result))))))))
+
 
 (deftest test-parse-mainfile-empty-sections
   (testing "Handle empty sections gracefully"
@@ -222,6 +237,10 @@ Person = String String
         (is (= "" (:imperative value)))
         (is (= "" (:target value)))))))
 
+
+
+
+
 (deftest test-parse-mainfile-malformed-markdown
   (testing "Fail fast on malformed markdown"
     (let [content "# WCHNT Program
@@ -232,7 +251,10 @@ Missing closing backticks
                    
 ```
 Person = String String
+```
 "
           result (parse-mainfile content)]
       (is (not (:success result)))
       (is (and (seq (:errors result)) (re-find #"unclosed.*code.*block" (first (:errors result))))))))
+
+

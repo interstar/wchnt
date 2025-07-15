@@ -240,7 +240,7 @@ EmptyType = '_'
     (some #(= (:name %) element-type) enums) (str element-type "Value")
     :else (str element-type "Construction")))
 
-(defn generate-strict-arg-rules [elements enums disjunctions]
+(defn generate-strict-arg-rules [elements enums disjunctions classes]
   "Generate strict grammar rules for class elements (with R prefix)"
   (for [element elements]
     (let [element-type (:type element)
@@ -256,8 +256,29 @@ EmptyType = '_'
                                                   implementers (:implementers disjunction)]
                                               (str "(" (str/join " | " (map #(str "R" % "Construction") implementers)) ")"))
                                             :else (str "R" inner-type "Construction"))
-                               array-element-rule (str inner-type "ArrayElement")]
-                           (str "ArrayConstruction | (<WS>+ (" (str/join " | " [array-element-rule element-rule]) "))*"))
+                               ;; Generate type-specific array construction rule name
+                               array-construction-rule (str inner-type "ArrayConstruction")
+                               ;; Only include array element rule if the inner type is actually used as an array element
+                               array-element-types (->> (for [class classes
+                                                              element (:elements class)
+                                                              :when (str/starts-with? (:type element) "Array<")]
+                                                          (-> (:type element)
+                                                              (str/replace "Array<" "")
+                                                              (str/replace ">" "")))
+                                                        distinct)
+                               has-array-element-rule (some #(= % inner-type) array-element-types)
+                               ;; For disjunctions, we need to reference the implementer array elements
+                               array-element-rule (cond
+                                                   (and has-array-element-rule (some #(= (:name %) inner-type) disjunctions))
+                                                   (let [disjunction (first (filter #(= (:name %) inner-type) disjunctions))
+                                                         implementers (:implementers disjunction)]
+                                                     (str "(" (str/join " | " (map #(str % "ArrayElement") implementers)) ")"))
+                                                   has-array-element-rule
+                                                   (str inner-type "ArrayElement")
+                                                   :else nil)]
+                           (if array-element-rule
+                             (str array-construction-rule " | (<WS>+ (" (str/join " | " [array-element-rule element-rule]) "))*")
+                             (str array-construction-rule " | (<WS>+ " element-rule ")*")))
                          (str/starts-with? element-type "Map<") 
                          (let [key-type (:key-type element)
                                value-type (:value-type element)
@@ -274,7 +295,7 @@ EmptyType = '_'
                          :else (str "R" element-type "Construction"))]
       (str "(" expected-rule " | VariableReference)"))))
 
-(defn generate-relaxed-arg-rules [elements enums disjunctions]
+(defn generate-relaxed-arg-rules [elements enums disjunctions classes]
   "Generate relaxed grammar rules for class elements (without R prefix)"
   (for [element elements]
     (let [element-type (:type element)
@@ -290,8 +311,29 @@ EmptyType = '_'
                                                   implementers (:implementers disjunction)]
                                               (str "(" (str/join " | " (map #(str % "Construction") implementers)) ")"))
                                             :else (str inner-type "Construction"))
-                               array-element-rule (str inner-type "ArrayElement")]
-                           (str "ArrayConstruction | (<WS>+ (" (str/join " | " [array-element-rule element-rule]) "))*"))
+                               ;; Generate type-specific array construction rule name
+                               array-construction-rule (str inner-type "ArrayConstruction")
+                               ;; Only include array element rule if the inner type is actually used as an array element
+                               array-element-types (->> (for [class classes
+                                                              element (:elements class)
+                                                              :when (str/starts-with? (:type element) "Array<")]
+                                                          (-> (:type element)
+                                                              (str/replace "Array<" "")
+                                                              (str/replace ">" "")))
+                                                        distinct)
+                               has-array-element-rule (some #(= % inner-type) array-element-types)
+                               ;; For disjunctions, we need to reference the implementer array elements
+                               array-element-rule (cond
+                                                   (and has-array-element-rule (some #(= (:name %) inner-type) disjunctions))
+                                                   (let [disjunction (first (filter #(= (:name %) inner-type) disjunctions))
+                                                         implementers (:implementers disjunction)]
+                                                     (str "(" (str/join " | " (map #(str % "ArrayElement") implementers)) ")"))
+                                                   has-array-element-rule
+                                                   (str inner-type "ArrayElement")
+                                                   :else nil)]
+                           (if array-element-rule
+                             (str array-construction-rule " | (<WS>+ (" (str/join " | " [array-element-rule element-rule]) "))*")
+                             (str array-construction-rule " | (<WS>+ " element-rule ")*")))
                          (str/starts-with? element-type "Map<") 
                          (let [key-type (:key-type element)
                                value-type (:value-type element)
@@ -308,12 +350,12 @@ EmptyType = '_'
                          :else (str element-type "Construction"))]
       (str "(" expected-rule " | LocalEmpty | VariableReference)"))))
 
-(defn generate-class-grammar [class enums disjunctions]
+(defn generate-class-grammar [class enums disjunctions classes]
   "Generate strict (RTypeConstruction) and relaxed (TypeConstruction) grammar strings for a single class"
   (let [class-name (:name class)
         elements (:elements class)
-        arg-rules (generate-strict-arg-rules elements enums disjunctions)
-        relaxed-args (generate-relaxed-arg-rules elements enums disjunctions)
+        arg-rules (generate-strict-arg-rules elements enums disjunctions classes)
+        relaxed-args (generate-relaxed-arg-rules elements enums disjunctions classes)
         strict-rule (if (empty? elements)
                       (str "R" class-name "Construction = <'['> <':'> <'" class-name "'> <WS>? <']'>" )
                       (str "R" class-name "Construction = <'['> <':'> <'" class-name "'> <WS>? "
@@ -382,11 +424,11 @@ EmptyType = '_'
         rule-name (str (clojure.string/capitalize field-name) "MapConstruction")]
     (str rule-name " = <'{'> (<WS>? " key-rule " <WS>? <':'> <WS>? " value-rule ")* <WS>? <'}'>")))
 
-(defn generate-array-element-grammar [class enums disjunctions]
+(defn generate-array-element-grammar [class enums disjunctions classes]
   "Generate array-element grammar strings for a single class (with optional whitespace between arguments)"
   (let [class-name (:name class)
         elements (:elements class)
-        arg-rules (generate-relaxed-arg-rules elements enums disjunctions)
+        arg-rules (generate-relaxed-arg-rules elements enums disjunctions classes)
         array-element-rule (if (empty? elements)
                              (str class-name "ArrayElement = <'['> (<':'> <'" class-name "'>)? <WS>? <']'>" )
                              (str class-name "ArrayElement = <'['> (<':'> <'" class-name "'>)? <WS>? "
@@ -396,7 +438,7 @@ EmptyType = '_'
 (defn generate-class-grammars [classes enums disjunctions]
   "Generate grammar rules for all classes"
   (let [sorted-classes (sort-by #(if (= (:type %) :empty) 1 0) classes)
-        class-grammars (mapcat #(let [[strict-rule relaxed-rule] (generate-class-grammar % enums disjunctions)]
+        class-grammars (mapcat #(let [[strict-rule relaxed-rule] (generate-class-grammar % enums disjunctions classes)]
                                   [strict-rule relaxed-rule])
                                 sorted-classes)]
     class-grammars))
@@ -459,19 +501,46 @@ EmptyType = '_'
                                        (str/replace ">" "")))
                                  distinct)
         ;; Generate array-element versions of construction rules (with optional whitespace)
-        array-element-rules (for [class classes
-                                  :when (some #(= % (str (:name class))) array-element-types)]
-                              (let [rule (generate-array-element-grammar class enums disjunctions)]
-                                rule))
-        ;; Use array-element versions for array elements
-        array-construction-rule (if (seq array-element-types)
-                                  (str "ArrayConstruction = <'['> <WS>? <':'> <'Array'> <'/'> TypeName (<WS>? ("
-                                       (str/join " | " (map #(str % "ArrayElement") array-element-types))
-                                       "))* <WS>? <']'>")
-                                  "ArrayConstruction = <'['> <WS>? <':'> <'Array'> <'/'> TypeName <WS>? <']'>")
+        ;; Check both classes and disjunctions for array element types
+        array-element-rules (concat
+                             ;; Generate for classes that are used as array elements
+                             (for [class classes
+                                   :when (some #(= % (str (:name class))) array-element-types)]
+                               (let [rule (generate-array-element-grammar class enums disjunctions classes)]
+                                 rule))
+                             ;; For disjunctions used as array elements, generate array element rules for all implementers
+                             (apply concat
+                                    (for [disjunction disjunctions
+                                          :when (some #(= % (str (:name disjunction))) array-element-types)]
+                                      (for [implementer (:implementers disjunction)]
+                                        (let [implementer-class (first (filter #(= (:name %) implementer) classes))]
+                                          (when implementer-class
+                                            (generate-array-element-grammar implementer-class enums disjunctions classes)))))))
+                ;; Generate type-specific array construction rules for each array type
+        array-construction-rules (for [array-type array-element-types]
+                                   (let [;; For disjunctions, we need to include all implementer array elements
+                                         array-element-types-for-this-type (cond
+                                                                             ;; Check if it's a disjunction
+                                                                             (some #(= (:name %) array-type) disjunctions)
+                                                                             (let [disjunction (first (filter #(= (:name %) array-type) disjunctions))
+                                                                                   implementers (:implementers disjunction)]
+                                                                                 (map #(str % "ArrayElement") implementers))
+                                                                             ;; For concrete types, just include that type's array element
+                                                                             :else [(str array-type "ArrayElement")])
+                                         rule-name (str array-type "ArrayConstruction")
+                                         rule-body (str rule-name " = <'['> <WS>? <':'> <'Array'> <'/'> <'" array-type "'> (<WS>? ("
+                                                        (str/join " | " array-element-types-for-this-type)
+                                                        "))* <WS>? <']'>")]
+                                     [rule-name rule-body]))
+        ;; Convert to map for easy lookup
+        array-construction-rule-map (into {} array-construction-rules)
+        ;; For backward compatibility, also include a generic ArrayConstruction rule that's not used
+        generic-array-construction-rule "ArrayConstruction = <'['> <WS>? <':'> <'Array'> <'/'> TypeName <WS>? <']'>"
         ]
     {:array-element-rules array-element-rules
-     :array-construction-rule array-construction-rule}))
+     :array-construction-rules (vals array-construction-rule-map)
+     :array-construction-rule-map array-construction-rule-map
+     :generic-array-construction-rule generic-array-construction-rule}))
 
 (defn generate-map-grammars [classes enums disjunctions]
   "Generate grammar rules for generic maps"
@@ -515,7 +584,12 @@ EmptyType = '_'
   "Generate grammar rules for single statements (assignment OR construction)"
   (let [all-construction-types (concat 
                                 (map #(str (:name %) "Construction") classes)
-                                ["ArrayConstruction"]  ;; Include the generic array construction
+                                ;; Include type-specific array construction rules
+                                (for [class classes
+                                      element (:elements class)
+                                      :when (str/starts-with? (:type element) "Array<")]
+                                  (let [inner-type (str/replace (str/replace (:type element) "Array<" "") ">" "")]
+                                    (str inner-type "ArrayConstruction")))
                                 ["MapConstruction"]  ;; Include the generic map construction
                                 (map #(str (clojure.string/capitalize (:name %)) "MapConstruction")
                                      (for [class classes
@@ -561,7 +635,7 @@ EmptyType = '_'
         
         ;; Add array grammars
         array-grammars (generate-array-grammars classes enums disjunctions)
-        grammar-parts (concat grammar-parts (:array-element-rules array-grammars) [(:array-construction-rule array-grammars)])
+        grammar-parts (concat grammar-parts (:array-element-rules array-grammars) (:array-construction-rules array-grammars))
         
         ;; Add map grammars (generic first, then specific)
         map-grammars (generate-map-grammars classes enums disjunctions)
@@ -617,7 +691,6 @@ EmptyType = '_'
 (defn split-statements [input-string]
   "Split input string into statements. A statement ends at any full stop not in a string and not between two digits.
    If there are no full stops, treat the entire string as a single statement."
-  (println "DEBUG: split-statements input:" (pr-str input-string))
   (let [trimmed-input (str/trim input-string)]
     (if (str/blank? trimmed-input)
       []
@@ -634,9 +707,7 @@ EmptyType = '_'
             (let [final-statements (if (seq current-statement)
                                     (conj statements (str/trim (apply str current-statement)))
                                     statements)]
-              (let [result (filter seq (map str/trim final-statements))]
-                (println "DEBUG: split-statements result:" (pr-str result))
-                result))
+              (filter seq (map str/trim final-statements)))
             (let [char (nth chars i)]
               (cond
                 ;; Handle escape sequences
@@ -699,13 +770,26 @@ EmptyType = '_'
       ;; Extract assignments and final construction
       (P/processor 
         (fn [successful-parses]
-          (let [;; All but the last are assignments
-                assignment-statements (butlast successful-parses)
-                final-statement (last successful-parses)
-                ;; Extract the actual construction from the statement
-                final-construction (if (and (vector? final-statement) (= (first final-statement) :Statement))
-                                    (second final-statement) ; Get the construction node from [:Statement construction]
-                                    final-statement)
+          (let [;; Separate assignments from final construction based on content, not position
+                assignment-statements (filter (fn [ast]
+                                               (and (vector? ast) 
+                                                    (= (first ast) :Statement)
+                                                    (vector? (second ast))
+                                                    (= (first (second ast)) :VariableAssignment)))
+                                             successful-parses)
+                final-statements (filter (fn [ast]
+                                          (and (vector? ast) 
+                                               (= (first ast) :Statement)
+                                               (vector? (second ast))
+                                               (not= (first (second ast)) :VariableAssignment)))
+                                        successful-parses)
+                ;; Extract the actual construction from the final statement
+                final-construction (if (seq final-statements)
+                                    (let [final-statement (last final-statements)]
+                                      (if (and (vector? final-statement) (= (first final-statement) :Statement))
+                                        (second final-statement) ; Get the construction node from [:Statement construction]
+                                        final-statement))
+                                    nil)
                 ;; Extract assignments from assignment statements
                 assignments (map (fn [ast]
                                   (if (and (vector? ast) (= (first ast) :Statement))
@@ -721,9 +805,11 @@ EmptyType = '_'
                                     nil))
                                 assignment-statements)
                 valid-assignments (filter some? assignments)]
-            {:type :MultiStepConstruction
-             :assignments valid-assignments
-             :final-construction final-construction}))
+            (if (nil? final-construction)
+              (P/fail-cargo "Construction must include a final construction statement.")
+              {:type :MultiStepConstruction
+               :assignments valid-assignments
+               :final-construction final-construction})))
         "Extract assignments and final construction")
         (P/show "The final construction")
         )    

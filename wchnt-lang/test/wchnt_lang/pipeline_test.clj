@@ -38,7 +38,7 @@
           (p/run 4
             (p/processor #(* % 2))
             (p/when-do
-             #(true)             
+             (constantly true)             
              (p/trace "TRACING")             
              (p/processor #(+ % 1)))
             )]

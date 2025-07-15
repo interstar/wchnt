@@ -3,7 +3,8 @@
             [wchnt-lang.parser :refer :all]
             [wchnt-lang.schema :refer :all]
             [wchnt-lang.haxegen :as haxe-gen]
-            [instaparse.core :as insta]))
+            [instaparse.core :as insta]
+            [clojure.string :as str]))
 
 
 (deftest test-parse-final-construction-statement
@@ -132,7 +133,7 @@ Group = [Person]"
   (testing "Parse simple assignment statement using WCHNT pattern"
     (let [schema-input "Person = String String
 Group = [Person]"
-          construction-input "$people = [:Group [:Person \"John\" \"Smith\"]]"
+          construction-input "$people = [:Group [:Person \"John\" \"Smith\"]]. [:Group $people]"
           schema-parse-result (schema-wchnt->schema-ast schema-input)]
       (is (:success schema-parse-result))
       (let [schema-ast (:value schema-parse-result)
@@ -146,7 +147,7 @@ Group = [Person]"
   (testing "Parse assignment with multi-line content using WCHNT pattern"
     (let [schema-input "Person = String String
 Group = [Person]"
-          construction-input "$people = [:Group [:Person \"John\" \"Smith\"] [:Person \"Jane\" \"Jones\"]]"
+          construction-input "$people = [:Group [:Person \"John\" \"Smith\"] [:Person \"Jane\" \"Jones\"]]. [:Group $people]"
           schema-parse-result (schema-wchnt->schema-ast schema-input)]
       (is (:success schema-parse-result))
       (let [schema-ast (:value schema-parse-result)
@@ -157,6 +158,34 @@ Group = [Person]"
           (is (= :MultiStepConstruction (:type parsed-ast)))
           (is (= 1 (count (:assignments parsed-ast))))
           (is (= "people" (:name (first (:assignments parsed-ast))))))))))
+
+(deftest test-assignments-without-final-construction
+  (testing "Construction with only assignments and no final construction should fail"
+    (let [schema-input "Person = String String\nGroup = [Person]"
+          construction-input "$people = [:Group [:Person \"John\" \"Smith\"]]"
+          schema-parse-result (schema-wchnt->schema-ast schema-input)]
+      (is (:success schema-parse-result))
+      (let [schema-ast (:value schema-parse-result)
+            parse-result (parse-construction-pure {:schema-ast schema-ast :construction construction-input})]
+        (is (not (:success parse-result)))
+        (is (some #(str/includes? % "final construction") (:errors parse-result)))))))
+
+(deftest test-assignments-with-final-construction
+  (testing "Construction with assignments and a final construction should succeed"
+    (let [schema-input "Person = String String\nGroup = [Person]"
+          construction-input "$people = [:Group [:Person \"John\" \"Smith\"]]. [:Group $people]"
+          schema-parse-result (schema-wchnt->schema-ast schema-input)]
+      (is (:success schema-parse-result))
+      (let [schema-ast (:value schema-parse-result)
+            parse-result (parse-construction-pure {:schema-ast schema-ast :construction construction-input})]
+        (is (:success parse-result))
+        (let [parsed-ast (:value parse-result)]
+          (is (map? parsed-ast))
+          (is (= :MultiStepConstruction (:type parsed-ast)))
+          (is (= 1 (count (:assignments parsed-ast))))
+          (is (= "people" (:name (first (:assignments parsed-ast)))))
+          (is (vector? (:final-construction parsed-ast)))
+          (is (= :GroupConstruction (first (:final-construction parsed-ast)))))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 

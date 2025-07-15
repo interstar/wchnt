@@ -112,8 +112,7 @@
           result (parser/parse-construction-pure {:schema-ast (:value schema-result) :construction input})]
       (is (:success result))
       (is (schema/valid-multi-step-construction? (:value result)))
-      (println "XXXX ")
-      (println result)
+
       (is (some #(and (vector? %) (= (first %) :FloatLiteral)) (map :construction (:assignments (:value result)))))
       (is (ast-contains? #(and (vector? %)
                                (= (first %) :PointConstruction)) (:final-construction (:value result))))))
@@ -144,9 +143,7 @@
   (testing "debug what split-statements returns"
     (let [input "$x = 3.14. $y = 2.718. [:Point $x $y]"
           result (parser/split-statements input)]
-      (println "Input:" input)
-      (println "Result:" result)
-      (println "Result count:" (count result))
+      
       (is true))))
 
 
@@ -173,6 +170,16 @@
       (is (= "[:Config $msg]" (second result))))))
 
 
+(deftest test-split-statements-with-arrays
+  (testing "Split statements with array assignments"
+    (let [input "$shapes = [:Array/Shape [:Triangle 10 20] [:Circle 15]]. $players = [:Array/Player [:Player \"Alice\" 100] [:Player \"Bob\" 85]]. [:Game $shapes $players]"
+          result (parser/split-statements input)]
+      (println "DEBUG: split-statements result:" result)
+      (is (= 3 (count result)))
+      (is (= "$shapes = [:Array/Shape [:Triangle 10 20] [:Circle 15]]" (first result)))
+      (is (= "$players = [:Array/Player [:Player \"Alice\" 100] [:Player \"Bob\" 85]]" (second result)))
+      (is (= "[:Game $shapes $players]" (nth result 2))))))
+
 
 (deftest test-mixed-primitive-literals
   (testing "parses mixed primitive literals in construction"
@@ -188,3 +195,33 @@
       (is (ast-contains? #(and (vector? %) (= (first %) :StringLiteral)) (:final-construction (:value result)))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(deftest test-parse-single-array-construction
+  (testing "Parse single array construction statement"
+    (let [schema "Game = [Player]/players\nPlayer = String/name Int/score"
+          construction "[:Array/Player [:Player \"Alice\" 100] [:Player \"Bob\" 85]]"
+          schema-parse-result (parser/schema-wchnt->schema-ast schema)]
+      (is (:success schema-parse-result))
+      (let [schema-ast (:value schema-parse-result)
+            grammar-result (parser/schema-to-construction-grammar schema-ast)
+            grammar (:grammar (:value grammar-result))
+            statement-parser (instaparse.core/parser grammar :start :Statement)
+            parse-result (statement-parser construction)]
+        (is (vector? parse-result))
+        (is (= :Statement (first parse-result)))
+        (is (= :PlayerArrayConstruction (first (second parse-result))))))))
+
+(deftest test-parse-single-disjunction-array-construction
+  (testing "Parse single array construction statement with sum type/interface elements"
+    (let [schema "Game = [Shape]/shapes\nShape = Triangle | Circle\nTriangle = Int/base Int/height\nCircle = Int/radius"
+          construction "[:Array/Shape [:Triangle 10 20] [:Circle 15]]"
+          schema-parse-result (parser/schema-wchnt->schema-ast schema)]
+      (is (:success schema-parse-result))
+      (let [schema-ast (:value schema-parse-result)
+            grammar-result (parser/schema-to-construction-grammar schema-ast)
+            grammar (:grammar (:value grammar-result))
+            statement-parser (instaparse.core/parser grammar :start :Statement)
+            parse-result (statement-parser construction)]
+        (is (vector? parse-result))
+        (is (= :Statement (first parse-result)))
+        (is (= :ShapeArrayConstruction (first (second parse-result))))))))
