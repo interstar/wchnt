@@ -5,7 +5,6 @@
             [wchnt-lang.pipeline :as p]))
 
 
-
 (deftest test-parse-mainfile-schema-validation
   (testing "parse-mainfile result conforms to MainfileParseResult schema"
     (let [valid-content "# WCHNT Program
@@ -41,7 +40,7 @@ Person = String String
       
       ;; Test successful result conforms to schema
       (is (:success valid-result))
-      (is (schema/valid-mainfile-parse-result? valid-result))
+      (is (schema/valid-mainfile-parse-result? (:value valid-result)))
       (let [value (:value valid-result)]
         (is (= "Person = String String\nGroup = [Person]" (:schema value)))
         (is (= "$people = [:Group [:Person \"John\" \"Smith\"]]\n[:Town [:School $people] [:Team $people]]" (:construction value)))
@@ -51,8 +50,8 @@ Person = String String
       
       ;; Test error result conforms to schema
       (is (not (:success invalid-result)))
-      (is (schema/valid-mainfile-parse-result? invalid-result))
-      (is (and (seq (:errors invalid-result)) (re-find #"order|sequence" (first (:errors invalid-result))))))))
+      (is (schema/valid-mainfile-parse-result? (:value invalid-result)))
+      (is (and (seq (:errors invalid-result)) (re-find #"order|sequence" (first (:errors invalid-result)))))))
 
 
 (deftest test-parse-mainfile-basic
@@ -251,7 +250,6 @@ Missing closing backticks
                    
 ```
 Person = String String
-```
 "
           result (parse-mainfile content)]
       (is (not (:success result)))

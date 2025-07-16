@@ -77,6 +77,8 @@
               (let [updated-section-map (assoc section-map current-section (str/join "\n" current-code))
                     updated-code-block-seen (conj code-block-seen current-section)]
                 (recur remaining-lines current-section current-section-idx false [] updated-section-map updated-code-block-seen seen-sections))
+              (re-matches section-pattern trimmed-line)
+              (throw (ex-info "Malformed markdown: unclosed code block" {}))
               (re-matches code-block-start trimmed-line)
               (throw (ex-info "Malformed markdown: nested code block" {}))
               :else

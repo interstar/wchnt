@@ -154,7 +154,7 @@
                   [:map
                    [:name string?]
                    [:construction any?]]]]
-   [:final-construction any?]])
+   [:final-construction vector?]])
 
 (defn valid-multi-step-construction? [ast]
   (m/validate MultiStepConstructionAST ast)) 

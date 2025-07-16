@@ -3,7 +3,8 @@
             [instaparse.core :as insta]
             [wchnt-lang.parser :as parser]
             [wchnt-lang.pipeline :as P]
-            [wchnt-lang.schema :as schema]))
+            [wchnt-lang.schema :as schema])
+  (:import (java.lang Exception)))
 
 ;; Import find-node from parser
 (def find-node wchnt-lang.parser/find-node)
@@ -753,49 +754,148 @@ class ArrayExtensions {
                           "}")]
     (P/success-cargo factory-code)))
 
-(defn generate-construction-factory-impl [schema-input construction-input context-relationships]
-  "Implementation of generate-construction-factory without exception handling"
-  (let [parse-result (parser/parse-construction-pure {:schema-ast schema-input :construction construction-input})]
-    (if (:success parse-result)
-      (let [ast (:value parse-result)
-            class-info (parser/extract-class-info ((parser/get-schema-parser) schema-input))
-            actual-context-relationships
-            (if (empty? context-relationships)
-              (build-context-relationships ((parser/get-schema-parser) schema-input))
-              context-relationships)]
-        (case (:type ast)
-          :MultiStepConstruction (multi-step-factory-code ast class-info actual-context-relationships)
-          :SingleConstruction (single-factory-code ast class-info actual-context-relationships)
-          (P/fail-cargo (str "Unknown construction AST type: " (:type ast)))))
-      parse-result)))
 
-(defn generate-construction-factory [schema-input construction-input context-relationships]
-  "Generate Haxe factory function from schema and construction input"
-  #?(:clj
-     (try
-       (generate-construction-factory-impl schema-input construction-input context-relationships)
-       (catch Exception e
-         (P/fail-cargo (str "Error generating factory: " (.getMessage e)))))
-     :cljs
-     (try
-       (generate-construction-factory-impl schema-input construction-input context-relationships)
-       (catch :default e
-         (P/fail-cargo (str "Error generating factory: " (.-message e)))))))
+
+
 
 (defn generate-construction-factory-pure [parsed-ast class-info context-relationships]
   "Pure transformation: generate Haxe factory function from parsed construction AST.
   Input: parsed construction AST, class-info, context-relationships
   Output: Haxe factory function string"
-  (let [ast-type (:type parsed-ast)
-        ;; We need the schema AST to build context relationships, but we don't have it here
-        ;; For now, we'll require context-relationships to be passed in
-        actual-context-relationships (if (empty? context-relationships)
-                                      {}  ;; Empty context relationships if none provided
-                                      context-relationships)]
-    (cond
-      (= ast-type :MultiStepConstruction)
-      (multi-step-factory-code parsed-ast class-info actual-context-relationships)
-      (= ast-type :SingleConstruction)
-      (single-factory-code parsed-ast class-info actual-context-relationships)
-      :else (throw (ex-info "Unknown construction AST type" {:ast-type ast-type :parsed-ast parsed-ast}))))
-)
+  (println "DEBUG: ENTER generate-construction-factory-pure" {:type (:type parsed-ast) :class-info (keys class-info) :context-relationships (count context-relationships)})
+  (let [cargo-result (P/run parsed-ast
+    (P/trace "GENERATE-FACTORY-START")
+    (P/log (str "Generating factory for AST type: " (:type parsed-ast)))
+    
+    (P/processor
+      (fn [parsed-ast]
+        (let [ast-type (:type parsed-ast)
+              ;; We need the schema AST to build context relationships, but we don't have it here
+              ;; For now, we'll require context-relationships to be passed in
+              actual-context-relationships (if (empty? context-relationships)
+                                            {}  ;; Empty context relationships if none provided
+                                            context-relationships)]
+          (P/log (str "Using context relationships: " (count actual-context-relationships) " entries"))
+          (cond
+            (= ast-type :MultiStepConstruction)
+            (multi-step-factory-code parsed-ast class-info actual-context-relationships)
+            (= ast-type :SingleConstruction)
+            (single-factory-code parsed-ast class-info actual-context-relationships)
+            :else (P/fail-cargo (str "Unknown construction AST type: " ast-type)))))
+      "Generate factory code")
+    (P/trace "GENERATE-FACTORY-COMPLETE"))]
+    ;; Return the value from the cargo, or nil if it failed
+    (if (P/failed? cargo-result)
+      (do
+        (println "GENERATE-FACTORY-FAILED:" cargo-result)
+        nil)
+      (do
+        (println "GENERATE-FACTORY-SUCCESS:" (:value cargo-result))
+        (:value cargo-result)))))
+
+(defn generate-construction-factory-pure-cargo [parsed-ast class-info context-relationships]
+  "Pure transformation: generate Haxe factory function from parsed construction AST.
+  Input: parsed construction AST, class-info, context-relationships
+  Output: Cargo with Haxe factory function string"
+  (P/run parsed-ast
+    (P/trace "GENERATE-FACTORY-START")
+    (P/log (str "Generating factory for AST type: " (:type parsed-ast)))
+    
+    (P/processor
+      (fn [parsed-ast]
+        (let [ast-type (:type parsed-ast)
+              ;; We need the schema AST to build context relationships, but we don't have it here
+              ;; For now, we'll require context-relationships to be passed in
+              actual-context-relationships (if (empty? context-relationships)
+                                            {}  ;; Empty context relationships if none provided
+                                            context-relationships)]
+          (P/log (str "Using context relationships: " (count actual-context-relationships) " entries"))
+          (cond
+            (= ast-type :MultiStepConstruction)
+            (multi-step-factory-code parsed-ast class-info actual-context-relationships)
+            (= ast-type :SingleConstruction)
+            (single-factory-code parsed-ast class-info actual-context-relationships)
+            :else (P/fail-cargo (str "Unknown construction AST type: " ast-type)))))
+      "Generate factory code")
+    (P/trace "GENERATE-FACTORY-COMPLETE")))
+
+;; New simplified core function
+(defn generate-construction-factory
+  "Core function: generates the Haxe factory function for the top-level class."
+  [parsed-ast class-info context-relationships]
+  ;; Validate that we have a proper construction AST using the existing schema
+  (if-not (schema/valid-multi-step-construction? parsed-ast)
+    (throw (ex-info "Unsupported AST type: expected construction AST with :final-construction" 
+                   {:ast parsed-ast}))
+    (let [final-construction (:final-construction parsed-ast)
+        _ (println "DEBUG: final-construction:" final-construction)
+        ;; Extract the class name from the construction AST (e.g., [:GameConstruction ...] -> :Game)
+        construction-type (when (vector? final-construction) (first final-construction))
+        _ (println "DEBUG: construction-type:" construction-type)
+        ;; Convert :GameConstruction to :Game by removing "Construction" suffix
+        top-class (when construction-type 
+                   (keyword (str/replace (name construction-type) #"Construction$" "")))
+        _ (println "DEBUG: top-class:" top-class "type:" (type top-class))
+        factory-fn-name (str (clojure.string/lower-case (name top-class)) "Factory")
+        _ (println "DEBUG: factory-fn-name:" factory-fn-name)]
+    (let [assignment-results
+          (loop [assignments (:assignments parsed-ast)
+                 results []
+                 global-counter 1]
+            (if (empty? assignments)
+              results
+              (let [assignment (first assignments)
+                    result (walk-ast-and-build-table
+                            (:construction assignment)
+                            class-info context-relationships
+                            global-counter nil {} {})
+                    next-counter (nth result 1)]
+                (recur (rest assignments)
+                       (conj results result)
+                       next-counter))))
+          assignment-tables (map #(nth % 2) assignment-results)
+          assignment-mappings (map #(nth % 3) assignment-results)
+          combined-assignment-table (apply merge assignment-tables)
+          combined-variable-mapping (apply merge assignment-mappings)
+          [final-var final-counter final-table final-mapping]
+          (walk-ast-and-build-table
+           (:final-construction parsed-ast) class-info context-relationships
+           (inc (count combined-assignment-table)) nil combined-assignment-table combined-variable-mapping)
+          variable-name-mapping (into {}
+                                     (for [assignment (:assignments parsed-ast)]
+                                       (let [assignment-ast (:construction assignment)
+                                             array-var (some (fn [[_ entry]] (when (= (:ast entry) assignment-ast) (:var-name entry))) final-table)]
+                                         [(str "$" (:name assignment)) array-var])))
+          {:keys [construction-stmts context-stmts]} (generate-statements-from-table final-table context-relationships class-info variable-name-mapping)
+          root-var (let [final-construction (:final-construction parsed-ast)
+                          root-entry (first (filter #(= (:ast (val %)) final-construction) final-table))]
+                     (if root-entry
+                       (:var-name (val root-entry))
+                       (apply max-key #(Integer/parseInt (subs % 1))
+                              (map #(:var-name (val %)) final-table))))
+          factory-code (str "public static function " factory-fn-name "(...) {\n"
+                            "  " (str/join "\n    " construction-stmts) "\n"
+                            (when (seq context-stmts) (str "    " (str/join "\n    " context-stmts) "\n"))
+                            "    return " root-var ";\n"
+                            "}")]
+      factory-code))))
+
+(defn generate-construction-factory-cargo [cargo]
+  "Pipeline wrapper: takes a cargo, extracts parameters from stash, calls generate-construction-factory with try/catch, and wraps the result."
+  (try
+    (let [stash (:stash cargo)
+          construction-ast (:construction-ast stash)
+          schema-ast (:schema-ast stash)
+          context-relationships (:context-relationships stash)]
+
+      ;; Validate that all required stash values are present
+      (if (or (nil? construction-ast) (nil? schema-ast) (nil? context-relationships))
+        (P/fail-cargo "Missing required stash values: construction-ast, schema-ast, or context-relationships")
+
+        ;; Extract class-info from schema-ast
+        (let [class-info (parser/extract-class-info schema-ast)
+              ;; Call the core function
+              haxe-code (generate-construction-factory construction-ast class-info context-relationships)]
+          (P/success-cargo haxe-code))))
+    (catch Exception e
+      (P/fail-cargo (str "Error generating construction factory: " (.getMessage e))))))

@@ -220,3 +220,123 @@
         
         ;; Check total count (2 traces + 1 log = 3 entries)
         (is (= (count log-entries) 3))))))
+
+(deftest test-cargo-processor-stash-preservation
+  (testing "cargo-processor preserves stash from current context"
+    (let [cargo
+          (p/run 3
+            (p/stash :original-stash)
+            (p/log "BEFORE-CARGO-PROCESSOR")
+            (p/cargo-processor (fn [ctx] 
+                                 (p/success-cargo 
+                                   {:new-value (* (:value ctx) 2)
+                                    :stash {:sub-stash "sub-value"}})))  ; This stash should NOT overwrite original
+            (p/log "AFTER-CARGO-PROCESSOR"))]
+      (is (not (p/failed? cargo)))
+      (is (= (p/cargo-value cargo "test") {:new-value 6 :stash {:sub-stash "sub-value"}}))
+      
+      ;; Check that original stash is preserved
+      (is (= (-> cargo :stash :original-stash) 3))
+      (is (not (contains? (:stash cargo) :sub-stash)))  ; Sub-stash should not overwrite original stash
+      
+      ;; Check that logs are preserved
+      (let [log-entries (:log cargo)]
+        (is (some #(re-find #"LOG : BEFORE-CARGO-PROCESSOR" %) log-entries))
+        (is (some #(re-find #"LOG : AFTER-CARGO-PROCESSOR" %) log-entries))
+        (is (= (count log-entries) 2))))))
+
+(deftest test-cargo-processor-log-preservation
+  (testing "cargo-processor preserves log from current context"
+    (let [cargo
+          (p/run 4
+            (p/trace "MAIN-START")
+            (p/log "MAIN-BEFORE-CARGO")
+            (p/cargo-processor (fn [ctx] 
+                                 (p/run (* (:value ctx) 3)
+                                   (p/log "SUB-LOG-1")
+                                   (p/log "SUB-LOG-2"))))  ; This should add to log, not replace
+            (p/log "MAIN-AFTER-CARGO")
+            (p/trace "MAIN-END"))]
+      (is (not (p/failed? cargo)))
+      (is (= (p/cargo-value cargo "test") 12))
+      
+      ;; Check that all logs are preserved in order
+      (let [log-entries (:log cargo)]
+        (is (some #(re-find #"TRACE: MAIN-START" %) log-entries))
+        (is (some #(re-find #"LOG : MAIN-BEFORE-CARGO" %) log-entries))
+        (is (some #(re-find #"LOG : SUB-LOG-1" %) log-entries))
+        (is (some #(re-find #"LOG : SUB-LOG-2" %) log-entries))
+        (is (some #(re-find #"LOG : MAIN-AFTER-CARGO" %) log-entries))
+        (is (some #(re-find #"TRACE: MAIN-END" %) log-entries))
+        
+        ;; Check total count (2 traces + 4 logs = 6 entries)
+        (is (= (count log-entries) 6))))))
+
+(deftest test-cargo-processor-failure-stash-preservation
+  (testing "cargo-processor preserves stash even when it returns a failed cargo"
+    (let [cargo
+          (p/run 5
+            (p/stash :important-data)
+            (p/log "BEFORE-FAILURE")
+            (p/cargo-processor (fn [ctx] 
+                                 (p/fail-cargo "Something went wrong")))  ; This should fail but preserve stash
+            (p/log "AFTER-FAILURE"))]
+      (is (p/failed? cargo))
+      (is (= (count (:errors cargo)) 1))
+      (is (= (first (:errors cargo)) "Something went wrong"))
+      
+      ;; Check that stash is preserved even after failure
+      (is (= (-> cargo :stash :important-data) 5))
+      
+      ;; Check that logs before failure are preserved
+      (let [log-entries (:log cargo)]
+        (is (some #(re-find #"LOG : BEFORE-FAILURE" %) log-entries))
+        (is (not-any? #(re-find #"AFTER-FAILURE" %) log-entries))  ; Should not be present
+        
+        ;; Check total count (1 log = 1 entry)
+        (is (= (count log-entries) 1))))))
+
+(deftest test-cargo-processor-failure-log-preservation
+  (testing "cargo-processor preserves log even when it returns a failed cargo"
+    (let [cargo
+          (p/run 6
+            (p/trace "MAIN-START")
+            (p/log "MAIN-BEFORE-FAILURE")
+            (p/cargo-processor (fn [ctx] 
+                                 (p/run (:value ctx)
+                                   (p/log "SUB-LOG-BEFORE-FAILURE")
+                                   (p/validator #(> % 10) "Value too small"))))  ; This should fail
+            (p/log "MAIN-AFTER-FAILURE"))]
+      (is (p/failed? cargo))
+      (is (= (count (:errors cargo)) 1))
+      
+      ;; Check that logs are preserved even after failure
+      (let [log-entries (:log cargo)]
+        (is (some #(re-find #"TRACE: MAIN-START" %) log-entries))
+        (is (some #(re-find #"LOG : MAIN-BEFORE-FAILURE" %) log-entries))
+        (is (some #(re-find #"LOG : SUB-LOG-BEFORE-FAILURE" %) log-entries))
+        (is (not-any? #(re-find #"MAIN-AFTER-FAILURE" %) log-entries))  ; Should not be present
+        
+        ;; Check total count (1 trace + 2 logs = 3 entries)
+        (is (= (count log-entries) 3))))))
+
+(deftest test-cargo-processor-plain-value
+  (testing "cargo-processor handles plain value returns correctly"
+    (let [cargo
+          (p/run 7
+            (p/stash :original-data)
+            (p/log "BEFORE-PLAIN-VALUE")
+            (p/cargo-processor (fn [ctx] 
+                                 (* (:value ctx) 2)))  ; Returns plain value, not cargo
+            (p/log "AFTER-PLAIN-VALUE"))]
+      (is (not (p/failed? cargo)))
+      (is (= (p/cargo-value cargo "test") 14))
+      
+      ;; Check that stash is preserved
+      (is (= (-> cargo :stash :original-data) 7))
+      
+      ;; Check that logs are preserved
+      (let [log-entries (:log cargo)]
+        (is (some #(re-find #"LOG : BEFORE-PLAIN-VALUE" %) log-entries))
+        (is (some #(re-find #"LOG : AFTER-PLAIN-VALUE" %) log-entries))
+        (is (= (count log-entries) 2))))))

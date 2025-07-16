@@ -747,70 +747,86 @@ EmptyType = '_'
   "Pure transformation: parse construction using split-statements approach.
   Input: {:schema-ast schema-ast :construction construction-string}
   Output: parsed construction AST with assignments and final construction"
+  (println "DEBUG: parse-construction-pure called with:")
+  (println "DEBUG: schema-ast:" schema-ast)
+  (println "DEBUG: construction:" construction)
   (let [class-info (extract-class-info schema-ast)
         grammar-string (generate-construction-grammar class-info)
         statement-parser (insta/parser grammar-string :start :Statement)
-        statements (split-statements construction)]
-    (P/run statements
-      ;; Validate we have at least one statement
-      (P/validator #(not (empty? %)) "No statements found in construction")
-      
-      ;; Parse each statement individually
-      (P/processor 
-        (fn [statements]
-          (map-indexed 
-            (fn [idx statement]
-              (let [parse-result (statement-parser statement)]
-                (if (insta/failure? parse-result)
-                  (P/fail-cargo (str "Failed to parse statement " (inc idx) ": " (insta/get-failure parse-result)))
-                  parse-result)))
-            statements))
-        "Parse each statement")
-      
-      ;; Extract assignments and final construction
-      (P/processor 
-        (fn [successful-parses]
-          (let [;; Separate assignments from final construction based on content, not position
-                assignment-statements (filter (fn [ast]
-                                               (and (vector? ast) 
-                                                    (= (first ast) :Statement)
-                                                    (vector? (second ast))
-                                                    (= (first (second ast)) :VariableAssignment)))
-                                             successful-parses)
-                final-statements (filter (fn [ast]
-                                          (and (vector? ast) 
-                                               (= (first ast) :Statement)
-                                               (vector? (second ast))
-                                               (not= (first (second ast)) :VariableAssignment)))
-                                        successful-parses)
-                ;; Extract the actual construction from the final statement
-                final-construction (if (seq final-statements)
-                                    (let [final-statement (last final-statements)]
-                                      (if (and (vector? final-statement) (= (first final-statement) :Statement))
-                                        (second final-statement) ; Get the construction node from [:Statement construction]
-                                        final-statement))
-                                    nil)
-                ;; Extract assignments from assignment statements
-                assignments (map (fn [ast]
-                                  (if (and (vector? ast) (= (first ast) :Statement))
-                                    (let [statement-content (second ast)]
-                                      (if (and (vector? statement-content) (= (first statement-content) :VariableAssignment))
-                                        (let [[_ & children] statement-content
-                                              var-name-node (first (filter #(= (first %) :VariableName) children))
-                                              value-node (first (filter #(not= (first %) :VariableName) children))]
-                                          (when (and var-name-node value-node)
-                                            {:name (second var-name-node)
-                                             :construction value-node}))
+        statements (split-statements construction)
+        cargo-result (P/run statements
+          (P/trace "PARSE-CONSTRUCTION-START")
+          (P/log (str "Parsing construction with " (count statements) " statements"))
+          
+          ;; Validate we have at least one statement
+          (P/validator #(not (empty? %)) "No statements found in construction")
+          (P/trace "PARSE-CONSTRUCTION-VALIDATION-PASSED")
+          
+          ;; Parse each statement individually
+          (P/processor 
+            (fn [statements]
+              (P/log (str "Parsing " (count statements) " statements"))
+              (map-indexed 
+                (fn [idx statement]
+                  (let [parse-result (statement-parser statement)]
+                    (if (insta/failure? parse-result)
+                      (P/fail-cargo (str "Failed to parse statement " (inc idx) ": " (insta/get-failure parse-result)))
+                      parse-result)))
+                statements))
+            "Parse each statement")
+          (P/trace "PARSE-CONSTRUCTION-STATEMENTS-PARSED")
+          
+          ;; Extract assignments and final construction
+          (P/processor 
+            (fn [successful-parses]
+              (P/log (str "Extracting from " (count successful-parses) " successful parses"))
+              (let [;; Separate assignments from final construction based on content, not position
+                    assignment-statements (filter (fn [ast]
+                                                   (and (vector? ast) 
+                                                        (= (first ast) :Statement)
+                                                        (vector? (second ast))
+                                                        (= (first (second ast)) :VariableAssignment)))
+                                                 successful-parses)
+                    final-statements (filter (fn [ast]
+                                              (and (vector? ast) 
+                                                   (= (first ast) :Statement)
+                                                   (vector? (second ast))
+                                                   (not= (first (second ast)) :VariableAssignment)))
+                                            successful-parses)
+                    ;; Extract the actual construction from the final statement
+                    final-construction (if (seq final-statements)
+                                        (let [final-statement (last final-statements)]
+                                          (if (and (vector? final-statement) (= (first final-statement) :Statement))
+                                            (second final-statement) ; Get the construction node from [:Statement construction]
+                                            final-statement))
+                                        nil)
+                    ;; Extract assignments from assignment statements
+                    assignments (map (fn [ast]
+                                      (if (and (vector? ast) (= (first ast) :Statement))
+                                        (let [statement-content (second ast)]
+                                          (if (and (vector? statement-content) (= (first statement-content) :VariableAssignment))
+                                            (let [[_ & children] statement-content
+                                                  var-name-node (first (filter #(= (first %) :VariableName) children))
+                                                  value-node (first (filter #(not= (first %) :VariableName) children))]
+                                              (when (and var-name-node value-node)
+                                                {:name (second var-name-node)
+                                                 :construction value-node}))
+                                            nil))
                                         nil))
-                                    nil))
-                                assignment-statements)
-                valid-assignments (filter some? assignments)]
-            (if (nil? final-construction)
-              (P/fail-cargo "Construction must include a final construction statement.")
-              {:type :MultiStepConstruction
-               :assignments valid-assignments
-               :final-construction final-construction})))
-        "Extract assignments and final construction")
-      (P/log "The final construction"))))
+                                    assignment-statements)
+                    valid-assignments (filter some? assignments)]
+                (P/log (str "Found " (count valid-assignments) " assignments and final construction: " (pr-str final-construction)))
+                (P/log-all "EXTRACTION-DEBUG")
+                (if (nil? final-construction)
+                  (P/fail-cargo "Construction must include a final construction statement.")
+                  {:type :MultiStepConstruction
+                   :assignments valid-assignments
+                   :final-construction final-construction})))
+            "Extract assignments and final construction")
+          (P/trace "PARSE-CONSTRUCTION-EXTRACTION-COMPLETE")
+          (P/log "The final construction")
+          (P/log-all "PARSE-CONSTRUCTION-PURE-FINAL-CARGO"))]
+    ;; Return the cargo result directly
+    cargo-result))
 
 

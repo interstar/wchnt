@@ -83,38 +83,35 @@ The pipeline short-circuits on failure: if :success is false, later stages are s
           ))
 
 
-(defn processor
-  "Wraps a function f as a processor stage.
+(defn- merge-cargo-into-context [ctx result]
+  (-> ctx
+      (assoc :success (:success result))
+      (assoc :value (:value result))
+      (assoc :errors (:errors result))
+      (assoc :warnings (:warnings result))
+      (update :log concat (:log result))
+      (update :stash merge (:stash result))))
 
-  - Applies f to (:value ctx) if :success is true.
-  - If f returns a Cargo, merges it with current context (preserving stash and log).
-  - If f returns a plain value, wraps it in a new Cargo.
-  - If f throws or fails, sets :success false, :value nil, and adds an error message.
+(defn- make-processor [arg-extractor]
+  (fn
+    ([f] ((make-processor arg-extractor) f ""))
+    ([f label]
+     (fn [ctx]
+       (throw-pass
+        ctx "Processor" label
+        (fn [ctx label]
+          (try
+            (let [result (f (arg-extractor ctx))]
+              (if (is-cargo? result)
+                (merge-cargo-into-context ctx result)
+                (assoc ctx :value result :success true)))
+           (catch Exception e
+             (-> ctx
+                 (assoc :success false :value nil)
+                 (update :errors conj (.getMessage e)))))))))))
 
-  If :success is already false, the processor is skipped."
-  ([f] (processor f ""))
-  ([f label]
-   (fn [ctx]
-     (throw-pass
-      ctx "Processor" label
-      (fn [ctx label]
-        (try
-          (let [result (f (:value ctx))]
-            (if (is-cargo? result)
-              ;; Function returned a Cargo - merge with current context
-              (-> ctx
-                  (assoc :success (:success result))
-                  (assoc :value (:value result))
-                  (assoc :errors (:errors result))
-                  (assoc :warnings (:warnings result))
-                 ;; Preserve current stash, don't overwrite with result stash
-                  )
-              ;; Function returned a plain value - wrap in new Cargo
-              (assoc ctx :value result :success true)))
-         (catch Exception e
-           (-> ctx
-               (assoc :success false :value nil)
-               (update :errors conj (.getMessage e))))))))))
+(def processor (make-processor :value))
+(def cargo-processor (make-processor identity))
 
 (defn validator
   "Wraps a predicate function pred as a validator stage.
@@ -214,28 +211,4 @@ The pipeline short-circuits on failure: if :success is false, later stages are s
   on existing cargo"
   [cargo & stages]
   (reduce (fn [ctx stage] (stage ctx)) cargo stages))
-
-(defn cargo-processor
-  "Like processor, but passes the full cargo (pipeline context) to the function, not just the :value."
-  ([f] (cargo-processor f ""))
-  ([f label]
-   (fn [ctx]
-     (throw-pass
-      ctx "CargoProcessor" label
-      (fn [ctx label]
-        (try
-          (let [result (f ctx)]
-            (if (is-cargo? result)
-              ;; Function returned a Cargo - merge with current context
-              (-> ctx
-                  (assoc :success (:success result))
-                  (assoc :value (:value result))
-                  (assoc :errors (:errors result))
-                  (assoc :warnings (:warnings result)))
-              ;; Function returned a plain value - wrap in new Cargo
-              (assoc ctx :value result :success true)))
-         (catch Exception e
-           (-> ctx
-               (assoc :success false :value nil)
-               (update :errors conj (.getMessage e))))))))))
 

@@ -4,6 +4,7 @@
             [wchnt-lang.schema :as schema]
             [wchnt-lang.mainfile :as mainfile]
             [wchnt-lang.pipeline :as p]
+            [wchnt-lang.pipeline :as P]
             [instaparse.core :as insta]
             [clojure.string :as str]))
 
@@ -58,18 +59,35 @@
            #(not= % "") ;; check if the construction wchnt is not empty      
            (p/stash :construction-wchnt) ;; stash it as :construction-wchnt
            (p/log-all "BEFORE PARSE-CONSTRUCTION-PURE")
+           (p/trace "ABOUT-TO-CALL-CARGO-PROCESSOR")
            ;; Parse construction using the schema-generated grammar
-           (p/cargo-processor #(parser/parse-construction-pure 
-                              {:schema-ast (-> % :stash :schema-ast) :construction (-> % :stash :construction-wchnt)}) "parse-construction-pure")
+                      (p/cargo-processor #(do
+                                (println "DEBUG: About to call parse-construction-pure")
+                                (println "DEBUG: schema-ast:" (-> % :stash :schema-ast))
+                                (println "DEBUG: construction:" (-> % :stash :construction-wchnt))
+                                (let [result (parser/parse-construction-pure 
+                                             {:schema-ast (-> % :stash :schema-ast) 
+                                              :construction (-> % :stash :construction-wchnt)})]
+                                  (if (P/failed? result)
+                                    result
+                                    (P/success-cargo (:value result))))) "parse-construction-pure")
            (p/log-all "AFTER PARSE-CONSTRUCTION-PURE")
+           (p/log-all "AFTER PARSE-CONSTRUCTION-CARGO-PROCESSOR")
            (p/stash :construction-ast)
+           (p/log-all "AFTER STASH CONSTRUCTION-AST")
+           (p/log "CURRENT VALUE BEFORE FACTORY GENERATION")
+           (p/log-all "ABOUT TO START FACTORY GENERATION")
            
            ;; Generate construction factory
            (p/log-all "BEFORE GENERATE-CONSTRUCTION-FACTORY")
-           (p/processor #(haxe-gen/generate-construction-factory-pure 
-                           % 
-                           (parser/extract-class-info (-> % :stash :schema-ast))
-                           {}))
+           (p/cargo-processor #(do
+                                (println "DEBUG: About to call generate-construction-factory-pure-cargo")
+                                (println "DEBUG: construction-ast:" %)
+                                (println "DEBUG: class-info:" (parser/extract-class-info (-> % :stash :schema-ast)))
+                                (haxe-gen/generate-construction-factory-pure-cargo 
+                                 % 
+                                 (parser/extract-class-info (-> % :stash :schema-ast))
+                                 {})) "generate-construction-factory-pure-cargo")
            (p/log-all "AFTER GENERATE-CONSTRUCTION-FACTORY")
            (p/stash :construction-haxe)
            )
