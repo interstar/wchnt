@@ -33,8 +33,15 @@
   (try
     (let [file-content (slurp file-path)
           result (compiler/compile file-content)]
-      (schema/valid-full-program-or-fail? result)
-      )))
+      result)))
+
+(defn compile-file
+  "Compile a WCHNT file and return the result"
+  [file-path]
+  (let [file (io/file file-path)
+        file-content (slurp file)
+        result (compiler/compile file-content)]
+    result))
 
 (defn eyeball
   "Validate generated Haxe code for common issues.
@@ -63,17 +70,18 @@
           (do
             (println (str "File not found: " filename))
             (System/exit 1))
-          (let [result (compiler/compile-file filename)]
+          (let [result (compile-file filename)]
             (if (and
-                 (schema/valid-full-program-or-fail? result)
+                 (p/is-cargo? result)
                  (:success result))
               (do
-                (println (:classes result))
-                (println (:factory result))
-                (println (:main result))                
+                (println (:classes (:value result)))
+                (println (:factory (:value result)))
+                (println (:main (:value result)))                
                 (if verbose?                
                   (pp/pprint result))) 
               (do
                 (println
                  (:error result) "file parsing" filename)
+                (println result)
                 (System/exit 1)))))))))

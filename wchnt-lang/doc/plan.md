@@ -1,132 +1,105 @@
 # WCHNT Language Development Plan
 
-This document outlines the future development goals and features for the WCHNT language. The plan is organized by priority and complexity, with immediate goals first and more advanced features later.
+## Current Situation
+
+You have successfully created a new unified grammar in `newparser.clj` that can handle both construction and reaction/imperative sections. This grammar is working well in tests and produces a different AST structure than the old schema-derived construction parser.
+
+## Integration Plan: Replace Old Construction Parser with New Unified Parser
+
+### Phase 1: Understand the AST Structure Differences
+
+**Current Old Parser AST Structure:**
+- Produces `{:type :MultiStepConstruction, :assignments [...], :final-construction ...}` 
+- Uses schema-derived grammar with specific class construction rules
+- Handles assignments and final construction separately
+
+**New Unified Parser AST Structure:**
+- Produces method definitions: `[:Code [:MethodDefinition ...]]`
+- Can parse construction statements directly: `[:BlockStatements ...]`
+- Uses generic grammar that works for both construction and reaction sections
+- AST structure is more generic and expression-oriented
 
 
-### 1) Fixing construction compilation and unit testing, to make sure it works
 
-### 2) we are going to rethink the structure of a WCHNT / assemblage source file.
+**Task 2.2: Create `construction-extractor.clj`**
+- Function to extract construction statements from new parser AST
+- Parse construction using `:start :BlockStatements` 
+- Handle the dual grammar usage demonstrated in tests
 
-In particular, we are going for a "literate programming" approach where we will embed code within markdown.
+### Phase 3: Update Compilation Pipeline
 
-A WCHNT program will look like a markdown file with human readable text.
+**Task 3.1: Modify `compiler.clj`**
+- Replace `parser/parse-construction-pure` call with new unified parser
+- Add AST transformation step after parsing
+- Update pipeline to use new parser for construction section
 
-We will still use the convention of a level two heading (ie. a heading with two hash symbols in front of it) to separate the phases of our program
+**Task 3.2: Create `parse-construction-unified` function**
+- Use `newparser/get-wchnt-parser` 
+- Parse construction section with `:start :BlockStatements`
+- Transform AST to compatible format for existing factory generation
 
-We will put the actual meaningful part of the code in each case within the triple backtack "fence" 
+### Phase 4: Update Factory Generation
 
-eg. a document will say something like ## Schema then the backtick fence, then the schema code, then close the backticks.
+**Task 4.1: Modify `haxegen.cljc`**
+- Update `generate-construction-factory` to handle new AST structure
+- Ensure compatibility with both old and new AST formats during transition
+- Add validation for new AST structure
 
-We can have other text in this section too, which is effectively comments.
+**Task 4.2: Create `generate-construction-factory-unified`**
+- New factory generation function specifically for unified parser AST
+- Handle the new expression-based AST structure
+- Maintain same output format (Haxe factory function)
 
-Then there's the hash-hash Construction header. With more ordinary text and the code in the backtick fences.
+### Phase 5: Testing and Validation
 
-Does this make sense.
+**Task 5.1: Update existing tests**
+- Modify `construction_test.clj` to use new parser
+- Ensure all existing test cases still pass
+- Add new tests for unified parser edge cases
 
-We're going to add further phases or sections to our code, so for the moment, the definitive 5 sections of a WCHNT program will be
+**Task 5.2: Create integration tests**
+- Test full compilation pipeline with new parser
+- Verify generated Haxe code is identical
+- Test error handling and edge cases
 
-- 1) Schema
-- 2) Construction
-- 3) Reactive
-- 4) Imperative
-- 5) Target
+### Phase 6: Cleanup and Documentation
 
-Don't worry what goes into the last 3 yet. But we will now define the document to accept all 5 of these sections.
+**Task 6.1: Remove old construction parsing code**
+- Remove `parse-construction-pure` and related functions
+- Remove schema-derived construction grammar generation
+- Clean up unused code in `parser.cljc`
 
-So ... the first part of the new parsing will be to take this markdown doc (still with a .wcn extension I think.) and extract the 5 code sections from it.
+**Task 6.2: Update documentation**
+- Document new unified parser approach
+- Update examples to show new grammar usage
+- Document AST transformation process
 
-Then we will pass each code section to the approprate parser in our pipeline. 
+## Questions and Ambiguities
 
-This changes the initial parsing strategy somewhat. 
- 
-Note that of all the sections, only the first, the Schema section is required. A file that just contains a Schema will produce a (eg. Haxe) target file that just defines classes. Schema plus Construction is classes plus the factory file. Reactive and Imperative will add methods to the classes. And Target is for extra information.
+1. **AST Structure Compatibility**: Should we maintain backward compatibility with the old AST structure, or can we update the factory generation to work directly with the new AST?
 
-### 3) context-specific classes
+2. **Error Handling**: How should we handle parsing errors from the new unified parser? Should we maintain the same error message format?
 
-The new thinking is that, actually all the intermediate stages of construction should be turned into temporary variables.
+3. **Performance**: The new parser might be slower since it's more generic. Should we optimize it or is the flexibility worth the performance cost?
 
-Eg. 
+4. **Grammar Evolution**: Should we extend the unified grammar to handle more construction-specific features, or keep it generic for future reaction/imperative sections?
 
-[:Game [:PlayArea [:Rect 0 0 400 500]] [:Ball 20 50 5]]
+5. **Testing Strategy**: Should we run both parsers in parallel during transition to ensure identical output, or make a clean switch?
 
-Should become 
+## Implementation Priority
 
-o1 = new Rect(0,0,400,500);
-o2 = new PlayArea(o1);
-o3 = new Ball(20,50,5);
-o4 = new Game(o2,o3);
+1. **High Priority**: Create AST transformation layer (Phase 2)
+2. **High Priority**: Update compilation pipeline (Phase 3) 
+3. **Medium Priority**: Update factory generation (Phase 4)
+4. **Medium Priority**: Testing and validation (Phase 5)
+5. **Low Priority**: Cleanup and documentation (Phase 6)
 
-etc.
+## Success Criteria
 
-If we are consistent in pulling out all objects as separate things, we don't need to worry about identifying the specific objects we have to pull out when they are context-specific.
+- All existing tests pass with new parser
+- Generated Haxe code is identical to current output
+- Compilation pipeline is simpler and more maintainable
+- New parser can handle both construction and future reaction sections
+- Error messages are clear and helpful
 
-Now in the case of 
-
-Car = :Engine 
-Engine = int/cylinders
-
-And 
-
-[:Car [:Engine 6]]
-
-We still  end up with
-
-o1 = new Engine(6);
-o2 = new Car(o1);
-o1.setContext(o2);
-
-
-## Phase 3: Reactive Features
-
-### 3.1 Observable Properties
-- **Basic Observables**: Properties that notify on change
-  ```wchnt
-  Person = String/name@observable int/age@observable
-  ```
-- **Computed Properties**: Derived values that update automatically
-  ```wchnt
-  Person = String/firstName@observable String/lastName@observable String/fullName@computed
-  ```
-
-### 3.2 Event Streams
-- **Property Change Events**: Automatic event generation
-  ```wchnt
-  Person = String/name@observable EventStream<String>/onNameChange
-  ```
-- **Custom Events**: User-defined event streams
-  ```wchnt
-  Button = String/text EventStream<MouseEvent>/onClick@event
-  ```
-
-### 3.3 Reactive Bindings
-- **One-way Bindings**: Automatic property synchronization
-  ```wchnt
-  Person = String/name@observable String/displayName@bind
-  ```
-- **Two-way Bindings**: Bidirectional synchronization
-  ```wchnt
-  Form = String/firstName@observable String/lastName@observable String/fullName@bind2way
-  ```
-
-## Phase 4: Validation and Constraints
-
-### 4.1 Property Validation
-- **Built-in Validators**: Common validation patterns
-  ```wchnt
-  Person = String/name@validate(notEmpty) int/age@validate(range(0,150))
-  ```
-- **Custom Validators**: User-defined validation functions
-  ```wchnt
-  Person = String/email@validate(emailFormat) String/phone@validate(phoneFormat)
-  ```
-
-### 4.2 Relationship Constraints
-- **Uniqueness**: Ensure unique references
-  ```wchnt
-  Person = String/name ->Person/spouse@unique
-  ```
-- **Cascading**: Automatic cleanup of related objects
-  ```wchnt
-  Person = String/name [->Person]/children@cascade(delete)
-  ```
 

@@ -67,3 +67,43 @@
       (let [haxe-code result]
         ;; Should have both the class and the ArrayExtensions
         (is (str/includes? haxe-code "class ArrayExtensions"))))))
+
+(deftest test-find-all-nodes
+  (testing "find-all-nodes finds nodes at different depths"
+    (let [tree [:Root
+                [:Level1 [:Target "value1"]]
+                [:Level1 [:Level2 [:Target "value2"]]]
+                [:Level1 [:Level2 [:Level3 [:Target "value3"]]]]]
+          results (haxegen/find-all-nodes :Target tree)]
+      (is (= 3 (count results)) "Should find all 3 Target nodes")
+      (is (= "value1" (second (first results))) "Should find first value")
+      (is (= "value2" (second (second results))) "Should find second value")
+      (is (= "value3" (second (nth results 2))) "Should find third value")))
+
+  (testing "find-all-nodes handles empty trees"
+    (is (= [] (haxegen/find-all-nodes :Target [])) "Empty vector should return empty")
+    (is (= [] (haxegen/find-all-nodes :Target nil)) "Nil should return empty")
+    (is (= [] (haxegen/find-all-nodes :Target "string")) "String should return empty"))
+
+  (testing "find-all-nodes finds nodes in sequences"
+    (let [tree [:Root
+                [:List [:Target "a"] [:Target "b"]]
+                [:Nested [:List [:Target "c"]]]]
+          results (haxegen/find-all-nodes :Target tree)]
+      (is (= 3 (count results)) "Should find all 3 Target nodes in sequences")
+      (is (= ["a" "b" "c"] (map second results)) "Should find correct values")))
+
+  (testing "find-all-nodes handles ArrayType and MapType special cases"
+    (let [tree [:Root
+                [:ArrayType [:Target "array-value"]]
+                [:MapType [:Target "map-value"]]]
+          results (haxegen/find-all-nodes :Target tree)]
+      (is (= 2 (count results)) "Should find both Target nodes in special types")
+      (is (= ["array-value" "map-value"] (map second results)) "Should find correct values")))
+
+  (testing "find-all-nodes returns empty when no matches"
+    (let [tree [:Root [:Level1 [:Level2 "value"]]]]
+      (is (= [] (haxegen/find-all-nodes :Target tree)) "Should return empty when no matches"))))
+  
+  
+  

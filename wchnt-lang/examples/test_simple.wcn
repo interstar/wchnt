@@ -1,7 +1,0 @@
-# Example: test_simple.wcn
-
-## Schema
-
-```
-Config = String/settings
-```

@@ -3,7 +3,7 @@
 ## Schema
 
 ```
-Game = PlayArea Ball [Team]/teams [Player]/players Scores
+Game = :PlayArea Ball [Team]/teams [Player]/players Scores
 PlayArea = Rect
 Rect = Int/x Int/y Int/width Int/height
 Ball = Football | Rugbyball
@@ -17,15 +17,15 @@ Scores = Int/home Int/away
 ## Construction
 
 ```
-$ps = [:Array/Player [10 10 "John"] [50 70 "Sally"]].
+ps = [:Array/Player [10 10 "John"] [50 70 "Sally"]].
 
-$scores = [:Scores 0 0].
+scores = [:Scores 0 0].
 
 [:Game 
   [:PlayArea [0 0 500 400]]
   [:Football 0 0 5]
-  [:Array/Team ["West Ham" $ps] ["Crystal Palace" [:Array/Player [40 90 "Bob"]]]]
-  $ps
-  $scores
+  [:Array/Team ["West Ham" ps] ["Crystal Palace" [:Array/Player [40 90 "Bob"]]]]
+  ps
+  scores
 ]
 ```

@@ -12,11 +12,11 @@ Town = School Team
 ## Construction
 
 ```
-$people = 
+people = 
 [:Array/Person 
    [:Person "John Smith" "1 The Avenue"]
    [:Person "Jane Jones" "43 Long Street"]].
 
-[:Town [:School $people] [:Team $people]]
+[:Town [:School people] [:Team people]]
 ```
  

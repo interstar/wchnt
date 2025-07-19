@@ -2,7 +2,9 @@
   (:require [instaparse.core :as insta]
             [clojure.string :as str]
             [wchnt-lang.pipeline :as P]
-            [wchnt-lang.schema :as schema]))
+            [wchnt-lang.schema :as schema]
+            [wchnt-lang.newparser :as newparser])
+  (:import (java.lang Exception)))
 
 ;; Grammar for splitting construction statements
 
@@ -11,9 +13,9 @@
   "
 Schema = DefLine (<NL> DefLine)* <NL>?
 DefLine = CompositionLine | DisjunctionLine | EnumLine
-CompositionLine = Definee <SPACE> '=' <SPACE> Element (<SPACE> Element)* <SPACE>?
-DisjunctionLine = Definee <SPACE> '=' <SPACE> Element (<SPACE> '|' <SPACE> Element)+ <SPACE>?
-EnumLine = Definee <SPACE> '=' <SPACE> '\"' EnumValue '\"' (<SPACE> '|' <SPACE> '\"' EnumValue '\"')+ <SPACE>?
+CompositionLine = Definee <SPACE> <'='> <SPACE> Element (<SPACE> Element)* <SPACE>?
+DisjunctionLine = Definee <SPACE> <'='> <SPACE> Element (<SPACE> <'|'> <SPACE> Element)+ <SPACE>?
+EnumLine = Definee <SPACE> <'='> <SPACE> <'\"'> EnumValue <'\"'> (<SPACE> <'|'> <SPACE> <'\"'> EnumValue <'\"'>)+ <SPACE>?
 Definee = Name
 <Name> = #'[A-Za-z][A-Za-z0-9_]*'
 NL = #'\n+'
@@ -676,157 +678,19 @@ EmptyType = '_'
 
 
 
-(defn schema-to-construction-grammar [schema-ast]
-  "Implementation of schema-to-construction-grammar without exception handling"
-  (let [class-info (extract-class-info schema-ast)
-        grammar-string (generate-construction-grammar class-info)]
-    (P/success-cargo
-     {:grammar grammar-string
-      :class-info class-info})))
 
 
-
-
-
-(defn split-statements [input-string]
-  "Split input string into statements. A statement ends at any full stop not in a string and not between two digits.
-   If there are no full stops, treat the entire string as a single statement."
-  (let [trimmed-input (str/trim input-string)]
-    (if (str/blank? trimmed-input)
-      []
-      (let [chars (vec trimmed-input)
-            len (count chars)]
-        (loop [i 0
-               current-statement []
-               statements []
-               in-string false
-               escape-next false
-               found-full-stop false]
-          (if (>= i len)
-            ;; End of input - add final statement if not empty
-            (let [final-statements (if (seq current-statement)
-                                    (conj statements (str/trim (apply str current-statement)))
-                                    statements)]
-              (filter seq (map str/trim final-statements)))
-            (let [char (nth chars i)]
-              (cond
-                ;; Handle escape sequences
-                escape-next
-                (recur (inc i) (conj current-statement char) statements in-string false found-full-stop)
-                
-                ;; Handle string boundaries
-                (= char \")
-                (recur (inc i) (conj current-statement char) statements (not in-string) false found-full-stop)
-                
-                ;; Handle full-stop (statement separator) - only if not in a string and not between two digits
-                (and (= char \.) (not in-string))
-                (let [prev-char (when (> i 0) (nth chars (dec i)))
-                      next-char (when (< (inc i) len) (nth chars (inc i)))
-                      is-between-digits (and prev-char next-char (Character/isDigit prev-char) (Character/isDigit next-char))]
-                  (if is-between-digits
-                    ;; This is a decimal point in a float, not a statement separator
-                    (recur (inc i) (conj current-statement char) statements in-string false found-full-stop)
-                    ;; This is a statement separator
-                    (let [statement (str/trim (apply str current-statement))
-                          ;; skip whitespace after the dot
-                          next-i (loop [j (inc i)]
-                                   (if (and (< j len) (Character/isWhitespace (nth chars j)))
-                                     (recur (inc j))
-                                     j))]
-                      (recur next-i [] (if (seq statement) (conj statements statement) statements) false false true))))
-                
-                ;; All other characters
-                :else
-                (recur (inc i) (conj current-statement char) statements in-string (= char \\) found-full-stop)))))))))
-
-
-
-
-
-(defn parse-construction-pure [{:keys [schema-ast construction]}]
-  "Pure transformation: parse construction using split-statements approach.
-  Input: {:schema-ast schema-ast :construction construction-string}
-  Output: parsed construction AST with assignments and final construction"
-  (println "DEBUG: parse-construction-pure called with:")
-  (println "DEBUG: schema-ast:" schema-ast)
-  (println "DEBUG: construction:" construction)
-  (let [class-info (extract-class-info schema-ast)
-        grammar-string (generate-construction-grammar class-info)
-        statement-parser (insta/parser grammar-string :start :Statement)
-        statements (split-statements construction)
-        cargo-result (P/run statements
-          (P/trace "PARSE-CONSTRUCTION-START")
-          (P/log (str "Parsing construction with " (count statements) " statements"))
-          
-          ;; Validate we have at least one statement
-          (P/validator #(not (empty? %)) "No statements found in construction")
-          (P/trace "PARSE-CONSTRUCTION-VALIDATION-PASSED")
-          
-          ;; Parse each statement individually
-          (P/processor 
-            (fn [statements]
-              (P/log (str "Parsing " (count statements) " statements"))
-              (map-indexed 
-                (fn [idx statement]
-                  (let [parse-result (statement-parser statement)]
-                    (if (insta/failure? parse-result)
-                      (P/fail-cargo (str "Failed to parse statement " (inc idx) ": " (insta/get-failure parse-result)))
-                      parse-result)))
-                statements))
-            "Parse each statement")
-          (P/trace "PARSE-CONSTRUCTION-STATEMENTS-PARSED")
-          
-          ;; Extract assignments and final construction
-          (P/processor 
-            (fn [successful-parses]
-              (P/log (str "Extracting from " (count successful-parses) " successful parses"))
-              (let [;; Separate assignments from final construction based on content, not position
-                    assignment-statements (filter (fn [ast]
-                                                   (and (vector? ast) 
-                                                        (= (first ast) :Statement)
-                                                        (vector? (second ast))
-                                                        (= (first (second ast)) :VariableAssignment)))
-                                                 successful-parses)
-                    final-statements (filter (fn [ast]
-                                              (and (vector? ast) 
-                                                   (= (first ast) :Statement)
-                                                   (vector? (second ast))
-                                                   (not= (first (second ast)) :VariableAssignment)))
-                                            successful-parses)
-                    ;; Extract the actual construction from the final statement
-                    final-construction (if (seq final-statements)
-                                        (let [final-statement (last final-statements)]
-                                          (if (and (vector? final-statement) (= (first final-statement) :Statement))
-                                            (second final-statement) ; Get the construction node from [:Statement construction]
-                                            final-statement))
-                                        nil)
-                    ;; Extract assignments from assignment statements
-                    assignments (map (fn [ast]
-                                      (if (and (vector? ast) (= (first ast) :Statement))
-                                        (let [statement-content (second ast)]
-                                          (if (and (vector? statement-content) (= (first statement-content) :VariableAssignment))
-                                            (let [[_ & children] statement-content
-                                                  var-name-node (first (filter #(= (first %) :VariableName) children))
-                                                  value-node (first (filter #(not= (first %) :VariableName) children))]
-                                              (when (and var-name-node value-node)
-                                                {:name (second var-name-node)
-                                                 :construction value-node}))
-                                            nil))
-                                        nil))
-                                    assignment-statements)
-                    valid-assignments (filter some? assignments)]
-                (P/log (str "Found " (count valid-assignments) " assignments and final construction: " (pr-str final-construction)))
-                (P/log-all "EXTRACTION-DEBUG")
-                (if (nil? final-construction)
-                  (P/fail-cargo "Construction must include a final construction statement.")
-                  {:type :MultiStepConstruction
-                   :assignments valid-assignments
-                   :final-construction final-construction})))
-            "Extract assignments and final construction")
-          (P/trace "PARSE-CONSTRUCTION-EXTRACTION-COMPLETE")
-          (P/log "The final construction")
-          (P/log-all "PARSE-CONSTRUCTION-PURE-FINAL-CARGO"))]
-    ;; Return the cargo result directly
-    cargo-result))
+(defn parse-construction-unified [construction-text]
+  "Parse construction using the new unified grammar.
+  Input: construction text string
+  Output: Cargo with parsed AST or error"
+  (let [parser (wchnt-lang.newparser/get-wchnt-parser)]
+    (try
+      (let [result (insta/parse parser construction-text :start :BlockStatements)]
+        (if (insta/failure? result)
+          (P/fail-cargo (str "Construction parsing failed: " (insta/get-failure result)))
+          (P/success-cargo result)))
+      (catch Exception e
+        (P/fail-cargo (str "Construction parsing error: " (.getMessage e)))))))
 
 

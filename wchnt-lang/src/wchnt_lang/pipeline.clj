@@ -170,7 +170,7 @@ The pipeline short-circuits on failure: if :success is false, later stages are s
     (throw-pass
      ctx "Log" ""
      (fn [ctx _]
-       (update ctx :log conj (str "LOG : " label "\n" (with-out-str (pp/pprint (:value ctx)))))))))
+       (update ctx :log conj (str "LOG : " label "\n" (pr-str (:value ctx))))))))
 
 (defn log-all
   "Logs the whole cargo with label and adds to log
@@ -191,11 +191,10 @@ The pipeline short-circuits on failure: if :success is false, later stages are s
        (if-not
            (p? (:value ctx))
            (do
-             (println "CONDITION FAILED")
+     
              ctx)
            (let [args (cons ctx stages)]
-             (println "In when-do .. condition passed")
-             (pp/pprint args)
+
              (apply continue args))
            )))))
 

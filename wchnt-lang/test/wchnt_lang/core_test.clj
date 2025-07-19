@@ -69,8 +69,8 @@ Ball = Int/x Int/y Int/rad
             (is (str/includes? result "class PlayArea"))
             (is (str/includes? result "class Rect"))
             (is (str/includes? result "class Ball"))
-            (is (str/includes? factory "public static function factory()"))
-            (is (str/includes? main "return factory()"))))))))
+            (is (str/includes? factory "public static function gameFactory("))
+            (is (str/includes? main "return gameFactory()"))))))))
 
 (deftest test-compile-wchnt-complex
   (testing "Compile complex WCHNT with arrays and disjunctions"
@@ -87,9 +87,9 @@ Player = String/name Int/score
 ## Construction
 
 ```
-$shapes = [:Array/Shape [:Triangle 10 20] [:Circle 15]]
-$players = [:Array/Player [:Player \"Alice\" 100] [:Player \"Bob\" 85]]
-[:Game $shapes $players]
+shapes = [:Array/Shape [:Triangle 10 20] [:Circle 15]] .
+players = [:Array/Player [:Player \"Alice\" 100] [:Player \"Bob\" 85]] .
+[:Game shapes players]
 ```"
           cargo-result (compiler/compile wchnt-content)
           result  (:value cargo-result)]

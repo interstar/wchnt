@@ -6,6 +6,10 @@
             [wchnt-lang.schema :as schema])
   (:import (java.lang Exception)))
 
+
+
+
+
 ;; Import find-node from parser
 (def find-node wchnt-lang.parser/find-node)
 
@@ -19,7 +23,6 @@
     "Bool" (str "this." field-name)
     nil))
 
-;; Helper to convert parsed type ASTs to Haxe type strings
 (defn type-ast->haxe-type [t]
   (cond
     (string? t) t
@@ -36,6 +39,7 @@
           val-type (when val-type-node (second val-type-node))]
       (str "Map<" (type-ast->haxe-type key-type) ", " (type-ast->haxe-type val-type) ">"))
     :else (str t)))
+
 
 (defn build-context-relationships [schema-ast]
   "Build a map of context-specific classes to their parent classes"
@@ -81,6 +85,7 @@
 (defn indent [depth]
   (apply str (repeat depth "  ")))
 
+
 (defn generate-to-construction-parts [elements]
   "Generate the parts for a toConstruction method with depth argument"
   (for [element elements]
@@ -90,7 +95,8 @@
       (cond
         (str/starts-with? field-type "Array<") (str "this." field-name ".toConstruction(depth + 1)")
         (str/starts-with? field-type "Map<") (str "this." field-name ".toConstruction(depth + 1)")
-            :else (str "this." field-name ".toConstruction(depth + 1)"))))))
+        :else (str "this." field-name ".toConstruction(depth + 1)"))))))
+
 
 (defn generate-to-construction-method [class-name to-construction-parts]
   "Generate the toConstruction method string with proper string concatenation"
@@ -102,6 +108,7 @@
          (str/join " + nl + " (map #(str indent-line %) to-construction-parts)) 
          " + nl + ind + ']' ;\n"
          "    }")))
+
 
 (defn generate-haxe-class [class-name elements context-relationships]
   (let [context-parent (get context-relationships class-name)
@@ -143,11 +150,13 @@
                        "\n}")]
     class-code))
 
+
 (defn generate-haxe-interface [interface-name]
   (str "interface " interface-name " {\n"
        "    public var x: Int;\n"
        "    public var y: Int;\n"
        "}"))
+
 
 (defn generate-haxe-enum [enum-name enum-values]
   (let [processed-values (for [value enum-values]
@@ -168,6 +177,7 @@
                       (str/join "\n" to-construction-methods)
                       "\n}")]
     enum-code))
+
 
 (defn generate-haxe-class-implementing [class-name interface-name elements]
   (let [fields (for [element elements]
@@ -194,6 +204,7 @@
                        "\n}")]
     class-code))
 
+
 (defn walk-tree [node interface-implementers context-relationships]
   (cond
     (string? node) []
@@ -209,7 +220,7 @@
               processed-elements (map wchnt-lang.parser/process-element element-nodes)
               ;; Find which interface this class should implement
               interface-to-implement (first (for [[interface implementers] interface-implementers
-                                                  :when (implementers class-name)]
+                                                  :when (contains? implementers class-name)]
                                              interface))
               haxe-class (if interface-to-implement
                           (generate-haxe-class-implementing class-name interface-to-implement processed-elements)
@@ -234,6 +245,7 @@
         (vec (mapcat #(walk-tree % interface-implementers context-relationships) (filter vector? children)))))
     :else []))
 
+
 (defn array-extensions-class []
   "Return the Haxe code for ArrayExtensions class for toConstruction."
   "// Extension methods for Array toConstruction
@@ -256,11 +268,48 @@ class ArrayExtensions {
     }
 }")
 
+
+(defn find-all-nodes [tag tree]
+  "Find all nodes in the tree that start with the given tag. Returns a sequence of matching nodes."
+  (cond
+    (and (vector? tree) (= (first tree) tag)) 
+    [tree]
+    
+    (vector? tree) 
+    (find-all-nodes tag (rest tree))
+    
+    (seq? tree) 
+    (mapcat #(find-all-nodes tag %) tree)
+    
+    :else []))
+
+
+(defn build-interface-implementers [schema-ast]
+  "Build a map of interface names to sets of implementing class names from the schema AST."
+  (let [disjunction-nodes (find-all-nodes :DisjunctionLine schema-ast)]
+    (reduce (fn [acc disjunction-node]
+              (let [[_ & children] disjunction-node
+                    definee-node (first (filter #(= (first %) :Definee) children))
+                    interface-name (second definee-node)
+                    element-nodes (filter #(= (first %) :Element) children)
+                    type-names (for [element element-nodes
+                                     :let [type-marker (first (filter #(and (vector? %) (= (first %) :TypeMarker)) element))]
+                                     :when type-marker]
+                                 (second type-marker))]
+
+                ;; Track which classes implement this interface
+                (reduce (fn [current-acc implementer]
+                          (update current-acc interface-name (fnil conj #{}) implementer))
+                        acc type-names)))
+            {} disjunction-nodes)))
+
+
 (defn schema-ast->haxe [schema-ast]
   "Convert schema AST to Haxe classes. Returns a string of Haxe code."
-  (let [interface-implementers {}
-        context-relationships (build-context-relationships schema-ast)
-        classes (walk-tree schema-ast interface-implementers context-relationships)
+  (let [interface-implementers (build-interface-implementers schema-ast)
+        context-relationships (build-context-relationships schema-ast)]
+
+    (let [classes (walk-tree schema-ast interface-implementers context-relationships)
         has-arrays (letfn [(has-array-type? [node]
                               (cond
                                 (vector? node)
@@ -272,7 +321,8 @@ class ArrayExtensions {
         array-extension (array-extensions-class)
         all-classes (if has-arrays (conj classes array-extension) classes)
                 joined-classes (str/join "\n\n" all-classes)]
-    joined-classes))
+      joined-classes)))
+
 
 (defn int-literal->haxe [children]
   (str (first children)))
@@ -282,6 +332,16 @@ class ArrayExtensions {
 
 (defn bool-literal->haxe [children]
   (str (first children)))
+
+
+(defn string-literal->haxe [children]
+  ;; The children are [quote content quote], so we want the middle element
+  (str "\"" (second children) "\""))
+
+(defn string-literal->haxe [children]
+  ;; The children are [quote content quote], so we want the middle element
+  (str "\"" (second children) "\""))
+
 
 (defn string-literal->haxe [children]
   ;; The children are [quote content quote], so we want the middle element
@@ -293,10 +353,10 @@ class ArrayExtensions {
     (str (first children))
     nil))
 
+
 (defn local-empty->haxe [ast]
   (let [empty-class (second ast)]
     (str "new " empty-class "()")))
-
 
 
 (defn unwrap-args [args]
@@ -305,6 +365,7 @@ class ArrayExtensions {
            (= (first (first args)) (keyword ":")))
     (drop 2 (first args))
     args))
+
 
 (defn construction-node->haxe [tag children class-info ast-to-haxe-factory]
   (let [classes (:classes class-info)
@@ -354,8 +415,12 @@ class ArrayExtensions {
                          args)]
           (str "new " class-name "(" (str/join ", " haxe-args) ")"))))))
 
+
+
 (defn generic-node->haxe [children ast-to-haxe-factory class-info]
   (str/join " " (map ast-to-haxe-factory children)))
+
+
 
 (defn ast-to-haxe-factory [ast class-info variable-mapping]
   "Convert construction AST to Haxe factory function code (handles XxxConstruction, XxxArrayConstruction, etc.)"
@@ -470,9 +535,6 @@ class ArrayExtensions {
       (str ast))))
 
 
-
-
-
 (defn collect-ast-nodes [ast class-info context-relationships id-counter parent-id object-table]
   "First pass: collect all AST nodes without assigning variable names"
   (cond
@@ -548,139 +610,298 @@ class ArrayExtensions {
     :else
     [ast id-counter object-table]))
 
-(defn assign-variable-names [object-table start-counter]
-  "Second pass: assign variable names in dependency order (children before parents)"
-  (let [;; Build dependency graph
-        build-dependencies (fn [entry]
-                            (let [ast (:ast entry)
-                                  constructor-args (rest ast)
-                                  dependencies (filter vector? constructor-args)
-                                  dependency-ids (map #(let [matching-entry (first (filter (fn [[k v]] (= (:ast v) %)) object-table))]
-                                                       (when matching-entry (key matching-entry)))
-                                                     dependencies)]
-                              (remove nil? dependency-ids)))
-        
-        ;; Sort entries by dependency order (leaf nodes first)
-        sorted-entries (let [entries (vec object-table)
-                            dependency-map (into {} (map (fn [[id entry]] [id (build-dependencies entry)]) entries))
-                            visited (atom #{})
-                            result (atom [])]
-                        (letfn [(visit [id]
-                                  (when-not (contains? @visited id)
-                                    (swap! visited conj id)
-                                    (doseq [dep-id (dependency-map id)]
-                                      (visit dep-id))
-                                    (swap! result conj (first (filter #(= (key %) id) entries)))))]
-                          (doseq [[id _] entries]
-                            (visit id))
-                          @result))
-        
-        ;; Assign variable names in dependency order
-        final-table (reduce (fn [table [idx [id entry]]]
-                             (assoc table id (assoc entry :var-name (str "o" (+ start-counter idx)))))
-                           object-table
-                           (map-indexed vector sorted-entries))]
-    final-table))
 
-(defn walk-ast-and-build-table [ast class-info context-relationships id-counter parent-id object-table variable-mapping]
-  "Walk through AST once, building object table with abstract IDs on way down, details on way up"
-  (let [[root-id final-counter collected-table] (collect-ast-nodes ast class-info context-relationships id-counter parent-id object-table)
-        final-table (assign-variable-names collected-table id-counter)]
-    [root-id final-counter final-table variable-mapping]))
 
-(defn- get-haxe-type [class-name class-info]
-  "Get the Haxe type for a given class name"
+(defn extract-class-name-from-node [class-name-ast]
+  "Extract class name from ClassName AST node."
+  (second class-name-ast))
+
+
+(defn extract-type-name [type-ast]
+  "Extract type name from type AST."
+  (second type-ast))
+
+
+(defn extract-literal-value [literal-ast]
+  "Extract literal value from literal AST."
+  (let [literal-node (second literal-ast)]
+    (cond
+      (and (vector? literal-node) (= (first literal-node) :IntLiteral))
+      (second literal-node)
+      
+      (and (vector? literal-node) (= (first literal-node) :StringLiteral))
+      (str "\"" (second literal-node) "\"")  ; Use the middle part (without quotes)
+      
+      :else "null")))
+
+(defn extract-variable-name [assignment-ast]
+  "Extract variable name from assignment AST."
+  (second (second assignment-ast)))
+
+
+(defn extract-root-class-name [ast]
+  "Extract the root class name from the unified parser AST"
+  (if (not (sequential? ast))
+    (throw (ex-info "extract-root-class-name: AST must be a sequential collection" {:ast ast})))
+  (if (not= (first ast) :BlockStatements)
+    (throw (ex-info "extract-root-class-name: AST must start with :BlockStatements" {:ast (take 3 ast)})))
+  
+  ;; Look for the first ObjectConstruction in the BlockStatements
+  (let [statements (rest ast)]
+    (loop [remaining statements]
+      (if (empty? remaining)
+        (throw (ex-info "extract-root-class-name: No ObjectConstruction found in BlockStatements" {:statements statements}))
+        (let [statement (first remaining)]
+          (if (and (sequential? statement) (= (first statement) :Expression))
+            (let [expression (second statement)]
+              (if (and (sequential? expression) (= (first expression) :ObjectConstruction))
+                (let [class-name-node (second expression)]
+                  (if (and (sequential? class-name-node) (= (first class-name-node) :ClassName))
+                    (second class-name-node)  ;; Extract "Game" from [:ClassName "Game"]
+                    (throw (ex-info "extract-root-class-name: ObjectConstruction must have ClassName node" {:expression expression}))))
+                (recur (rest remaining))))
+            (recur (rest remaining))))))))
+
+
+(defn node-type? [ast kw]
+  (and (vector? ast) (= (first ast) kw)))
+
+;; Declare the main function so helper functions can reference it
+(declare walk-ast-and-build-table)
+
+(defn handle-string-node [ast counter object-table variable-mapping]
+  "Handle string nodes directly"
+  [ast counter object-table variable-mapping])
+
+(defn handle-object-construction [ast class-info context-relationships counter parent-id object-table variable-mapping]
+  "Handle ObjectConstruction nodes"
+  (let [[_ class-name-node arg-list] ast
+        class-name (extract-class-name-from-node class-name-node)
+        args (rest arg-list)
+        abstract-id (str "obj_" counter)
+        [processed-args new-counter new-table new-mapping] 
+        (reduce (fn [[acc-args acc-counter acc-table acc-mapping] arg]
+                  (let [[arg-var arg-counter arg-table arg-mapping] 
+                        (walk-ast-and-build-table arg class-info context-relationships acc-counter counter acc-table acc-mapping)]
+                    [(conj acc-args arg-var) arg-counter arg-table arg-mapping]))
+                [[] (inc counter) object-table variable-mapping] args)
+        new-entry {abstract-id {:class class-name
+                               :abstract-id abstract-id
+                               :ast ast
+                               :args processed-args
+                               :parent parent-id}}]
+    [abstract-id new-counter (merge new-table new-entry) new-mapping]))
+
+(defn handle-inner-object-construction [ast class-info context-relationships counter parent-id object-table variable-mapping]
+  "Handle InnerObjectConstruction nodes"
+  (let [[_ & children] ast
+        has-explicit-class (and (>= (count children) 2) 
+                                (vector? (first children))
+                                (= (first (first children)) :ClassName))
+        class-name-node (if has-explicit-class (first children) nil)
+        class-name (if class-name-node
+                     (extract-class-name-from-node class-name-node)
+                     (let [arg-list (if has-explicit-class (second children) (first children))
+                           args (rest arg-list)
+                           arg-count (count args)]
+                       (cond
+                         (= arg-count 4) "Rect"
+                         (= arg-count 3) "Player"
+                         (= arg-count 2) "Team"
+                         :else "InnerObject")))
+        arg-list (if has-explicit-class (second children) (first children))
+        args (rest arg-list)
+        abstract-id (str "obj_" counter)
+        [processed-args new-counter new-table new-mapping] 
+        (reduce (fn [[acc-args acc-counter acc-table acc-mapping] arg]
+                  (let [[arg-var arg-counter arg-table arg-mapping] 
+                        (walk-ast-and-build-table arg class-info context-relationships acc-counter counter acc-table acc-mapping)]
+                    [(conj acc-args arg-var) arg-counter arg-table arg-mapping]))
+                [[] (inc counter) object-table variable-mapping] args)
+        new-entry {abstract-id {:class class-name
+                               :abstract-id abstract-id
+                               :ast ast
+                               :args processed-args
+                               :parent parent-id}}]
+    [abstract-id new-counter (merge new-table new-entry) new-mapping]))
+
+(defn handle-literal-node [ast]
+  "Handle literal nodes (IntLiteral, StringLiteral, etc.)"
   (cond
-    ;; Check if it's a primitive type
-    (contains? #{"String" "Int" "Float" "Bool"} class-name)
-    class-name
-    
-    ;; Check if it's an array type
-    (= class-name "Array")
-    "Array<Dynamic>"  ;; Generic array type
-    
-    ;; Check if it's a class in our schema
-    (some #(= (:name %) class-name) (:classes class-info))
-    class-name
-    
-    ;; Check if it's an interface (disjunction)
-    (some #(= (:name %) class-name) (:disjunctions class-info))
-    class-name
-    
-    ;; Default to Dynamic for unknown types
-    :else
-    "Dynamic"))
+    (node-type? ast :IntLiteral) [(Integer/parseInt (second ast))]
+    (node-type? ast :StringLiteral) [(second ast)]
+    (node-type? ast :FloatLiteral) [(Double/parseDouble (second ast))]
+    (node-type? ast :BoolLiteral) [(Boolean/parseBoolean (second ast))]
+    :else [nil]))
 
-(defn generate-statements-from-table [object-table context-relationships class-info variable-mapping]
-  "Generate construction statements and context wiring from the object table"
-  (let [;; Helper function to process constructor arguments
-        process-constructor-arg (fn [arg]
+(defn handle-variable-ref [ast variable-mapping]
+  "Handle VariableRef nodes"
+  (let [name-node (second ast)
+        var-name (if (and (vector? name-node) (= (first name-node) :SelfName))
+                   (second name-node)
+                   name-node)
+        mapped-var (get variable-mapping var-name)]
+    (if mapped-var
+      [mapped-var]
+      ["null"])))
+
+(defn handle-array-construction [ast class-info context-relationships counter parent-id object-table variable-mapping]
+  "Handle ArrayConstruction nodes"
+  (let [type-node (second ast)
+        element-type (second type-node)
+        arg-list (nth ast 2)
+        args (rest arg-list)
+        abstract-id (str "obj_" counter)
+        [processed-args new-counter new-table new-mapping] 
+        (reduce (fn [[acc-args acc-counter acc-table acc-mapping] arg]
+                  (let [[arg-var arg-counter arg-table arg-mapping] 
+                        (walk-ast-and-build-table arg class-info context-relationships acc-counter parent-id acc-table acc-mapping)]
+                    (if arg-var
+                      [(conj acc-args arg-var) arg-counter (merge acc-table arg-table) (merge acc-mapping arg-mapping)]
+                      [acc-args arg-counter (merge acc-table arg-table) (merge acc-mapping arg-mapping)])))
+                [[] (inc counter) object-table variable-mapping] args)
+        new-entry {abstract-id {:class (str "Array<" element-type ">")
+                               :abstract-id abstract-id
+                               :ast ast
+                               :args processed-args
+                               :parent parent-id}}]
+    [abstract-id (inc new-counter) (merge new-table new-entry) new-mapping]))
+
+(defn handle-simple-object-construction [ast class-info context-relationships counter parent-id object-table variable-mapping]
+  "Handle simple object constructions like [:Game ...]"
+  (let [class-name (name (first ast))
+        args (rest ast)
+        abstract-id (str "obj_" counter)
+        [processed-args new-counter new-table new-mapping] 
+        (reduce (fn [[acc-args acc-counter acc-table acc-mapping] arg]
+                  (let [[arg-var arg-counter arg-table arg-mapping] 
+                        (walk-ast-and-build-table arg class-info context-relationships acc-counter counter acc-table acc-mapping)]
+                    [(conj acc-args arg-var) arg-counter arg-table arg-mapping]))
+                [[] (inc counter) object-table variable-mapping] args)
+        new-entry {abstract-id {:class class-name
+                               :abstract-id abstract-id
+                               :ast ast
+                               :args processed-args
+                               :parent parent-id}}]
+    [abstract-id new-counter (merge new-table new-entry) new-mapping]))
+
+(defn handle-vector-node [ast class-info context-relationships counter parent-id object-table variable-mapping]
+  "Handle vector nodes by processing their children"
+  (let [[tag & children] ast]
+    (if (empty? children)
+      [tag counter object-table variable-mapping]
+      (if (contains? #{:Expression :Type :VariableName :ClassName :SelfName} tag)
+        (let [first-child (first children)]
+          (walk-ast-and-build-table first-child class-info context-relationships counter parent-id object-table variable-mapping))
+        (if (= tag :ArgList)
+          [tag counter object-table variable-mapping]
+          (let [first-child (first children)]
+            (walk-ast-and-build-table first-child class-info context-relationships counter parent-id object-table variable-mapping)))))))
+
+(defn process-ast-node [ast class-info context-relationships counter parent-id object-table variable-mapping]
+  "Process a single AST node and return [var-name counter object-table variable-mapping]"
+  (cond
+    ;; Handle strings directly
+    (string? ast)
+    (handle-string-node ast counter object-table variable-mapping)
+    
+    ;; Handle ObjectConstruction
+    (node-type? ast :ObjectConstruction)
+    (handle-object-construction ast class-info context-relationships counter parent-id object-table variable-mapping)
+    
+    ;; Handle InnerObjectConstruction
+    (node-type? ast :InnerObjectConstruction)
+    (handle-inner-object-construction ast class-info context-relationships counter parent-id object-table variable-mapping)
+    
+    ;; Handle Type nodes - these should be ignored in array arguments
+    (node-type? ast :Type)
+    [nil counter object-table variable-mapping]
+    
+    ;; Handle ArgItem - extract the inner object
+    (node-type? ast :ArgItem)
+    (let [inner-ast (second ast)]
+      (walk-ast-and-build-table inner-ast class-info context-relationships counter parent-id object-table variable-mapping))
+    
+    ;; Handle literals
+    (or (node-type? ast :IntLiteral) (node-type? ast :StringLiteral) 
+        (node-type? ast :FloatLiteral) (node-type? ast :BoolLiteral))
+    (let [[value] (handle-literal-node ast)]
+      [value counter object-table variable-mapping])
+
+    ;; Handle VariableRef
+    (node-type? ast :VariableRef)
+    (let [[value] (handle-variable-ref ast variable-mapping)]
+      [value counter object-table variable-mapping])
+    
+    ;; Handle ArrayConstruction
+    (node-type? ast :ArrayConstruction)
+    (handle-array-construction ast class-info context-relationships counter parent-id object-table variable-mapping)
+    
+    ;; Handle simple object constructions
+    (and (vector? ast) (>= (count ast) 2) (keyword? (first ast)) 
+         (not= (first ast) :ArgList) (not= (first ast) :Type))
+    (handle-simple-object-construction ast class-info context-relationships counter parent-id object-table variable-mapping)
+    
+    ;; Handle vector nodes
+    (vector? ast)
+    (handle-vector-node ast class-info context-relationships counter parent-id object-table variable-mapping)
+    
+    ;; For other types, return as-is
+    :else
+    [ast counter object-table variable-mapping]))
+
+(defn walk-ast-and-build-table [ast class-info context-relationships counter parent-id object-table variable-mapping]
+  "Recursively walk AST and build object table with dependency information.
+   Returns [var-name counter object-table variable-mapping]"
+
+  ;; Filter out stray closing bracket characters from parser artifacts
+  (let [ast (if (vector? ast)
+               (vec (remove #(= % "]") ast))
+               ast)]
+
+
+    
+    ;; Process the AST node
+    (process-ast-node ast class-info context-relationships counter parent-id object-table variable-mapping)))
+
+
+
+(defn process-constructor-arg [arg class-info variable-mapping]
+  "Process a constructor argument to generate Haxe code"
                                  (cond
-                                   ;; If it's a vector (object node), find its variable name in the table
-                                   (vector? arg)
-                                   (let [matching-entry (first (filter #(= (:ast (val %)) arg) object-table))]
-                                     (if matching-entry
-                                       (:var-name (val matching-entry))
-                                       (ast-to-haxe-factory arg class-info variable-mapping)))
-                                   ;; If it's a raw number, just convert to string
-                                   (number? arg)
+    ;; If it's a variable name (starts with "o"), use it directly
+    (and (string? arg) (str/starts-with? arg "o"))
+    arg
+    ;; If it's a literal, use it as-is
+    (or (number? arg) (string? arg))
                                    (str arg)
-                                   ;; If it's a string that looks like a variable reference, check the mapping
-                                   (and (string? arg) (str/starts-with? arg "$"))
-                                   (get variable-mapping arg arg)
                                    ;; Otherwise, use ast-to-haxe-factory
                                    :else
                                    (ast-to-haxe-factory arg class-info variable-mapping)))
         
-        ;; Build dependency graph
-        build-dependencies (fn [entry]
-                            (let [ast (:ast entry)
-                                  constructor-args (rest ast)
-                                  dependencies (filter vector? constructor-args)
-                                  dependency-vars (map #(let [matching-entry (first (filter (fn [[k v]] (= (:ast v) %)) object-table))]
-                                                        (when matching-entry (:var-name (val matching-entry))))
-                                                      dependencies)]
-                              (remove nil? dependency-vars)))
-        
-        ;; Sort entries by dependency order (leaf nodes first)
-        sorted-entries (let [entries (vec object-table)
-                            dependency-map (into {} (map (fn [[id entry]] [id (build-dependencies entry)]) entries))
-                            visited (atom #{})
-                            result (atom [])]
-                        (letfn [(visit [id]
-                                  (when-not (contains? @visited id)
-                                    (swap! visited conj id)
-                                    (doseq [dep-id (dependency-map id)]
-                                      (when-let [dep-entry (first (filter #(= (key %) dep-id) entries))]
-                                        (visit (key dep-entry))))
-                                    (swap! result conj (first (filter #(= (key %) id) entries)))))]
-                          (doseq [[id _] entries]
-                            (visit id))
-                          @result))
-        
-        ;; Generate construction statements in dependency order
-        construction-stmts (map (fn [[id entry]]
+(defn generate-construction-statement [entry class-info variable-mapping]
+  "Generate a single construction statement from an object table entry"
                                  (let [var-name (:var-name entry)
                                        class-name (:class entry)
-                                       ast (:ast entry)
-                                       haxe-type (get-haxe-type class-name class-info)]
-                                   (if (= class-name "Array")
-                                     ;; Handle arrays by processing their elements through the object table
-                                     (let [;; Extract array elements (children after the tag)
-                                           array-elements (filter vector? (rest ast))
-                                           ;; Process elements: use variable names for objects, values for primitives
-                                           haxe-elements (map process-constructor-arg array-elements)]
-                                       (str haxe-type " " var-name " = [" (str/join ", " haxe-elements) "];"))
-                                     ;; Handle regular classes
-                                     (let [;; Extract constructor arguments (children after the tag)
-                                           constructor-args (rest ast)
-                                           ;; Process arguments: use variable names for objects, values for primitives
-                                           haxe-args (map process-constructor-arg constructor-args)]
-                                       (str haxe-type " " var-name " = new " class-name "(" (str/join ", " haxe-args) ");")))))
-                               sorted-entries)
-        
-        ;; Generate context wiring statements
-        context-stmts (map (fn [[id entry]]
+        args (:args entry)]
+    (cond
+      (= class-name "Array")
+      ;; Array construction
+      (let [haxe-elements (map #(process-constructor-arg % class-info variable-mapping) args)]
+        (str "var " var-name " = [" (str/join ", " haxe-elements) "];"))
+      
+      (= class-name "InnerObject")
+      ;; Inner object construction (for constructor arguments)
+      (let [haxe-args (map #(process-constructor-arg % class-info variable-mapping) args)]
+        (str "var " var-name " = [" (str/join ", " haxe-args) "];"))
+      
+      :else
+      ;; Regular object construction
+      (let [haxe-args (map #(process-constructor-arg % class-info variable-mapping) args)]
+        (str "var " var-name " = new " class-name "(" (str/join ", " haxe-args) ");")))))
+
+(defn generate-context-wiring-statement [entry object-table context-relationships]
+  "Generate a context wiring statement for an object if needed"
                             (let [var-name (:var-name entry)
                                   class-name (:class entry)
                                   needs-context (get context-relationships class-name)]
@@ -689,204 +910,174 @@ class ArrayExtensions {
                                       parent-entry (get object-table parent-id)
                                       parent-var (:var-name parent-entry)]
                                   (str var-name ".setContext(" parent-var ");")))))
-                          sorted-entries)
-        context-stmts (remove nil? context-stmts)]
-    {:construction-stmts construction-stmts :context-stmts context-stmts}))
 
-;; Helper for multi-step construction factory code
-(defn multi-step-factory-code [ast class-info actual-context-relationships]
-  (let [assignment-results
-        (loop [assignments (:assignments ast)
-               results []
-               global-counter 1]
-          (if (empty? assignments)
-            results
-            (let [assignment (first assignments)
-                  result (walk-ast-and-build-table
-                          (:construction assignment)
-                          class-info actual-context-relationships
-                          global-counter nil {} {})
-                  next-counter (nth result 1)]
-              (recur (rest assignments)
-                     (conj results result)
-                     next-counter))))
-        assignment-tables (map #(nth % 2) assignment-results)
-        assignment-mappings (map #(nth % 3) assignment-results)
-        combined-assignment-table (apply merge assignment-tables)
-        combined-variable-mapping (apply merge assignment-mappings)
-        [final-var final-counter final-table final-mapping]
-        (walk-ast-and-build-table
-         (:final-construction ast) class-info actual-context-relationships
-         (inc (count combined-assignment-table)) nil combined-assignment-table combined-variable-mapping)
-        variable-name-mapping (into {}
-                                   (for [assignment (:assignments ast)]
-                                     (let [assignment-ast (:construction assignment)
-                                           array-var (some (fn [[_ entry]] (when (= (:ast entry) assignment-ast) (:var-name entry))) final-table)]
-                                       [(str "$" (:name assignment)) array-var])))
-        {:keys [construction-stmts context-stmts]} (generate-statements-from-table final-table actual-context-relationships class-info variable-name-mapping)
-        root-var (let [final-construction (:final-construction ast)
-                        root-entry (first (filter #(= (:ast (val %)) final-construction) final-table))]
-                   (if root-entry
-                     (:var-name (val root-entry))
-                     (apply max-key #(Integer/parseInt (subs % 1))
-                            (map #(:var-name (val %)) final-table))))
-        factory-code (str "public static function factory() {\n"
-                          "  " (str/join "\n    " construction-stmts) "\n"
-                          (when (seq context-stmts) (str "    " (str/join "\n    " context-stmts) "\n"))
-                          "    return " root-var ";\n"
-                          "}")]
-    (P/success-cargo factory-code)))
+(defn build-dependencies [entry]
+  "Build dependency graph - find which abstract IDs this entry depends on"
+  (let [args (:args entry)]
+    (filter #(and (string? %) (str/starts-with? % "obj_")) args)))
 
-;; Helper for single construction factory code
-(defn single-factory-code [ast class-info actual-context-relationships]
-  (let [[final-var final-counter object-table final-mapping]
-        (walk-ast-and-build-table ast class-info actual-context-relationships 1 nil {} {})
-        {:keys [construction-stmts context-stmts]} (generate-statements-from-table object-table actual-context-relationships class-info {})
-        root-var (let [root-entry (first (filter #(= (:ast (val %)) ast) object-table))]
-                   (if root-entry
-                     (:var-name (val root-entry))
-                     (apply max-key #(Integer/parseInt (subs % 1))
-                            (map #(:var-name (val %)) object-table))))
-        factory-code (str "public static function factory() {\n"
-                          "    " (str/join "\n    " construction-stmts) "\n"
-                          (when (seq context-stmts) (str "    " (str/join "\n    " context-stmts) "\n"))
-                          "    return " root-var ";\n"
-                          "}")]
-    (P/success-cargo factory-code)))
+(defn assign-variable-numbers [object-table]
+  "Assign variable numbers in dependency order (leaf nodes first)"
+  (let [entries (vec object-table)
+        dependency-map (into {} (map (fn [[id entry]] [id (build-dependencies entry)]) entries))
+        visited (atom #{})
+        result (atom {})
+        var-counter (atom 1)]
+    (letfn [(visit [id]
+              (when-not (contains? @visited id)
+                (swap! visited conj id)
+                ;; Visit all dependencies first
+                (doseq [dep-id (dependency-map id)]
+                  (visit dep-id))
+                ;; Then assign variable number to this entry
+                (let [entry (get object-table id)]
+                  (when entry
+                    (let [var-name (str "o" @var-counter)]
+                      (swap! result assoc id (assoc entry :var-name var-name))
+                      (swap! var-counter inc))))))]
+      ;; Visit all entries
+      (doseq [[id _] entries]
+        (visit id))
+      @result)))
 
+(defn generate-statements-from-table [object-table]
+  "Generate Haxe statements from the object table in dependency order."
+  (let [numbered-table (assign-variable-numbers object-table)
+        ;; Create a mapping from abstract IDs to variable names
+        id-to-var (into {} (map (fn [[id entry]] [id (:var-name entry)]) numbered-table))]
+    (for [[id entry] (sort-by #(Integer/parseInt (subs (:var-name (val %)) 1)) numbered-table)]
+      (let [{:keys [class var-name args]} entry]
+        (cond
+          ;; Handle ArrayConstruction - use square bracket syntax
+          (= class "ArrayConstruction")
+          (let [haxe-elements (map #(cond
+                                     (number? %) (str %)  ;; Number - convert to string
+                                     (and (string? %) (re-find #"^o\\d+$" %)) %  ;; Variable reference
+                                     (and (string? %) (str/starts-with? % "obj_")) (get id-to-var % var-name)  ;; Abstract ID reference
+                                     (string? %) (str "\"" % "\"")  ;; String literal
+                                     :else (str %)) (remove nil? args))]  ;; Filter out nil values
+            (str "var " var-name " = [" (clojure.string/join ", " haxe-elements) "];"))
+          
+          ;; Handle arrays with generic types
+          (re-find #"^Array<.*>$" class)
+          (let [haxe-elements (map #(cond
+                                     (number? %) (str %)  ;; Number - convert to string
+                                     (and (string? %) (re-find #"^o\\d+$" %)) %  ;; Variable reference
+                                     (and (string? %) (str/starts-with? % "obj_")) (get id-to-var % var-name)  ;; Abstract ID reference
+                                     (string? %) (str "\"" % "\"")  ;; String literal
+                                     :else (str %)) args)]
+            (str "var " var-name " = [" (clojure.string/join ", " haxe-elements) "];"))
+          
+          ;; Handle domain objects
+          :else
+          (let [haxe-args (map #(cond
+                                 (number? %) (str %)  ;; Number - convert to string
+                                 (and (string? %) (re-find #"^o\\d+$" %)) %  ;; Variable reference
+                                 (and (string? %) (str/starts-with? % "obj_")) (get id-to-var % var-name)  ;; Abstract ID reference
+                                 (string? %) (str "\"" % "\"")  ;; String literal
+                                 :else (str %)) args)]
+            (str "var " var-name " = new " class "(" (clojure.string/join ", " haxe-args) ");")))))))
 
-
-
-
-(defn generate-construction-factory-pure [parsed-ast class-info context-relationships]
-  "Pure transformation: generate Haxe factory function from parsed construction AST.
-  Input: parsed construction AST, class-info, context-relationships
-  Output: Haxe factory function string"
-  (println "DEBUG: ENTER generate-construction-factory-pure" {:type (:type parsed-ast) :class-info (keys class-info) :context-relationships (count context-relationships)})
-  (let [cargo-result (P/run parsed-ast
-    (P/trace "GENERATE-FACTORY-START")
-    (P/log (str "Generating factory for AST type: " (:type parsed-ast)))
-    
-    (P/processor
-      (fn [parsed-ast]
-        (let [ast-type (:type parsed-ast)
-              ;; We need the schema AST to build context relationships, but we don't have it here
-              ;; For now, we'll require context-relationships to be passed in
-              actual-context-relationships (if (empty? context-relationships)
-                                            {}  ;; Empty context relationships if none provided
-                                            context-relationships)]
-          (P/log (str "Using context relationships: " (count actual-context-relationships) " entries"))
-          (cond
-            (= ast-type :MultiStepConstruction)
-            (multi-step-factory-code parsed-ast class-info actual-context-relationships)
-            (= ast-type :SingleConstruction)
-            (single-factory-code parsed-ast class-info actual-context-relationships)
-            :else (P/fail-cargo (str "Unknown construction AST type: " ast-type)))))
-      "Generate factory code")
-    (P/trace "GENERATE-FACTORY-COMPLETE"))]
-    ;; Return the value from the cargo, or nil if it failed
-    (if (P/failed? cargo-result)
-      (do
-        (println "GENERATE-FACTORY-FAILED:" cargo-result)
-        nil)
-      (do
-        (println "GENERATE-FACTORY-SUCCESS:" (:value cargo-result))
-        (:value cargo-result)))))
-
-(defn generate-construction-factory-pure-cargo [parsed-ast class-info context-relationships]
-  "Pure transformation: generate Haxe factory function from parsed construction AST.
-  Input: parsed construction AST, class-info, context-relationships
+(defn generate-construction-factory-unified [block-statements-ast class-info context-relationships]
+  "Generate Haxe factory function from new unified parser AST.
+  Input: [:BlockStatements ...] AST from unified parser
   Output: Cargo with Haxe factory function string"
-  (P/run parsed-ast
-    (P/trace "GENERATE-FACTORY-START")
-    (P/log (str "Generating factory for AST type: " (:type parsed-ast)))
+
+  
+  (P/run block-statements-ast
+
     
     (P/processor
-      (fn [parsed-ast]
-        (let [ast-type (:type parsed-ast)
-              ;; We need the schema AST to build context relationships, but we don't have it here
-              ;; For now, we'll require context-relationships to be passed in
-              actual-context-relationships (if (empty? context-relationships)
-                                            {}  ;; Empty context relationships if none provided
-                                            context-relationships)]
-          (P/log (str "Using context relationships: " (count actual-context-relationships) " entries"))
-          (cond
-            (= ast-type :MultiStepConstruction)
-            (multi-step-factory-code parsed-ast class-info actual-context-relationships)
-            (= ast-type :SingleConstruction)
-            (single-factory-code parsed-ast class-info actual-context-relationships)
-            :else (P/fail-cargo (str "Unknown construction AST type: " ast-type)))))
-      "Generate factory code")
-    (P/trace "GENERATE-FACTORY-COMPLETE")))
+      (fn [ast]
+  
+        ;; Extract class name from the first object construction in the AST
+        (let [class-name (extract-root-class-name ast)
+              factory-name (str (clojure.string/lower-case (first class-name)) (subs class-name 1) "Factory")]
 
-;; New simplified core function
-(defn generate-construction-factory
-  "Core function: generates the Haxe factory function for the top-level class."
-  [parsed-ast class-info context-relationships]
-  ;; Validate that we have a proper construction AST using the existing schema
-  (if-not (schema/valid-multi-step-construction? parsed-ast)
-    (throw (ex-info "Unsupported AST type: expected construction AST with :final-construction" 
-                   {:ast parsed-ast}))
-    (let [final-construction (:final-construction parsed-ast)
-        _ (println "DEBUG: final-construction:" final-construction)
-        ;; Extract the class name from the construction AST (e.g., [:GameConstruction ...] -> :Game)
-        construction-type (when (vector? final-construction) (first final-construction))
-        _ (println "DEBUG: construction-type:" construction-type)
-        ;; Convert :GameConstruction to :Game by removing "Construction" suffix
-        top-class (when construction-type 
-                   (keyword (str/replace (name construction-type) #"Construction$" "")))
-        _ (println "DEBUG: top-class:" top-class "type:" (type top-class))
-        factory-fn-name (str (clojure.string/lower-case (name top-class)) "Factory")
-        _ (println "DEBUG: factory-fn-name:" factory-fn-name)]
-    (let [assignment-results
-          (loop [assignments (:assignments parsed-ast)
+          
+          ;; Process all statements to build complete object table
+          (let [statements (rest ast)  ;; Skip :BlockStatements tag
+                ;; Step 1: Process assignments first to build variable mappings
+                assignment-results (loop [assignments (filter #(and (vector? %) (= (first %) :Assignment)) statements)
                  results []
-                 global-counter 1]
+                                         counter 1
+                                         object-table {}
+                                         variable-mapping {}]
             (if (empty? assignments)
-              results
+                                      [results counter object-table variable-mapping]
               (let [assignment (first assignments)
-                    result (walk-ast-and-build-table
-                            (:construction assignment)
-                            class-info context-relationships
-                            global-counter nil {} {})
-                    next-counter (nth result 1)]
+                    [assignment-tag var-name-node expression] assignment  ;; Destructure: [tag var-name expression]
+                    ;; Extract the actual object from the expression wrapper
+                    actual-object (second expression)  ;; Get the object inside [:Expression obj]
+                    ;; Walk the actual object
+                    [var-name new-counter new-table new-mapping] 
+                    (walk-ast-and-build-table actual-object class-info context-relationships counter nil object-table variable-mapping)
+                    ;; Add mapping for the assignment variable
+                    assignment-var-name (extract-variable-name assignment)
+                    new-mapping-with-assignment (assoc new-mapping assignment-var-name var-name)]
                 (recur (rest assignments)
-                       (conj results result)
-                       next-counter))))
-          assignment-tables (map #(nth % 2) assignment-results)
-          assignment-mappings (map #(nth % 3) assignment-results)
-          combined-assignment-table (apply merge assignment-tables)
-          combined-variable-mapping (apply merge assignment-mappings)
-          [final-var final-counter final-table final-mapping]
-          (walk-ast-and-build-table
-           (:final-construction parsed-ast) class-info context-relationships
-           (inc (count combined-assignment-table)) nil combined-assignment-table combined-variable-mapping)
-          variable-name-mapping (into {}
-                                     (for [assignment (:assignments parsed-ast)]
-                                       (let [assignment-ast (:construction assignment)
-                                             array-var (some (fn [[_ entry]] (when (= (:ast entry) assignment-ast) (:var-name entry))) final-table)]
-                                         [(str "$" (:name assignment)) array-var])))
-          {:keys [construction-stmts context-stmts]} (generate-statements-from-table final-table context-relationships class-info variable-name-mapping)
-          root-var (let [final-construction (:final-construction parsed-ast)
-                          root-entry (first (filter #(= (:ast (val %)) final-construction) final-table))]
-                     (if root-entry
-                       (:var-name (val root-entry))
-                       (apply max-key #(Integer/parseInt (subs % 1))
-                              (map #(:var-name (val %)) final-table))))
-          factory-code (str "public static function " factory-fn-name "(...) {\n"
-                            "  " (str/join "\n    " construction-stmts) "\n"
-                            (when (seq context-stmts) (str "    " (str/join "\n    " context-stmts) "\n"))
-                            "    return " root-var ";\n"
+                                               (conj results {:name assignment-var-name :var-name var-name})
+                                               new-counter
+                                               new-table
+                                               new-mapping-with-assignment))))
+                
+                [assignments counter object-table variable-mapping] assignment-results
+                
+                ;; Step 2: Process the final construction (last expression statement)
+                final-statements (filter #(and (vector? %) (= (first %) :Expression)) statements)
+                final-construction (if (seq final-statements)
+                                    (second (last final-statements))  ;; Get the expression from [:Expression expr]
+                                    nil)]
+  
+            
+            ;; Walk the final construction
+            (let [[final-var final-counter final-table final-mapping] 
+                  (if final-construction
+                    (walk-ast-and-build-table final-construction class-info context-relationships counter nil object-table variable-mapping)
+                    ["null" counter object-table variable-mapping])]
+              
+              
+              ;; Step 3: Generate Haxe statements from the complete object table
+              (let [numbered-table (assign-variable-numbers final-table)
+                    id-to-var (into {} (map (fn [[id entry]] [id (:var-name entry)]) numbered-table))
+                    construction-stmts (generate-statements-from-table final-table)
+                    ;; Step 4: Generate context wiring statements
+                    context-wiring-stmts (filter some? 
+                                                (for [[id entry] numbered-table]
+                                                  (let [var-name (:var-name entry)
+                                                        class-name (:class entry)
+                                                        needs-context (get context-relationships class-name)]
+                                                    (when needs-context
+                                                      (let [parent-id (:parent entry)
+                                                            parent-abstract-id (str "obj_" parent-id)
+                                                            parent-entry (get numbered-table parent-abstract-id)
+                                                            parent-var (:var-name parent-entry)]
+                                                        (str var-name ".setContext(" parent-var ");"))))))]
+                
+                
+                ;; Step 5: Generate the complete factory function
+                (let [final-var-name (get id-to-var final-var final-var)
+                      factory-code (str "public static function " factory-name "() {\n"
+                                         (clojure.string/join "\n    " construction-stmts) "\n"
+                                         (when (seq context-wiring-stmts)
+                                           (str "\n    // Context wiring\n"
+                                                (clojure.string/join "\n    " context-wiring-stmts) "\n"))
+                                         "    return " final-var-name ";\n"
                             "}")]
-      factory-code))))
+        
+                  (P/success-cargo factory-code)))))))
+      "Generate unified factory code")
+    ))
 
-(defn generate-construction-factory-cargo [cargo]
-  "Pipeline wrapper: takes a cargo, extracts parameters from stash, calls generate-construction-factory with try/catch, and wraps the result."
+(defn generate-construction-factory-unified-cargo [cargo]
+  "Pipeline wrapper for unified factory generation."
   (try
     (let [stash (:stash cargo)
           construction-ast (:construction-ast stash)
           schema-ast (:schema-ast stash)
           context-relationships (:context-relationships stash)]
+
+      
 
       ;; Validate that all required stash values are present
       (if (or (nil? construction-ast) (nil? schema-ast) (nil? context-relationships))
@@ -894,8 +1085,17 @@ class ArrayExtensions {
 
         ;; Extract class-info from schema-ast
         (let [class-info (parser/extract-class-info schema-ast)
-              ;; Call the core function
-              haxe-code (generate-construction-factory construction-ast class-info context-relationships)]
-          (P/success-cargo haxe-code))))
+              ;; Call the unified factory generation function
+              haxe-code (generate-construction-factory-unified construction-ast class-info context-relationships)]
+  
+          (if (P/failed? haxe-code)
+            haxe-code
+            (let [result (P/success-cargo (:value haxe-code))]
+      
+              result)))))
     (catch Exception e
-      (P/fail-cargo (str "Error generating construction factory: " (.getMessage e))))))
+      
+      (P/fail-cargo (str "Error generating unified construction factory: " (.getMessage e))))))
+
+
+

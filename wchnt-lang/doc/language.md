@@ -4,6 +4,8 @@ This guide covers the complete syntax and features of the WCHNT language. WCHNT 
 
 ## Basic Syntax
 
+To start with, a WCHNT source file is actually embedded in a Markdown file. This is a "literate programming" 
+
 Each line in WCHNT defines a class and its components:
 
 ```

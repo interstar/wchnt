@@ -1,7 +1,9 @@
 (ns wchnt-lang.pipeline-test
   (:require
    [clojure.test :refer :all]   
-   [wchnt-lang.pipeline :as p]))
+   [wchnt-lang.pipeline :as p]
+   [wchnt-lang.parser :as parser]
+   [wchnt-lang.haxegen :as haxegen]))
 
 
 (deftest test-pipeline
@@ -340,3 +342,131 @@
         (is (some #(re-find #"LOG : BEFORE-PLAIN-VALUE" %) log-entries))
         (is (some #(re-find #"LOG : AFTER-PLAIN-VALUE" %) log-entries))
         (is (= (count log-entries) 2))))))
+
+(deftest test-when-do-condition-failure
+  (testing "when-do condition failure should be handled gracefully"
+    (let [cargo
+          (p/run "test-string"
+            (p/stash :before-when-do)
+            (p/log "BEFORE-WHEN-DO")
+            (p/when-do
+             #(not= % "")  ; This should pass for "test-string"
+             (p/stash :inside-when-do)
+             (p/log "INSIDE-WHEN-DO"))
+            (p/log "AFTER-WHEN-DO"))]
+      (is (not (p/failed? cargo)))
+      (is (= (p/cargo-value cargo "test") "test-string"))
+      
+      ;; Check that stash from both before and inside when-do are preserved
+      (is (= (-> cargo :stash :before-when-do) "test-string"))
+      (is (= (-> cargo :stash :inside-when-do) "test-string"))
+      
+      ;; Check that all logs are present
+      (let [log-entries (:log cargo)]
+        (is (some #(re-find #"LOG : BEFORE-WHEN-DO" %) log-entries))
+        (is (some #(re-find #"LOG : INSIDE-WHEN-DO" %) log-entries))
+        (is (some #(re-find #"LOG : AFTER-WHEN-DO" %) log-entries))
+        (is (= (count log-entries) 3))))))
+
+(deftest test-when-do-condition-failure-with-empty-string
+  (testing "when-do condition failure with empty string should skip sub-pipeline"
+    (let [cargo
+          (p/run ""
+            (p/stash :before-when-do)
+            (p/log "BEFORE-WHEN-DO")
+            (p/when-do
+             #(not= % "")  ; This should fail for empty string
+             (p/stash :inside-when-do)
+             (p/log "INSIDE-WHEN-DO"))
+            (p/log "AFTER-WHEN-DO"))]
+      (is (not (p/failed? cargo)))
+      (is (= (p/cargo-value cargo "test") ""))
+      
+      ;; Check that stash from before when-do is preserved, but inside is not
+      (is (= (-> cargo :stash :before-when-do) ""))
+      (is (nil? (-> cargo :stash :inside-when-do)))
+      
+      ;; Check that only logs before and after when-do are present
+      (let [log-entries (:log cargo)]
+        (is (some #(re-find #"LOG : BEFORE-WHEN-DO" %) log-entries))
+        (is (not-any? #(re-find #"INSIDE-WHEN-DO" %) log-entries))  ; Should not be present
+        (is (some #(re-find #"LOG : AFTER-WHEN-DO" %) log-entries))
+        (is (= (count log-entries) 2))))))
+
+(deftest test-cargo-validation-basic
+  (testing "basic cargo validation should work correctly"
+    (let [valid-cargo (p/success-cargo "test-value")
+          invalid-cargo {:success true :value "test"}  ; Missing required fields
+          nil-cargo nil
+          string-value "not-a-cargo"]
+      (is (p/is-cargo? valid-cargo))
+      (is (not (p/is-cargo? invalid-cargo)))
+      (is (not (p/is-cargo? nil-cargo)))
+      (is (not (p/is-cargo? string-value))))))
+
+(deftest test-cargo-validation-with-log
+  (testing "cargo validation should work with cargo that has log entries"
+    (let [cargo-with-log (-> (p/success-cargo "test")
+                             (update :log conj "test log entry"))]
+      (is (p/is-cargo? cargo-with-log))
+      (is (= (count (:log cargo-with-log)) 1)))))
+
+(deftest test-cargo-validation-with-stash
+  (testing "cargo validation should work with cargo that has stash entries"
+    (let [cargo-with-stash (-> (p/success-cargo "test")
+                               (assoc-in [:stash :test-key] "test-value"))]
+      (is (p/is-cargo? cargo-with-stash))
+      (is (= (get-in cargo-with-stash [:stash :test-key]) "test-value")))))
+
+(deftest test-processor-with-cargo-return
+  (testing "processor should handle cargo returns correctly"
+    (let [cargo
+          (p/run 5
+            (p/processor (fn [x] 
+                           (p/success-cargo (* x 2)))))]
+      (is (not (p/failed? cargo)))
+      (is (= (p/cargo-value cargo "test") 10)))))
+
+(deftest test-processor-with-failed-cargo-return
+  (testing "processor should handle failed cargo returns correctly"
+    (let [cargo
+          (p/run 5
+            (p/processor (fn [x] 
+                           (p/fail-cargo "Test failure"))))]
+      (is (p/failed? cargo))
+      (is (= (count (:errors cargo)) 1))
+      (is (= (first (:errors cargo)) "Test failure")))))
+
+(deftest test-cargo-validation-edge-cases
+  (testing "cargo validation should handle edge cases correctly"
+    (let [cargo-with-nil-arrays (p/success-cargo "test")
+          cargo-with-nil-arrays (assoc cargo-with-nil-arrays :errors nil :warnings nil :log nil)
+          cargo-with-empty-maps (p/success-cargo "test")
+          cargo-with-empty-maps (assoc cargo-with-empty-maps :stash nil)]
+      ;; These should still be valid cargos even with nil arrays/maps
+      (is (p/is-cargo? cargo-with-nil-arrays))
+      (is (p/is-cargo? cargo-with-empty-maps)))))
+
+(deftest test-parser-cargo-validation
+  (testing "cargo objects returned by parser functions should pass validation"
+    (let [;; Test the cargo returned by parse-construction-unified
+          test-construction-text "shapes = [:Array/Shape [:Triangle 10 20] [:Circle 15]] .\nplayers = [:Array/Player [:Player \"Alice\" 100] [:Player \"Bob\" 85]] .\n[:Game shapes players]"
+          parser-cargo (parser/parse-construction-unified test-construction-text)]
+      ;; The parser should return a valid cargo
+      (is (p/is-cargo? parser-cargo))
+      ;; If it's a success cargo, the value should be the parsed AST
+      (when (not (p/failed? parser-cargo))
+        (is (vector? (p/cargo-value parser-cargo "test")))))))
+
+(deftest test-factory-cargo-validation
+  (testing "cargo objects returned by factory generation functions should pass validation"
+    (let [;; Test the cargo returned by generate-construction-factory-unified
+          test-ast [:BlockStatements [:Assignment "test" [:IntLiteral "5"]]]
+          test-class-info {:classes [] :enums [] :disjunctions []}
+          test-context-relationships {}
+          factory-cargo (haxegen/generate-construction-factory-unified test-ast test-class-info test-context-relationships)]
+      ;; The factory generation should return a valid cargo
+      (is (p/is-cargo? factory-cargo))
+      ;; If it's a success cargo, the value should be a string (Haxe code)
+      (when (not (p/failed? factory-cargo))
+        (is (string? (p/cargo-value factory-cargo "test")))))))

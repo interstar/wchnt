@@ -1,6 +1,7 @@
 (ns wchnt-lang.api
   (:require [wchnt-lang.core :as core]
             [wchnt-lang.parser :as parser]
+            [wchnt-lang.newparser :as newparser]
             [wchnt-lang.compiler :as compiler]
             [wchnt-lang.schema :as schema]
             [instaparse.core :as instaparse])
@@ -35,8 +36,12 @@
 
 (defn -compileToHaxe [this ^String input]
   (let [result (compiler/compile input)]
-    (if (string? result)
-      (ArrayList. [result])
+    (if (:success result)
+      (let [value (:value result)
+            classes (:classes value)
+            factory (:factory value)
+            main (:main value)]
+        (ArrayList. [classes factory main]))
       (ArrayList. [(pr-str result)]))))
 
 (defn -eyeball [this ^String code]
@@ -118,16 +123,8 @@
 
 (defn -getConstructionParser [this ^String schema-input]
   (try
-    (let [schema-parse-result (parser/schema-wchnt->schema-ast schema-input)]
-      (when-not (schema/valid-syntax-result? schema-parse-result)
-        (throw (ex-info "get-construction-parser: schema parse result does not conform to SyntaxValidationResult schema" {:result schema-parse-result})))
-      (if (:success schema-parse-result)
-        (let [schema-ast (:ast schema-parse-result)
-              class-info (parser/extract-class-info schema-ast)
-              grammar-string (parser/generate-construction-grammar class-info)
-              parser-fn (instaparse/parser grammar-string :start :Statement)]
+    (let [parser-fn (newparser/get-wchnt-parser)]
           (create-parser-function parser-fn))
-        (create-error-function (:error schema-parse-result))))
     (catch Exception e
       (create-error-function (.getMessage e)))))
 
@@ -139,12 +136,7 @@
 
 (defn -getConstructionGrammarAsString [this ^String schema-input]
   (try
-    (let [result (parser/schema-to-construction-grammar schema-input)]
-      (when-not (schema/valid-syntax-result? result)
-        (throw (ex-info "get-construction-grammar-as-string: result does not conform to SyntaxValidationResult schema" {:result result})))
-      (if (:success result)
-        (get-in result [:ast :grammar])
-        (str "Error generating construction grammar: " (:error result))))
+    (newparser/wchnt-grammar)
     (catch Exception e
       (str "Error getting construction grammar: " (.getMessage e)))))
 
