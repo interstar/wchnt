@@ -28,7 +28,7 @@
   (testing "generates correct parts for complex types"
     (let [elements [{:name "items" :type [:ArrayType [:Type "String"]]}
                     {:name "config" :type [:MapType [:KeyType "String"] [:ValType "Int"]]}]]
-      (is (= ["this.items.toConstruction(depth + 1)" "this.config.toConstruction(depth + 1)"]
+      (is (= ["ArrayExtensions.toConstruction(this.items, depth + 1)" "this.config.toConstruction(depth + 1)"]
              (haxegen/generate-to-construction-parts elements))))))
 
 (deftest test-compile-to-haxe-with-primitives

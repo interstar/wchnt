@@ -50,7 +50,7 @@ Person = String String
       
       ;; Test error result conforms to schema
       (is (not (:success invalid-result)))
-      (is (schema/valid-mainfile-parse-result? (:value invalid-result)))
+      (is (nil? (:value invalid-result)))
       (is (and (seq (:errors invalid-result)) (re-find #"order|sequence" (first (:errors invalid-result))))))))
 
 

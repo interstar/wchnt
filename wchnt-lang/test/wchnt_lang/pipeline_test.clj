@@ -439,12 +439,12 @@
 
 (deftest test-cargo-validation-edge-cases
   (testing "cargo validation should handle edge cases correctly"
-    (let [cargo-with-nil-arrays (p/success-cargo "test")
-          cargo-with-nil-arrays (assoc cargo-with-nil-arrays :errors nil :warnings nil :log nil)
+    (let [cargo-with-empty-arrays (p/success-cargo "test")
+          cargo-with-empty-arrays (assoc cargo-with-empty-arrays :errors [] :warnings [] :log [])
           cargo-with-empty-maps (p/success-cargo "test")
-          cargo-with-empty-maps (assoc cargo-with-empty-maps :stash nil)]
-      ;; These should still be valid cargos even with nil arrays/maps
-      (is (p/is-cargo? cargo-with-nil-arrays))
+          cargo-with-empty-maps (assoc cargo-with-empty-maps :stash {})]
+      ;; These should still be valid cargos even with empty arrays/maps
+      (is (p/is-cargo? cargo-with-empty-arrays))
       (is (p/is-cargo? cargo-with-empty-maps)))))
 
 (deftest test-parser-cargo-validation

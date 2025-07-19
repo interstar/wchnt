@@ -13,7 +13,7 @@
     [:success [:= false]]
     [:error string?]]])
 
-(def ValidationResult
+(def EyeballResult
   [:or
    [:map
     [:status [:= "seems ok"]]
@@ -121,8 +121,8 @@
 (defn valid-compilation-result? [result]
   (m/validate CompilationResult result))
 
-(defn valid-validation-result? [result]
-  (m/validate ValidationResult result))
+(defn valid-eyeball-result? [result]
+  (m/validate EyeballResult result))
 
 (defn valid-syntax-result? [result]
   (m/validate SyntaxValidationResult result))
@@ -136,11 +136,11 @@
 (defn valid-construction-syntax-result? [result]
   (m/validate ConstructionSyntaxValidationResult result))
 
-(defn validation-ok []
+(defn eyeball-ok []
   {:status "seems ok"
    :issues []})
 
-(defn validation-issues [issues]
+(defn eyeball-issues [issues]
   {:status "issues"
    :issues issues})
 

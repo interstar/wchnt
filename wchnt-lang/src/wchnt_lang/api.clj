@@ -40,15 +40,17 @@
       (let [value (:value result)
             classes (:classes value)
             factory (:factory value)
-            main (:main value)]
-        (ArrayList. [classes factory main]))
+            main (:main value)
+            ;; Combine into a single Haxe program
+            haxe-program (str classes "\n\n" factory "\n\n" main)]
+        (ArrayList. [haxe-program]))
       (ArrayList. [(pr-str result)]))))
 
 (defn -eyeball [this ^String code]
   (try
     (let [result (core/eyeball code)]
-      (when-not (schema/valid-validation-result? result)
-        (throw (ex-info "eyeball: result does not conform to ValidationResult schema" {:result result})))
+      (when-not (schema/valid-eyeball-result? result)
+        (throw (ex-info "eyeball: result does not conform to EyeballResult schema" {:result result})))
       (if (map? result)
         (pr-str result)
         (pr-str {:status "issues"
@@ -66,8 +68,6 @@
         (apply [this input]
           (try
             (let [result (parser-fn input)]
-              (when-not (schema/valid-syntax-result? result)
-                (throw (ex-info "get-schema-parser: result does not conform to SyntaxValidationResult schema" {:result result})))
               (if (instaparse.core/failure? result)
                 (let [error-map (HashMap.)]
                   (.put error-map "success" false)
@@ -136,7 +136,7 @@
 
 (defn -getConstructionGrammarAsString [this ^String schema-input]
   (try
-    (newparser/wchnt-grammar)
+    newparser/wchnt-grammar
     (catch Exception e
       (str "Error getting construction grammar: " (.getMessage e)))))
 

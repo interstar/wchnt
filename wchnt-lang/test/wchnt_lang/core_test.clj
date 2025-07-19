@@ -72,7 +72,7 @@ Ball = Int/x Int/y Int/rad
             (is (str/includes? result "class Rect"))
             (is (str/includes? result "class Ball"))
             (is (str/includes? factory "public static function gameFactory("))
-            (is (str/includes? main "return gameFactory()"))))))))
+            (is (str/includes? main "var game = gameFactory()"))))))))
 
 (deftest test-compile-wchnt-complex
   (testing "Compile complex WCHNT with arrays and disjunctions"

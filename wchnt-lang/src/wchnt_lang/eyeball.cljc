@@ -17,5 +17,5 @@
                  (str/includes? code "private")
                  (conj "All fields should be public"))]
     (if (empty? issues)
-      (schema/validation-ok)
-      (schema/validation-issues issues)))) 
+      (schema/eyeball-ok)
+      (schema/eyeball-issues issues)))) 

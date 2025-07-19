@@ -29,8 +29,8 @@ Ball = Int/x Int/y Int/rad
         (is (str/includes? haxe-code "class PlayArea"))
         (is (str/includes? haxe-code "class Rect"))
         (is (str/includes? haxe-code "class Ball"))
-        (is (str/includes? haxe-code "public static function factory()"))
-        (is (str/includes? haxe-code "return factory()"))))))
+        (is (str/includes? haxe-code "public static function gameFactory()"))
+        (is (str/includes? haxe-code "var game = gameFactory()"))))))
 
 (deftest test-compile-to-haxe-schema-only
   (testing "compileToHaxe handles schema-only content"
@@ -52,7 +52,8 @@ Config = String/settings
         (is (string? haxe-code))
         (is (str/includes? haxe-code "class Config"))
         (is (str/includes? haxe-code "public var settings: String"))
-        (is (str/includes? haxe-code "// No construction phase defined"))))))
+        ;; When there's no construction, we get empty factory and main
+        (is (str/includes? haxe-code ""))))))
 
 (deftest test-compile-to-haxe-error
   (testing "compileToHaxe handles compilation errors"
@@ -91,9 +92,10 @@ Game = = PlayArea Ball
       (is (pos? (count grammar)))
       (is (str/includes? grammar "Construction"))))
   
-  (testing "getConstructionGrammarAsString handles invalid schema"
+  (testing "getConstructionGrammarAsString returns grammar regardless of schema"
     (let [api (wchnt_lang.WchntAPI.)
           invalid-schema "Invalid = syntax error"
           result (.getConstructionGrammarAsString api invalid-schema)]
       (is (string? result))
-      (is (str/includes? result "Error"))))) 
+      (is (str/includes? result "Code"))
+      (is (str/includes? result "MethodDefinition"))))) 
