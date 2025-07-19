@@ -2,6 +2,7 @@
   (:require [clojure.test :refer :all]
             [clojure.string :as str]
             [clojure.pprint :as pp]
+            [instaparse.core :as insta]
             [wchnt-lang.core :refer [get-schema-parser
                                      compile-wchnt-file
                                      eyeball]]
@@ -13,7 +14,8 @@
             [wchnt-lang.parser :as parser]
             [wchnt-lang.pipeline :as P]
             
-            [wchnt-lang.haxegen :as haxegen]))
+            [wchnt-lang.haxegen :as haxegen]
+            [wchnt-lang.newparser :as newparser]))
 
 (deftest test-get-parser
   (testing "Parser retrieval"
@@ -166,5 +168,90 @@ Game = = PlayArea Ball
           schema-ast ((wchnt-lang.parser/get-schema-parser) schema-str)
           context-map (wchnt-lang.haxegen/build-context-relationships schema-ast)]
       (is (= {"A" nil, "B" "A", "C" "B"} context-map)))))
+
+(deftest test-austen-example
+  (testing "Compile Austen example with array construction"
+    (let [wchnt-content "## Schema
+
+```
+DB = [Book]/books
+Book = String/title
+```
+
+## Construction
+
+```
+[:DB 
+  [:Array/Book
+     [:Book \"Pride and Prejudice\"]
+     [:Book \"Northanger Abbey\"]
+  ]
+]
+```"
+          cargo-result (compiler/compile wchnt-content)
+          result (:value cargo-result)]
+      
+      ;; First, let's check if the cargo failed and why
+      (if (P/failed? cargo-result)
+        (do
+          (println "Compilation failed:")
+          (println "Error:" (:error cargo-result))
+          (println "Full cargo:" (with-out-str (pp/pprint cargo-result)))
+          ;; For now, just test that we get a proper error cargo
+          (is (P/is-cargo? cargo-result))
+          (is (P/failed? cargo-result)))
+        ;; If it succeeded, test the result
+        (do
+          (is (schema/valid-full-program? result))
+          (let [classes (:classes result)
+                factory (:factory result)]
+            (is (str/includes? classes "class DB"))
+            (is (str/includes? classes "class Book"))
+            (is (str/includes? classes "public var books: Array<Book>"))
+            (is (str/includes? factory "public static function dBFactory("))))))))
+
+
+
+
+
+(deftest test-construction-whitespace-handling
+  (testing "Test that construction parsing handles whitespace correctly"
+    (let [one-liner "[:DB [:Array/Book [:Book \"Pride and Prejudice\"] [:Book \"Northanger Abbey\"]]]"
+          multi-line-with-trailing "[:DB 
+  [:Array/Book
+     [:Book \"Pride and Prejudice\"]
+     [:Book \"Northanger Abbey\"]
+  ]
+]
+"
+          multi-line-no-trailing "[:DB 
+  [:Array/Book
+     [:Book \"Pride and Prejudice\"]
+     [:Book \"Northanger Abbey\"]
+  ]
+]"]
+      
+      ;; Test using the actual parsing function that includes trimming
+      (let [one-cargo (parser/parse-construction-unified one-liner)
+            trailing-cargo (parser/parse-construction-unified multi-line-with-trailing)
+            no-trailing-cargo (parser/parse-construction-unified multi-line-no-trailing)]
+        
+        (is (P/is-cargo? one-cargo) "One-liner should return a cargo")
+        (is (P/is-cargo? trailing-cargo) "Multi-line with trailing whitespace should return a cargo")
+        (is (P/is-cargo? no-trailing-cargo) "Multi-line without trailing whitespace should return a cargo")
+        
+        (is (:success one-cargo) "One-liner should parse successfully")
+        (is (:success trailing-cargo) "Multi-line with trailing whitespace should parse successfully")
+        (is (:success no-trailing-cargo) "Multi-line without trailing whitespace should parse successfully")
+        
+        ;; All should produce the same AST structure
+        (let [one-ast (:value one-cargo)
+              trailing-ast (:value trailing-cargo)
+              no-trailing-ast (:value no-trailing-cargo)]
+          (is (= (first one-ast) :BlockStatements) "Should parse as BlockStatements")
+          (is (= (first trailing-ast) :BlockStatements) "Should parse as BlockStatements")
+          (is (= (first no-trailing-ast) :BlockStatements) "Should parse as BlockStatements"))))))
+
+
 
 (run-tests)

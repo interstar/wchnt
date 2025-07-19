@@ -67,7 +67,7 @@
     (if (p/failed? final-cargo)
       final-cargo
       ;; Otherwise, construct the success result
-      (let [factory (or (-> final-cargo :stash :construction-haxe) "")
+              (let [factory (or (-> final-cargo :stash :construction-haxe) "")
             ;; Extract factory function name from the factory code
             factory-fn-name (if (str/blank? factory)
                              "factory"
@@ -75,10 +75,15 @@
                                (or (second match) "factory")))
             main (if (str/blank? factory)
                    ""
-                   (str "public static function main() {\n    var game = " factory-fn-name "();\n    trace(game.toConstruction());\n    return game;\n}"))
+                   (str "public static function main():Void {\n    var game = " factory-fn-name "();\n    trace(game.toConstruction());\n}"))
+            ;; Generate a complete Haxe program with a main class
+            main-class (if (str/blank? factory)
+                        ""
+                        (str "class Main {\n" factory "\n" main "\n}"))
             full-program {:classes (-> final-cargo :stash :schema-haxe) 
                          :factory factory
                          :main main
+                         :main-class main-class
                          :codeblocks (-> final-cargo :stash :codeblocks)
                          :warnings []}]
         (p/success-cargo full-program)))))

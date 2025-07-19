@@ -684,9 +684,12 @@ EmptyType = '_'
   "Parse construction using the new unified grammar.
   Input: construction text string
   Output: Cargo with parsed AST or error"
-  (let [parser (wchnt-lang.newparser/get-wchnt-parser)]
+  (let [parser (wchnt-lang.newparser/get-wchnt-parser)
+        ;; Trim whitespace to handle trailing newlines that might confuse the parser
+        ;; The parser expects the input to end cleanly without trailing whitespace
+        trimmed-text (str/trim construction-text)]
     (try
-      (let [result (insta/parse parser construction-text :start :BlockStatements)]
+      (let [result (insta/parse parser trimmed-text :start :BlockStatements)]
         (if (insta/failure? result)
           (P/fail-cargo (str "Construction parsing failed: " (insta/get-failure result)))
           (P/success-cargo result)))

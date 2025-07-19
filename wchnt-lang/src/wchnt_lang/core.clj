@@ -76,12 +76,11 @@
                  (:success result))
               (do
                 (println (:classes (:value result)))
-                (println (:factory (:value result)))
-                (println (:main (:value result)))                
+                (println (:main-class (:value result)))
                 (if verbose?                
                   (pp/pprint result))) 
               (do
                 (println
-                 (:error result) "file parsing" filename)
+                 (first (:errors result)) "file parsing" filename)
                 (println result)
                 (System/exit 1)))))))))

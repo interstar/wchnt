@@ -93,16 +93,17 @@
           field-type (type-ast->haxe-type (:type element))]
       (or (primitive-type->to-construction-expr field-name field-type)
       (cond
-        (str/starts-with? field-type "Array<") (str "this." field-name ".toConstruction(depth + 1)")
+        (str/starts-with? field-type "Array<") (str "ArrayExtensions.toConstruction(this." field-name ", depth + 1)")
         (str/starts-with? field-type "Map<") (str "this." field-name ".toConstruction(depth + 1)")
-        :else (str "this." field-name ".toConstruction(depth + 1)"))))))
+            :else (str "this." field-name ".toConstruction(depth + 1)"))))))
 
 
 (defn generate-to-construction-method [class-name to-construction-parts]
   "Generate the toConstruction method string with proper string concatenation"
   (let [indent-line (str "ind + '  ' + ")]
     (str "\n    public function toConstruction(depth:Int = 0):String {\n"
-         "        var ind = \"\" + '  '.repeat(depth);\n"
+         "        var ind = \"\";\n"
+         "        for (i in 0...depth) ind += \"  \";\n"
          "        var nl = '\\n';\n"
          "        return ind + '[:" class-name "' + nl + "
          (str/join " + nl + " (map #(str indent-line %) to-construction-parts)) 
@@ -127,7 +128,7 @@
                             (let [field-name (:name element)
                                   field-type (type-ast->haxe-type (:type element))
                                   sigil (:sigil element)]
-                              (str field-type " " field-name)))
+                              (str field-name ":" field-type)))
         constructor-body (for [element elements]
                           (let [field-name (:name element)
                                 sigil (:sigil element)]
@@ -153,8 +154,7 @@
 
 (defn generate-haxe-interface [interface-name]
   (str "interface " interface-name " {\n"
-       "    public var x: Int;\n"
-       "    public var y: Int;\n"
+       "    public function toConstruction(depth:Int = 0):String;\n"
        "}"))
 
 
@@ -187,7 +187,7 @@
         constructor-params (for [element elements]
                             (let [field-name (:name element)
                                   field-type (type-ast->haxe-type (:type element))]
-                              (str field-type " " field-name)))
+                              (str field-name ":" field-type)))
         constructor-body (for [element elements]
                           (let [field-name (:name element)]
                             (str "        this." field-name " = " field-name ";")))
@@ -251,7 +251,8 @@
   "// Extension methods for Array toConstruction
 class ArrayExtensions {
     public static function toConstruction<T>(arr: Array<T>, depth: Int = 0): String {
-        var ind = \"\" + '  '.repeat(depth);
+        var ind = \"\";
+        for (i in 0...depth) ind += \"  \";
         var nl = '\\n';
         var result = ind + '[:Array';
         for (item in arr) {

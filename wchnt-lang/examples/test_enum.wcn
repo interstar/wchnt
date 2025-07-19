@@ -6,3 +6,9 @@
 BuildType = "Dev" | "Local" | "Deploy"
 Config = BuildType/environment 
 ```
+
+## Construction
+
+```
+[:Config "Local"]
+```
