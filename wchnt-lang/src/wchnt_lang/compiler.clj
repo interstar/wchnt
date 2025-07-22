@@ -5,6 +5,8 @@
             [wchnt-lang.mainfile :as mainfile]
             [wchnt-lang.pipeline :as p]
             [wchnt-lang.pipeline :as P]
+            [wchnt-lang.ast-to-ir :as ast-to-ir]
+            [wchnt-lang.ir-to-haxe :as ir-to-haxe]
             [instaparse.core :as insta]
             [clojure.string :as str]))
 
@@ -33,8 +35,12 @@
           (p/processor parser/schema-wchnt->schema-ast "Parse schema to ast") ;; insta/parse it to the ast for the schema
           (p/stash :schema-ast) ;; stash the ast of the schema
           
+          ;; NEW: Generate IR from schema AST
           (p/retrieve :schema-ast) ;; pull out the schema-ast again
-
+          (p/processor ast-to-ir/schema-ast-to-ir "schema-ast -> IR") ;; convert schema AST to IR
+          (p/stash :schema-ir) ;; stash the IR
+          
+          (p/retrieve :schema-ast) ;; pull out the schema-ast again for Haxe generation
           (p/processor haxe-gen/schema-ast->haxe "schema-ast -> haxe") ;; convert it to haxe
           (p/stash :schema-haxe)                 ;; stash the schema haxe
 

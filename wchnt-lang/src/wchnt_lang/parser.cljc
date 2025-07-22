@@ -680,6 +680,20 @@ EmptyType = '_'
 
 
 
+(defn find-all-nodes [tag tree]
+  "Find all nodes in the tree that start with the given tag. Returns a sequence of matching nodes."
+  (cond
+    (and (vector? tree) (= (first tree) tag)) 
+    [tree]
+    
+    (vector? tree) 
+    (find-all-nodes tag (rest tree))
+    
+    (seq? tree) 
+    (mapcat #(find-all-nodes tag %) tree)
+    
+    :else []))
+
 (defn parse-construction-unified [construction-text]
   "Parse construction using the new unified grammar.
   Input: construction text string

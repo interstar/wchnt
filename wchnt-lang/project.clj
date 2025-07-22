@@ -8,7 +8,7 @@
                  [metosin/malli "0.15.0"]]
   :repl-options {:init-ns wchnt-lang.core}
   :main wchnt-lang.core
-  :aot [wchnt-lang.core wchnt-lang.api wchnt-lang.parser wchnt-lang.haxegen wchnt-lang.eyeball wchnt-lang.schema]
+  :aot [wchnt-lang.core wchnt-lang.api wchnt-lang.parser wchnt-lang.haxegen wchnt-lang.eyeball wchnt-lang.schema wchnt-lang.newparser]
   :prep-tasks ["javac" "compile"]
   :jar-name "wchnt-lang.jar"
   :uberjar-name "wchnt-lang-standalone.jar"

@@ -7,6 +7,10 @@ set -e  # Exit on any error
 
 echo "Building WCHNT Language Compiler..."
 
+# Check Leiningen version
+echo "Checking Leiningen version..."
+lein version
+
 # Clean previous builds
 echo "Cleaning previous builds..."
 lein clean
@@ -36,10 +40,18 @@ if [ -f "target/wchnt-lang-standalone.jar" ]; then
     echo "Usage in other projects:"
     echo "1. Add the standalone JAR to your classpath"
     echo "2. Use the Java API: wchnt_lang.WchntAPI"
+    echo ""
+    echo "For MCP Server integration (Neh-Thalggu):"
+    echo "- This JAR provides the WCHNT DSL compiler service"
+    echo "- Supports: compile, header, and eyeball operations"
+    echo "- Returns structured results for AI agent consumption"
     echo "3. Available methods:"
-    echo "   - WchntAPI.compileToHaxe(String input) - Compile to Haxe"
-    echo "   - WchntAPI.eyeball(String code) - Validate generated code"
-    echo "   - WchntAPI.getParser() - Get the WCHNT parser"
+    echo "   - WchntAPI.compileToHaxe(String input) - Compile WCHNT to Haxe"
+    echo "   - WchntAPI.eyeball(String code) - Eyeball generated Haxe code"
+    echo "   - WchntAPI.getSchemaParser() - Get schema parser function"
+    echo "   - WchntAPI.getConstructionParser(String schema) - Get construction parser function"
+    echo "   - WchntAPI.getSchemaGrammarAsString() - Get schema grammar"
+    echo "   - WchntAPI.getConstructionGrammarAsString(String schema) - Get construction grammar"
 else
     echo "❌ Uberjar build failed! Standalone JAR file not created."
     exit 1
