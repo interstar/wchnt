@@ -342,3 +342,131 @@
       (is (contains? result :objects))
       (is (contains? result :return-object))
       (is (contains? result :statements)))))
+
+;; =============================================================================
+;; Type Inference Tests
+;; =============================================================================
+
+(deftest test-inner-object-type-inference-from-parent
+  (testing "InnerObjectConstruction should infer type from parent context"
+    (let [construction-ast [:BlockStatements
+                           [:Expression [:ObjectConstruction 
+                                        [:ClassName "Game"] 
+                                        [:ArgList [:InnerObjectConstruction 
+                                                  [:ArgList [:IntLiteral "10"] 
+                                                           [:IntLiteral "20"]]]]]]]
+          schema-ir {:assemblages [{:name "Game" :components [{:component-name "player" :type-name "Player"}]}
+                                  {:name "Player" :components [{:component-name "x" :type-name "Int"}
+                                                             {:component-name "y" :type-name "Int"}]}]}
+          result (ast-to-ir/construction-ast-to-ir construction-ast schema-ir)]
+      ;; First, validate that the result conforms to the schema
+      (is (schema/valid-construction-ir? result) "Generated construction IR should conform to schema")
+      (is (= "Game" (:root-class result)))
+      ;; Check that the inner object was correctly inferred as Player
+      (let [objects (:objects result)
+            inner-object (first (vals objects))]
+        (is (= "Player" (:class-name inner-object)) "Inner object should be inferred as Player")))))
+
+(deftest test-inner-object-type-inference-from-array
+  (testing "InnerObjectConstruction inside ArrayConstruction should infer type from array element type"
+    (let [construction-ast [:BlockStatements
+                           [:Expression [:ObjectConstruction 
+                                        [:ClassName "Game"] 
+                                        [:ArgList [:ArrayConstruction 
+                                                  [:Type "Player"] 
+                                                  [:ArgList [:InnerObjectConstruction 
+                                                            [:ArgList [:IntLiteral "10"] 
+                                                                     [:IntLiteral "20"]]]
+                                                           [:InnerObjectConstruction 
+                                                            [:ArgList [:IntLiteral "30"] 
+                                                                     [:IntLiteral "40"]]]]]]]]]
+          schema-ir {:assemblages [{:name "Game" :components [{:component-name "players" :type-name "Array<Player>"}]}
+                                  {:name "Player" :components [{:component-name "x" :type-name "Int"}
+                                                             {:component-name "y" :type-name "Int"}]}]}
+          result (ast-to-ir/construction-ast-to-ir construction-ast schema-ir)]
+      ;; First, validate that the result conforms to the schema
+      (is (schema/valid-construction-ir? result) "Generated construction IR should conform to schema")
+      ;; Check that both inner objects were correctly inferred as Player
+      (let [objects (:objects result)
+            player-objects (filter #(and (= :object (:type (val %)))
+                                        (= "Player" (:class-name (val %)))) objects)]
+        (is (= 2 (count player-objects)) "Should have exactly 2 Player objects")
+        (doseq [[obj-id obj] player-objects]
+          (is (= "Player" (:class-name obj)) 
+              (str "Object " obj-id " should be inferred as Player")))))))
+
+(deftest test-inner-object-type-inference-multi-layer
+  (testing "InnerObjectConstruction should infer type through multiple layers of parent context"
+    (let [construction-ast [:BlockStatements
+                           [:Expression [:ObjectConstruction 
+                                        [:ClassName "A"] 
+                                        [:ArgList [:InnerObjectConstruction 
+                                                  [:ArgList [:IntLiteral "2"]]]]]]]
+          schema-ir {:assemblages [{:name "A" :components [{:component-name "b" :type-name "B"}]}
+                                  {:name "B" :components [{:component-name "c" :type-name "C"}]}
+                                  {:name "C" :components [{:component-name "d" :type-name "Int"}]}]}
+          result (ast-to-ir/construction-ast-to-ir construction-ast schema-ir)]
+      ;; First, validate that the result conforms to the schema
+      (is (schema/valid-construction-ir? result) "Generated construction IR should conform to schema")
+      (is (= "A" (:root-class result)))
+      ;; Check that the inner object was correctly inferred as B (not C or Int)
+      (let [objects (:objects result)
+            inner-object (first (vals objects))]
+        (is (= "B" (:class-name inner-object)) "Inner object should be inferred as B from A's component")))))
+
+(deftest test-inner-object-type-inference-nested-arrays
+  (testing "InnerObjectConstruction inside nested arrays should infer correct type"
+    (let [construction-ast [:BlockStatements
+                           [:Expression [:ObjectConstruction 
+                                        [:ClassName "League"] 
+                                        [:ArgList [:ArrayConstruction 
+                                                  [:Type "Team"] 
+                                                  [:ArgList [:InnerObjectConstruction 
+                                                            [:ArgList [:StringLiteral "Team1"]
+                                                                     [:ArrayConstruction 
+                                                                      [:Type "Player"] 
+                                                                      [:ArgList [:InnerObjectConstruction 
+                                                                                [:ArgList [:IntLiteral "10"] 
+                                                                                         [:IntLiteral "20"]]]]]]]]]]]]]
+          schema-ir {:assemblages [{:name "League" :components [{:component-name "teams" :type-name "Array<Team>"}]}
+                                  {:name "Team" :components [{:component-name "name" :type-name "String"}
+                                                           {:component-name "players" :type-name "Array<Player>"}]}
+                                  {:name "Player" :components [{:component-name "x" :type-name "Int"}
+                                                             {:component-name "y" :type-name "Int"}]}]}
+          result (ast-to-ir/construction-ast-to-ir construction-ast schema-ir)]
+      ;; First, validate that the result conforms to the schema
+      (is (schema/valid-construction-ir? result) "Generated construction IR should conform to schema")
+      ;; Check that objects were correctly inferred
+      (let [objects (:objects result)]
+        (doseq [[obj-id obj] objects]
+          (when (= :object (:type obj))
+            (cond
+              (= "Team" (:class-name obj))
+              (is true "Team object correctly identified")
+              (= "Player" (:class-name obj))
+              (is true "Player object correctly identified")
+              (= "League" (:class-name obj))
+              (is true "League object correctly identified")
+              :else
+              (is false (str "Unexpected object type: " (:class-name obj))))))))))
+
+(deftest test-inner-object-type-inference-with-explicit-class
+  (testing "InnerObjectConstruction with explicit class name should use that instead of inferring"
+    (let [construction-ast [:BlockStatements
+                           [:Expression [:ObjectConstruction 
+                                        [:ClassName "Game"] 
+                                        [:ArgList [:InnerObjectConstruction 
+                                                  [:ClassName "Player"]
+                                                  [:ArgList [:IntLiteral "10"] 
+                                                           [:IntLiteral "20"]]]]]]]
+          schema-ir {:assemblages [{:name "Game" :components [{:component-name "shape" :type-name "Shape"}]}
+                                  {:name "Player" :components [{:component-name "x" :type-name "Int"}
+                                                             {:component-name "y" :type-name "Int"}]}]}
+          result (ast-to-ir/construction-ast-to-ir construction-ast schema-ir)]
+      ;; First, validate that the result conforms to the schema
+      (is (schema/valid-construction-ir? result) "Generated construction IR should conform to schema")
+      (is (= "Game" (:root-class result)))
+      ;; Check that the inner object used explicit class name instead of inferring from parent
+      (let [objects (:objects result)
+            inner-object (first (vals objects))]
+        (is (= "Player" (:class-name inner-object)) "Inner object should use explicit Player class name")))))

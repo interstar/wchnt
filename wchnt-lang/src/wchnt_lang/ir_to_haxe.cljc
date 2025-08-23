@@ -70,7 +70,7 @@ class WCHNTHelper implements IWCHNTHelper {
     public function enumToConstruction(enumValue: Dynamic, depth: Int): String {
         var ind = \"\";
         for (i in 0...depth) ind += \"  \";
-        return ind + '\"' + Std.string(enumValue) + '\"';
+        return ind + Std.string(enumValue);
     }
 }")
 
@@ -350,21 +350,52 @@ interface IWCHNTObject {
   "Generate Haxe code for a single array element"
   [element schema-ir expected-type]
   (cond
+    ;; Handle structured IR objects
+    (and (map? element) (= (:type element) :object))
+    (let [arg-class-name (:class-name element)
+          arg-args (:args element)]
+      (str "new " arg-class-name "("
+           (str/join ", " (map #(generate-array-element % schema-ir expected-type) arg-args))
+           ")"))
     
-    ;; InnerObjectConstruction: use the helper function
+    ;; Handle variable references
+    (and (map? element) (= (:type element) :variable))
+    (first (:args element))  ;; Variable name
+    
+    ;; Handle primitive values
+    (and (map? element) (= (:type element) :primitive))
+    (let [primitive-value (first (:args element))
+          class-name (:class-name element)]
+      (if (or (= class-name "String") (= class-name 'String))
+        (str "\"" primitive-value "\"")  ;; String type - add quotes
+        (str primitive-value)))  ;; Other primitives - no quotes
+    
+    ;; Handle enum values
+    (and (map? element) (= (:type element) :enum-value))
+    (first (:args element))  ;; Enum value (not quoted)
+    
+    ;; Handle nested arrays
+    (and (map? element) (= (:type element) :array))
+    (let [array-type (:class-name element)
+          array-elements (:args element)]
+      (str "["
+           (str/join ", " (map #(generate-array-element % schema-ir array-type) array-elements))
+           "]"))
+    
+    ;; Handle raw AST nodes (fallback for backward compatibility)
     (ast-utils/node-type? element :InnerObjectConstruction)
     (process-inner-object-construction element schema-ir expected-type)
     
-    ;; Primitive types
+    ;; Primitive types (raw AST)
     (ast-utils/node-type? element :IntLiteral) (second element)
     (ast-utils/node-type? element :StringLiteral) (str "\"" (second element) "\"")
     (ast-utils/node-type? element :FloatLiteral) (second element)
     (ast-utils/node-type? element :BooleanLiteral) (second element)
     
-    ;; Variable reference
+    ;; Variable reference (raw AST)
     (ast-utils/node-type? element :VariableRef) (second element)
     
-    ;; Default to string conversion (should ideally be handled by specific cases)
+    ;; Default to string conversion
     :else (str element)))
 
 (defn generate-array-assignment

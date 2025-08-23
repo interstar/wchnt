@@ -616,4 +616,80 @@ Config = String/environment
           (println "Error:" (:error cargo-result))
           (is false "Main class should be properly generated"))))))
 
+(deftest test-haxe-array-with-variable-references
+  "Test that arrays with variable references generate correct Haxe syntax"
+  (testing "Array with variable references should use proper Haxe syntax"
+    (let [wchnt-content "## Schema
+
+```
+Book = String/title String/author
+DB = [Book]/books
+```
+
+## Construction
+
+```
+[:DB 
+  [:Array/Book
+     [:Book \"Pride and Prejudice\" \"Jane Austen\"]
+     [:Book \"Northanger Abbey\" \"Jane Austen\"]
+  ]
+]
+```"
+          cargo-result (compiler/compile wchnt-content)]
+      
+      (is (p/is-cargo? cargo-result))
+      (if (:success cargo-result)
+        (let [result (:value cargo-result)
+              factory-code (:factory result)]
+          ;; Should use proper Haxe array syntax with variable references
+          (is (str/includes? factory-code "[obj1, obj2]"))
+          ;; Should have proper object construction
+          (is (str/includes? factory-code "new Book(\"Pride and Prejudice\", \"Jane Austen\")"))
+          (is (str/includes? factory-code "new Book(\"Northanger Abbey\", \"Jane Austen\")"))
+          ;; Should have proper array assignment
+          (is (str/includes? factory-code "var obj3 = [obj1, obj2];")))
+        (do
+          (println "Array with variable references test failed:")
+          (println "Error:" (:error cargo-result))
+          (is false "Array with variable references should work"))))))
+
+(deftest test-haxe-array-with-external-variable-references
+  "Test that arrays with external variable references generate correct Haxe syntax"
+  (testing "Array with external variable references should use proper Haxe syntax"
+    (let [wchnt-content "## Schema
+
+```
+Player = String/name
+Team = [Player]/players
+Game = [Team]/teams
+```
+
+## Construction
+
+```
+players = [:Array/Player [\"John\"] [\"Sally\"]].
+
+[:Game 
+  [:Array/Team [\"Team A\" players] [\"Team B\" players]]
+]
+```"
+          cargo-result (compiler/compile wchnt-content)]
+      
+      (is (p/is-cargo? cargo-result))
+      (if (:success cargo-result)
+        (let [result (:value cargo-result)
+              factory-code (:factory result)]
+          ;; Should use proper Haxe array syntax with variable references
+          (is (str/includes? factory-code "[obj1, obj2]"))
+          ;; Should have proper Team object construction
+          (is (str/includes? factory-code "new Team(\"Team A\", players)"))
+          (is (str/includes? factory-code "new Team(\"Team B\", players)"))
+          ;; Should NOT have raw IR structure in array
+          (is (not (str/includes? factory-code "{:type :variable"))))
+        (do
+          (println "Array with external variable references test failed:")
+          (println "Error:" (:error cargo-result))
+          (is false "Array with external variable references should work"))))))
+
 

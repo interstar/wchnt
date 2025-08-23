@@ -918,10 +918,14 @@
       ;; --- Case 1: Nodes that should be flattened ---
       (= tag :InnerObjectConstruction)
       (let [class-name (or (get-explicit-class-name node)
-                           (type-from-class-and-position (:parent-class ctx) (:arg-index ctx) schema-ir))
+                           ;; If no explicit class name, try to get it from context
+                           (if (:array-element-type ctx)
+                             (:array-element-type ctx)  ; Use array element type if we're inside an array
+                             (:parent-class ctx)))  ; Use parent class directly instead of going deeper
             arg-list (if (get-explicit-class-name node)
                        (nth node 2)  ; [:ClassName "X"] [:ArgList ...]
                        (second node))] ; [:ArgList ...]
+
         (when-not class-name
           (throw (ex-info "Could not determine class name for inner construction" {:ast node :ctx ctx})))
         ;; Process arguments into structured IR format
@@ -935,7 +939,8 @@
       (= tag :ArrayConstruction)
       (let [element-type (second (second node))  ; from [:Type "Person"]
             arg-list (nth node 2)]               ; from [:ArgList ...]
-        ;; Process array elements into structured IR format
+
+        ;; Process array elements as object constructions of the element type
         (let [structured-args (extract-args-from-object-construction 
                                [:ObjectConstruction [:ClassName element-type] arg-list] 
                                schema-ir 
@@ -958,8 +963,11 @@
           new-ctx (case tag
                     :ObjectConstruction
                     (assoc ctx :parent-class (get-explicit-class-name node))
+                    :ArrayConstruction
+                    (assoc ctx :array-element-type (second (second node)))  ; Set array element type
                     :InnerObjectConstruction
                     (assoc ctx :parent-class (or (get-explicit-class-name node)
+                                                (:array-element-type ctx)
                                                 (type-from-class-and-position (:parent-class ctx) (:arg-index ctx) schema-ir)))
                     ctx)
           transformed-children (map-indexed
@@ -967,7 +975,7 @@
                                   (walk-ast child (assoc new-ctx :arg-index i) 
                                            nested-objects-atom object-counter-atom schema-ir))
                                 children)]
-      (visit-node (into [] (cons tag transformed-children)) ctx 
+      (visit-node (into [] (cons tag transformed-children)) new-ctx 
                  nested-objects-atom object-counter-atom schema-ir))
     ;; Leaf node, return as-is
     node))
@@ -976,9 +984,11 @@
   "Flatten nested object and array constructions by extracting them into separate variables and replacing with variable references.
    Fail fast if a class name for an InnerObjectConstruction cannot be determined from explicit ClassName or schema context."
   [construction-ast schema-ir]
+
   (let [nested-objects (atom {})
         object-counter (atom 0)]
     (let [flattened-ast (walk-ast construction-ast {} nested-objects object-counter schema-ir)]
+
       {:flattened-ast flattened-ast
        :nested-objects @nested-objects})))
 
