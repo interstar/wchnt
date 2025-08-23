@@ -1,6 +1,5 @@
 (ns wchnt-lang.core
   (:require [wchnt-lang.parser :as parser]
-            [wchnt-lang.haxegen :as haxe-gen]
             [wchnt-lang.eyeball :as eyeball]
             [wchnt-lang.mainfile :as mainfile]
             [wchnt-lang.schema :as schema]

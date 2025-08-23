@@ -3,39 +3,14 @@
             [clojure.string :as str]
             [wchnt-lang.pipeline :as P]
             [wchnt-lang.schema :as schema]
-            [wchnt-lang.newparser :as newparser])
+            [wchnt-lang.grammars :as grammars])
   (:import (java.lang Exception)))
 
-;; Grammar for splitting construction statements
-
-
-(def schema-grammar
-  "
-Schema = DefLine (<NL> DefLine)* <NL>?
-DefLine = CompositionLine | DisjunctionLine | EnumLine
-CompositionLine = Definee <SPACE> <'='> <SPACE> Element (<SPACE> Element)* <SPACE>?
-DisjunctionLine = Definee <SPACE> <'='> <SPACE> Element (<SPACE> <'|'> <SPACE> Element)+ <SPACE>?
-EnumLine = Definee <SPACE> <'='> <SPACE> <'\"'> EnumValue <'\"'> (<SPACE> <'|'> <SPACE> <'\"'> EnumValue <'\"'>)+ <SPACE>?
-Definee = Name
-<Name> = #'[A-Za-z][A-Za-z0-9_]*'
-NL = #'\n+'
-Element = ((Sigil Type) | TypeMarker) ('/' AltName)?
-SPACE = #'\\s+'
-TypeMarker = Name | ArrayType | MapType | EmptyType
-ArrayType = <'['> (Type | MapType) <']'>
-Type = Name
-MapType =  <'{'> KeyType <SPACE>? <':'> <SPACE>? ValType <'}'>
-KeyType = Name 
-ValType = Name | ArrayType 
-AltName = Name
-EnumValue =  #'[^\"]+'
-Sigil = ':'  | '@' | '$'
-EmptyType = '_'
-")
+;; Use the consolidated grammar from grammars.cljc
 
 (defn get-schema-parser []
   "Get the schema parser for parsing WCHNT schema definitions"
-  (insta/parser schema-grammar))
+  grammars/schema-parser)
 
 
 (defn find-node [tag tree]
@@ -695,19 +670,12 @@ EmptyType = '_'
     :else []))
 
 (defn parse-construction-unified [construction-text]
-  "Parse construction using the new unified grammar.
+  "Parse construction using the consolidated grammar.
   Input: construction text string
   Output: Cargo with parsed AST or error"
-  (let [parser (wchnt-lang.newparser/get-wchnt-parser)
-        ;; Trim whitespace to handle trailing newlines that might confuse the parser
-        ;; The parser expects the input to end cleanly without trailing whitespace
-        trimmed-text (str/trim construction-text)]
-    (try
-      (let [result (insta/parse parser trimmed-text :start :BlockStatements)]
-        (if (insta/failure? result)
-          (P/fail-cargo (str "Construction parsing failed: " (insta/get-failure result)))
-          (P/success-cargo result)))
-      (catch Exception e
-        (P/fail-cargo (str "Construction parsing error: " (.getMessage e)))))))
+  (let [result (grammars/parse-construction-with-failure-handling construction-text)]
+    (if (:success result)
+      (P/success-cargo (:ast result))
+      (P/fail-cargo (str "Construction parsing failed: " (:error result))))))
 
 

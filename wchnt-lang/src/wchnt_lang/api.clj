@@ -1,7 +1,7 @@
 (ns wchnt-lang.api
   (:require [wchnt-lang.core :as core]
             [wchnt-lang.parser :as parser]
-            [wchnt-lang.newparser :as newparser]
+            [wchnt-lang.grammars :as grammars]
             [wchnt-lang.compiler :as compiler]
             [wchnt-lang.schema :as schema]
             [instaparse.core :as instaparse])
@@ -123,20 +123,20 @@
 
 (defn -getConstructionParser [this ^String schema-input]
   (try
-    (let [parser-fn (newparser/get-wchnt-parser)]
+    (let [parser-fn parser/parse-construction-unified]
           (create-parser-function parser-fn))
     (catch Exception e
       (create-error-function (.getMessage e)))))
 
 (defn -getSchemaGrammarAsString [this]
   (try
-    parser/schema-grammar
+    grammars/schema-grammar
     (catch Exception e
       (str "Error getting schema grammar: " (.getMessage e)))))
 
 (defn -getConstructionGrammarAsString [this ^String schema-input]
   (try
-    newparser/wchnt-grammar
+    grammars/construction-grammar
     (catch Exception e
       (str "Error getting construction grammar: " (.getMessage e)))))
 

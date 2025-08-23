@@ -183,3 +183,181 @@
 
 (defn valid-object-construction-result? [result]
   (m/validate ObjectConstructionResult result)) 
+
+;; =============================================================================
+;; IR Data Structure Schemas (Malli)
+;; =============================================================================
+
+;; Schema IR Schemas
+(def Component
+  [:map
+   [:component-name string?]
+   [:type-name string?]
+   [:relationship [:enum :ordinary :context-specific :external :reactive]]
+   [:optional-name [:maybe string?]]])
+
+(def AssemblageSchema
+  [:map
+   [:name string?]
+   [:components [:sequential Component]]
+   [:context-dependencies [:sequential string?]]
+   [:context-providers [:sequential string?]]
+   [:observable [:maybe boolean?]]])
+
+(def Interface
+  [:map
+   [:name string?]
+   [:implementers [:sequential string?]]])
+
+(def EnumSchema
+  [:map
+   [:name string?]
+   [:values [:sequential string?]]])
+
+(def DebugMethod
+  [:map
+   [:class string?]
+   [:method string?]
+   [:depth-parameter [:or boolean? string?]]
+   [:format [:or keyword? string?]]])
+
+(def SchemaIR
+  [:map
+   [:assemblages [:sequential AssemblageSchema]]
+   [:interfaces [:sequential Interface]]
+   [:enums [:sequential EnumSchema]]
+   [:context-relationships [:map-of string? [:maybe string?]]]
+   [:interface-implementers [:map-of string? [:or string? set?]]]
+   [:observable-classes [:sequential string?]]
+   [:subscriber-classes [:sequential string?]]
+   [:debug-methods [:sequential DebugMethod]]])
+
+;; Construction IR Schemas (for object instances being constructed)
+;; Argument structure for construction objects
+(def ConstructionArg
+  [:map
+   [:type [:enum :object :primitive :variable :enum-value :array]]
+   [:class-name string?]
+   [:args [:sequential any?]]
+   [:index int?]])
+
+(def ConstructionObjectSchema
+  [:map
+   [:type [:enum :object :primitive :variable :enum-value :array]]
+   [:class-name string?]
+   [:args [:sequential any?]]  ;; Can be structured args or raw AST nodes (for backward compatibility)
+   [:index int?]])
+
+(def Wiring
+  [:map
+   [:target string?]
+   [:context string?]
+   [:relationship string?]])
+
+(def Collection
+  [:map
+   [:object-id string?]
+   [:var-name string?]
+   [:type [:enum :array :map]]
+   [:element-type string?]
+   [:elements [:sequential string?]]
+   [:key-type [:maybe string?]]
+   [:value-type [:maybe string?]]
+   [:entries [:maybe [:sequential any?]]]])
+
+(def Statement
+  [:map
+   [:statement-type [:enum :assignment :return]]
+   [:variable string?]
+   [:value any?]])
+
+(def Dependency
+  [:map
+   [:object-id string?]
+   [:depends-on string?]
+   [:construction-order int?]])
+
+(def ConstructionIR
+  [:map
+   [:root-class string?]
+   [:factory-name string?]
+   [:objects [:map-of string? ConstructionObjectSchema]]
+   [:wiring [:sequential Wiring]]
+   [:collections [:sequential Collection]]
+   [:statements [:sequential Statement]]
+   [:dependencies [:sequential Dependency]]
+   [:variable-mappings [:map-of string? string?]]
+   [:return-object string?]])
+
+;; Method IR Schemas
+(def Parameter
+  [:map
+   [:name string?]
+   [:type string?]])
+
+(def Method
+  [:map
+   [:class string?]
+   [:method-name string?]
+   [:parameters [:sequential Parameter]]
+   [:return-type string?]
+   [:body any?]])
+
+(def MethodsIR
+  [:sequential Method])
+
+;; Complete IR Schema
+(def IR
+  [:map
+   [:schema SchemaIR]
+   [:construction ConstructionIR]
+   [:methods MethodsIR]])
+
+;; =============================================================================
+;; IR Validation Functions
+;; =============================================================================
+
+(defn valid-schema-ir? [schema-ir]
+  (m/validate SchemaIR schema-ir))
+
+(defn valid-construction-ir? [construction-ir]
+  (m/validate ConstructionIR construction-ir))
+
+(defn valid-methods-ir? [methods-ir]
+  (m/validate MethodsIR methods-ir))
+
+(defn valid-ir? [ir]
+  (m/validate IR ir))
+
+(defn explain-schema-ir [schema-ir]
+  (when-not (valid-schema-ir? schema-ir)
+    (m/explain SchemaIR schema-ir)))
+
+(defn explain-construction-ir [construction-ir]
+  (when-not (valid-construction-ir? construction-ir)
+    (m/explain ConstructionIR construction-ir)))
+
+(defn explain-ir [ir]
+  (when-not (valid-ir? ir)
+    (m/explain IR ir)))
+
+;; =============================================================================
+;; IR Structure Validation Functions
+;; =============================================================================
+
+(defn has-structured-args? [construction-ir]
+  "Check if construction IR has properly structured arguments (not raw AST nodes)"
+  (let [objects (:objects construction-ir)]
+    (every? (fn [[obj-id obj-data]]
+              (let [args (:args obj-data)]
+                (every? map? args)))  ;; All args should be maps, not vectors
+            objects)))
+
+(defn validate-ir-structure [ir]
+  "Validate that IR has the proper structured format for Haxe generation"
+  (let [construction-ir (:construction ir)]
+    (if (has-structured-args? construction-ir)
+      {:valid true :message "IR has proper structured arguments"}
+      {:valid false :message "IR contains raw AST nodes instead of structured arguments"})))
+
+;; ============================================================================= 

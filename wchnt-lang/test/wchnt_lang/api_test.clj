@@ -30,7 +30,7 @@ Ball = Int/x Int/y Int/rad
         (is (str/includes? haxe-code "class Rect"))
         (is (str/includes? haxe-code "class Ball"))
         (is (str/includes? haxe-code "public static function gameFactory()"))
-        (is (str/includes? haxe-code "var game = gameFactory()"))))))
+        (is (str/includes? haxe-code "var assemblage = gameFactory()"))))))
 
 (deftest test-compile-to-haxe-schema-only
   (testing "compileToHaxe handles schema-only content"

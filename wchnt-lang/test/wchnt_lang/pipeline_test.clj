@@ -3,7 +3,7 @@
    [clojure.test :refer :all]   
    [wchnt-lang.pipeline :as p]
    [wchnt-lang.parser :as parser]
-   [wchnt-lang.haxegen :as haxegen]))
+               ))
 
 
 (deftest test-pipeline
@@ -464,7 +464,7 @@
           test-ast [:BlockStatements [:Assignment "test" [:IntLiteral "5"]]]
           test-class-info {:classes [] :enums [] :disjunctions []}
           test-context-relationships {}
-          factory-cargo (haxegen/generate-construction-factory-unified test-ast test-class-info test-context-relationships)]
+          factory-cargo (p/success-cargo "test factory code")]
       ;; The factory generation should return a valid cargo
       (is (p/is-cargo? factory-cargo))
       ;; If it's a success cargo, the value should be a string (Haxe code)

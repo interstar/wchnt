@@ -2,8 +2,11 @@
   (:require [clojure.test :refer :all]
             [clojure.string :as str]
             [wchnt-lang.haxegen :as haxegen]
+            [wchnt-lang.ir-to-haxe :as ir-to-haxe]
             [wchnt-lang.schema :as schema]
-            [wchnt-lang.parser :as parser]))
+            [wchnt-lang.parser :as parser]
+                         [wchnt-lang.compiler :as compiler]
+             [wchnt-lang.pipeline :as p]))
 
 (deftest test-type-ast->haxe-type
 
@@ -104,6 +107,513 @@
   (testing "find-all-nodes returns empty when no matches"
     (let [tree [:Root [:Level1 [:Level2 "value"]]]]
       (is (= [] (haxegen/find-all-nodes :Target tree)) "Should return empty when no matches"))))
+;; =============================================================================
+;; Construction IR to Haxe Generation Tests
+;; =============================================================================
+
+(deftest test-construction-ir-to-haxe-basic
+  (testing "generates valid Haxe for simple construction"
+    (let [construction-ir {:root-class "Config"
+                          :factory-name "configFactory"
+                          :objects {"obj1" {:type :object
+                                           :class-name "Config"
+                                           :args ["Local"]
+                                           :index 0}}
+                          :return-object "obj1"
+                          :variable-mappings {}}
+          schema-ir {:assemblages [{:name "Config"
+                                   :components [{:component-name "environment" :type-name "BuildType"}]}]
+                     :enums [{:name "BuildType" :values ["Dev" "Local" "Deploy"]}]}
+          result (ir-to-haxe/generate-construction-factory construction-ir schema-ir)]
+      
+      ;; Should generate valid Haxe code
+      (is (string? result))
+      (is (str/includes? result "public static function configFactory()"))
+      (is (str/includes? result "return obj1"))
+      
+      ;; Should NOT have invalid enum methods
+      (is (not (str/includes? result "public static function DevToConstruction")))
+      (is (not (str/includes? result "public static function LocalToConstruction")))
+      (is (not (str/includes? result "public static function DeployToConstruction")))
+      
+      ;; Should NOT have circular references
+      (is (not (str/includes? result "new Config(obj1)")))
+      (is (not (str/includes? result "return new Config(obj1)"))))))
+
+(deftest test-construction-ir-to-haxe-enum-literals
+  (testing "generates valid Haxe for enum literals"
+    (let [construction-ir {:root-class "Config"
+                          :factory-name "configFactory"
+                          :objects {"obj1" {:type :object
+                                           :class-name "Config"
+                                           :args ["Local"]
+                                           :index 0}}
+                          :return-object "obj1"
+                          :variable-mappings {}}
+          schema-ir {:assemblages [{:name "Config"
+                                   :components [{:component-name "environment" :type-name "BuildType"}]}]
+                     :enums [{:name "BuildType" :values ["Dev" "Local" "Deploy"]}]}
+          result (ir-to-haxe/generate-construction-factory construction-ir schema-ir)]
+      
+      ;; Should use enum values directly, not call methods
+      (is (str/includes? result "Local"))
+      (is (not (str/includes? result "LocalToConstruction")))
+      (is (not (str/includes? result "Local()"))))))
+
+(deftest test-construction-ir-to-haxe-primitive-args
+  (testing "generates valid Haxe for primitive arguments"
+    (let [construction-ir {:root-class "Rect"
+                          :factory-name "rectFactory"
+                          :objects {"obj1" {:type :object
+                                           :class-name "Rect"
+                                           :args [0 0 100 200]  ; Simple integers
+                                           :index 0}}
+                          :return-object "obj1"
+                          :variable-mappings {}}
+          schema-ir {:assemblages [{:name "Rect"
+                                   :components [{:component-name "x" :type-name "Int"}
+                                              {:component-name "y" :type-name "Int"}
+                                              {:component-name "width" :type-name "Int"}
+                                              {:component-name "height" :type-name "Int"}]}]}
+          result (ir-to-haxe/generate-construction-factory construction-ir schema-ir)]
+      
+      ;; Should use primitive values directly
+      (is (str/includes? result "new Rect(0, 0, 100, 200)"))
+      (is (not (str/includes? result "[:IntLiteral")))
+      (is (not (str/includes? result "[:StringLiteral"))))))
+
+(deftest test-construction-ir-to-haxe-object-references
+  (testing "generates valid Haxe for object references"
+    (let [construction-ir {:root-class "Game"
+                          :factory-name "gameFactory"
+                          :objects {"obj1" {:type :object
+                                           :class-name "Ball"
+                                           :args [100 100 5]
+                                           :index 0}
+                                   "obj2" {:type :object
+                                           :class-name "Game"
+                                           :args ["obj1"]  ; Reference to obj1
+                                           :index 1}}
+                          :return-object "obj2"
+                          :variable-mappings {}}
+          schema-ir {:assemblages [{:name "Game"
+                                   :components [{:component-name "ball" :type-name "Ball"}
+                                              {:component-name "paddle" :type-name "Paddle"}]}
+                                  {:name "Ball"
+                                   :components [{:component-name "x" :type-name "Int"}
+                                              {:component-name "y" :type-name "Int"}
+                                              {:component-name "radius" :type-name "Int"}]}
+                                  {:name "Paddle"
+                                   :components [{:component-name "x" :type-name "Int"}
+                                              {:component-name "y" :type-name "Int"}
+                                              {:component-name "width" :type-name "Int"}
+                                              {:component-name "height" :type-name "Int"}]}]}
+          result (ir-to-haxe/generate-construction-factory construction-ir schema-ir)]
+      
+      ;; Should reference objects by variable name
+      (is (str/includes? result "var obj1 = new Ball(100, 100, 5)"))
+      (is (str/includes? result "var obj2 = new Game(obj1)"))
+      (is (str/includes? result "return obj2"))
+      
+      ;; Should NOT have circular references
+      (is (not (str/includes? result "new Game(obj2)")))
+      (is (not (str/includes? result "return new Game(obj2)"))))))
+
+(deftest test-construction-ir-to-haxe-array-construction
+  (testing "generates valid Haxe for array construction"
+    (let [construction-ir {:root-class "Team"
+                          :factory-name "teamFactory"
+                          :objects {"obj1" {:type :object
+                                           :class-name "Player"
+                                           :args [10 10 "John"]
+                                           :index 0}
+                                   "obj2" {:type :object
+                                           :class-name "Player"
+                                           :args [50 70 "Sally"]
+                                           :index 1}
+                                   "obj3" {:type :array
+                                           :class-name "Player"
+                                           :args ["obj1" "obj2"]  ; Array of object references
+                                           :index 2}
+                                   "obj4" {:type :object
+                                           :class-name "Team"
+                                           :args ["West Ham" "obj3"]
+                                           :index 3}}
+                          :return-object "obj4"
+                          :variable-mappings {}}
+          schema-ir {:assemblages [{:name "Team"
+                                   :components [{:component-name "name" :type-name "String"}
+                                              {:component-name "players" :type-name "Array<Player>"}]}
+                                  {:name "Player"
+                                   :components [{:component-name "x" :type-name "Int"}
+                                              {:component-name "y" :type-name "Int"}
+                                              {:component-name "name" :type-name "String"}]}]}
+          result (ir-to-haxe/generate-construction-factory construction-ir schema-ir)]
+      
+      ;; Should create array with object references
+      (is (str/includes? result "var obj3 = [obj1, obj2]"))
+      (is (str/includes? result "var obj4 = new Team(\"West Ham\", obj3)"))
+      
+      ;; Should NOT have AST nodes in array
+      (is (not (str/includes? result "[:VariableRef")))
+      (is (not (str/includes? result "[:StringLiteral"))))))
+
+
+
+(deftest test-construction-ir-to-haxe-enum-method-generation
+  (testing "does not generate invalid enum methods"
+    (let [construction-ir {:root-class "Config"
+                          :factory-name "configFactory"
+                          :objects {"obj1" {:type :object
+                                           :class-name "Config"
+                                           :args ["Local"]
+                                           :index 0}}
+                          :return-object "obj1"
+                          :variable-mappings {}}
+          schema-ir {:assemblages [{:name "Config"
+                                   :components [{:component-name "environment" :type-name "BuildType"}]}]
+                     :enums [{:name "BuildType" :values ["Dev" "Local" "Deploy"]}]}
+          result (ir-to-haxe/generate-construction-factory construction-ir schema-ir)]
+      
+      ;; Should NOT generate static methods in enums
+      (is (not (str/includes? result "public static function DevToConstruction")))
+      (is (not (str/includes? result "public static function LocalToConstruction")))
+      (is (not (str/includes? result "public static function DeployToConstruction")))
+      
+      ;; Should use enum values directly
+      (is (str/includes? result "Local")))))
+
+(deftest test-construction-ir-to-haxe-factory-return
+  (testing "generates correct factory return statements"
+    (let [construction-ir {:root-class "Game"
+                          :factory-name "gameFactory"
+                          :objects {"obj1" {:type :object
+                                           :class-name "Game"
+                                           :args ["obj2" "obj3"]
+                                           :index 0}
+                                   "obj2" {:type :object
+                                           :class-name "Ball"
+                                           :args [100 100 5]
+                                           :index 1}
+                                   "obj3" {:type :object
+                                           :class-name "Paddle"
+                                           :args [50 50 20 80]
+                                           :index 2}}
+                          :return-object "obj1"
+                          :variable-mappings {}}
+          schema-ir {:assemblages [{:name "Game"
+                                   :components [{:component-name "ball" :type-name "Ball"}
+                                              {:component-name "paddle" :type-name "Paddle"}]}
+                                  {:name "Ball"
+                                   :components [{:component-name "x" :type-name "Int"}
+                                              {:component-name "y" :type-name "Int"}
+                                              {:component-name "radius" :type-name "Int"}]}
+                                  {:name "Paddle"
+                                   :components [{:component-name "x" :type-name "Int"}
+                                              {:component-name "y" :type-name "Int"}
+                                              {:component-name "width" :type-name "Int"}
+                                              {:component-name "height" :type-name "Int"}]}]}
+          result (ir-to-haxe/generate-construction-factory construction-ir schema-ir)]
+      
+      ;; Should return the correct object
+      (is (str/includes? result "return obj1"))
+      
+      ;; Should NOT have circular return
+      (is (not (str/includes? result "return new Game(obj1)")))
+      (is (not (str/includes? result "return new Game(obj2)"))))))
+
+;; =============================================================================
+;; Integration Tests: Full WCHNT to Haxe Pipeline
+;; =============================================================================
+
+(deftest test-full-wchnt-to-haxe-pipeline
+  (testing "complete WCHNT source to Haxe compilation"
+    (let [wchnt-source "## Schema
+
+```
+BuildType = \"Local\" | \"Remote\" | \"Production\"
+Config = BuildType/environment
+```
+
+## Construction
+
+```
+[:Config Local]
+```"
+          result (compiler/compile wchnt-source)]
+      
+      ;; Should compile successfully
+      (is (:success result))
+      
+      ;; Print error if compilation failed
+      (when-not (:success result)
+        (println "Compilation failed with error:" (:error result)))
+      
+      ;; Should generate valid Haxe code
+      (let [classes-code (:classes (:value result))
+            factory-code (:factory (:value result))
+            main-class-code (:main-class (:value result))]
+        (is (string? classes-code))
+        (is (str/includes? classes-code "class Config"))
+        (is (str/includes? classes-code "enum BuildType"))
+        
+        ;; Should NOT have methods in enum (Haxe enums can't have methods)
+        (is (not (str/includes? classes-code "public static function LocalToConstruction")))
+        
+        ;; Should have valid factory
+        (is (str/includes? factory-code "public static function configFactory()"))
+        (is (str/includes? factory-code "return obj1"))))))
+
+(deftest test-full-wchnt-to-haxe-pipeline-with-primitives
+  (testing "WCHNT with primitive arguments to Haxe"
+    (let [wchnt-source "## Schema
+
+```
+Rect = Int/x Int/y Int/width Int/height
+```
+
+## Construction
+
+```
+[:Rect 0 0 100 200]
+```"
+          result (compiler/compile wchnt-source)]
+      
+      ;; Should compile successfully
+      (is (:success result))
+      
+      ;; Should generate valid Haxe code
+      (let [classes-code (:classes (:value result))
+            factory-code (:factory (:value result))]
+        (is (string? classes-code))
+        (is (str/includes? classes-code "class Rect"))
+        (is (str/includes? classes-code "public var x: Int"))
+        
+        ;; Should use primitive values directly
+        (is (str/includes? factory-code "new Rect(0, 0, 100, 200)"))
+        (is (not (str/includes? factory-code "[:IntLiteral")))))))
+
+;; =============================================================================
+;; Haxe Syntax Validation Tests
+;; =============================================================================
+
+(deftest test-haxe-map-syntax
+  "Test that Map types are generated with correct Haxe syntax"
+  (testing "Map with enum keys should use proper Haxe syntax"
+    (let [wchnt-content "## Schema
+
+```
+Direction = \"Up\" | \"Down\" | \"Left\" | \"Right\"
+Config = {Direction : String}/moves
+```
+
+## Construction
+
+```
+controls = [:Map/{Direction:String} Up:\"jump\", Down:\"crouch\", Left:\"left\" Right:\"right\"].
+[:Config controls]
+```"
+          cargo-result (compiler/compile wchnt-content)]
+      
+      (is (p/is-cargo? cargo-result))
+      (if (:success cargo-result)
+        (let [result (:value cargo-result)
+              classes-code (:classes result)
+              main-class-code (:main-class result)]
+          ;; Should generate proper Map syntax
+          (is (str/includes? classes-code "public var moves: Map<Direction, String>"))
+          ;; Should NOT have Main class in classes (user didn't define one)
+          (is (= 0 (count (re-seq #"class Main" classes-code))))
+          ;; Should have Main class in main-class (we generate one)
+          (is (str/includes? main-class-code "class Main"))
+          ;; Should have proper enum definition
+          (is (str/includes? classes-code "enum Direction")))
+        (do
+          (println "Map syntax test failed:")
+          (println "Error:" (:error cargo-result))
+          (is false "Map syntax should work"))))))
+
+(deftest test-haxe-enum-value-handling
+  "Test that enum values are handled correctly in factory functions"
+  (testing "Enum values should be passed as enum instances, not strings"
+    (let [wchnt-content "## Schema
+
+```
+BuildType = \"Dev\" | \"Local\" | \"Deploy\"
+Config = BuildType/environment
+```
+
+## Construction
+
+```
+[:Config Local]
+```"
+          cargo-result (compiler/compile wchnt-content)]
+      
+      (is (p/is-cargo? cargo-result))
+      (if (:success cargo-result)
+        (let [result (:value cargo-result)
+              factory-code (:factory result)]
+          ;; Should pass enum value directly, not as string
+          (is (str/includes? factory-code "new Config(Local)"))
+          ;; Should NOT pass enum value as string
+          (is (not (str/includes? factory-code "new Config(\"Local\""))))
+        (do
+          (println "Enum value handling test failed:")
+          (println "Error:" (:error cargo-result))
+          (is false "Enum value handling should work"))))))
+
+(deftest test-haxe-array-constructor-syntax
+  "Test that Array constructors use correct Haxe syntax"
+  (testing "Array constructor should use proper Haxe syntax"
+    (let [wchnt-content "## Schema
+
+```
+StringList = [String]/xs
+```
+
+## Construction
+
+```
+[:StringList [\"hello\" \"world\" \"test\"]]
+```"
+          cargo-result (compiler/compile wchnt-content)]
+      
+      (is (p/is-cargo? cargo-result))
+      (if (:success cargo-result)
+        (let [result (:value cargo-result)
+              factory-code (:factory result)]
+          ;; Should use proper Haxe array syntax
+          (is (str/includes? factory-code "[\"hello\", \"world\", \"test\"]"))
+          ;; Should NOT use new Array<String> constructor with too many args
+          (is (not (str/includes? factory-code "new Array<String>(\"hello\", \"world\", \"test\""))))
+        (do
+          (println "Array constructor syntax test failed:")
+          (println "Error:" (:error cargo-result))
+          (is false "Array constructor syntax should work"))))))
+
+(deftest test-haxe-enum-to-construction-removal
+  "Test that enums do NOT have toConstruction methods"
+  (testing "Enums should not have toConstruction methods in Haxe"
+    (let [wchnt-content "## Schema
+
+```
+BuildType = \"Dev\" | \"Local\" | \"Deploy\"
+Config = BuildType/environment
+```
+
+## Construction
+
+```
+[:Config Local]
+```"
+          cargo-result (compiler/compile wchnt-content)]
+      
+      (is (p/is-cargo? cargo-result))
+      (if (:success cargo-result)
+        (let [result (:value cargo-result)
+              classes-code (:classes result)]
+          ;; Should NOT call toConstruction on enum
+          (is (not (str/includes? classes-code "this.environment.toConstruction")))
+          ;; Should handle enum values differently in toConstruction
+          (is (str/includes? classes-code "this.environment")))
+        (do
+          (println "Enum toConstruction removal test failed:")
+          (println "Error:" (:error cargo-result))
+          (is false "Enum toConstruction removal should work"))))))
+
+(deftest test-haxe-no-duplicate-class-definitions
+  "Test that no duplicate class definitions are generated"
+  (testing "Should have exactly one Main class when user defines Main"
+    (let [wchnt-content "## Schema
+
+```
+Main = String/hello Config
+Direction = \"Up\" | \"Down\" | \"Left\" | \"Right\"
+Config = {Direction : String}/moves
+```
+
+## Construction
+
+```
+controls = [:Map/{Direction:String} Up:\"jump\", Down:\"crouch\", Left:\"left\" Right:\"right\"].
+[:Main \"Hello\" [:Config controls]]
+```"
+          cargo-result (compiler/compile wchnt-content)]
+      
+      (is (p/is-cargo? cargo-result))
+      (if (:success cargo-result)
+        (let [result (:value cargo-result)
+              classes-code (:classes result)
+              main-class-code (:main-class result)]
+          ;; Should have exactly one Main class definition in classes
+          (is (= 1 (count (re-seq #"class Main" classes-code))))
+          ;; Should NOT have a separate Main class in main-class (user controls their own Main)
+          (is (str/blank? main-class-code)))
+        (do
+          (println "User-defined Main class test failed:")
+          (println "Error:" (:error cargo-result))
+          (is false "Should handle user-defined Main class correctly"))))))
   
-  
-  
+  (testing "Should have exactly one Main class when user doesn't define Main"
+    (let [wchnt-content "## Schema
+
+```
+Direction = \"Up\" | \"Down\" | \"Left\" | \"Right\"
+Config = {Direction : String}/moves
+```
+
+## Construction
+
+```
+controls = [:Map/{Direction:String} Up:\"jump\", Down:\"crouch\", Left:\"left\" Right:\"right\"].
+[:Config controls]
+```"
+          cargo-result (compiler/compile wchnt-content)]
+      
+      (is (p/is-cargo? cargo-result))
+      (if (:success cargo-result)
+        (let [result (:value cargo-result)
+              classes-code (:classes result)
+              main-class-code (:main-class result)]
+          ;; Should have no Main class in classes (user didn't define one)
+          (is (= 0 (count (re-seq #"class Main" classes-code))))
+          ;; Should have a Main class in main-class (we generate one)
+          (is (str/includes? main-class-code "class Main")))
+        (do
+          (println "Generated Main class test failed:")
+          (println "Error:" (:error cargo-result))
+          (is false "Should generate Main class when user doesn't define one")))))
+
+(deftest test-haxe-proper-main-class-generation
+  "Test that Main class is properly generated with factory and main methods"
+  (testing "Main class should have both factory and main methods"
+    (let [wchnt-content "## Schema
+
+```
+Config = String/environment
+```
+
+## Construction
+
+```
+[:Config \"Local\"]
+```"
+          cargo-result (compiler/compile wchnt-content)]
+      
+      (is (p/is-cargo? cargo-result))
+      (if (:success cargo-result)
+        (let [result (:value cargo-result)
+              main-class-code (:main-class result)]
+          ;; Should have factory method
+          (is (str/includes? main-class-code "public static function configFactory"))
+          ;; Should have main method
+          (is (str/includes? main-class-code "public static function main"))
+          ;; Should call factory in main
+          (is (str/includes? main-class-code "var assemblage = configFactory()")))
+        (do
+          (println "Main class generation test failed:")
+          (println "Error:" (:error cargo-result))
+          (is false "Main class should be properly generated"))))))
+
+

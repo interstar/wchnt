@@ -14,7 +14,7 @@
             [wchnt-lang.parser :as parser]
             [wchnt-lang.pipeline :as P]
             
-            [wchnt-lang.haxegen :as haxegen]
+
             [wchnt-lang.newparser :as newparser]))
 
 (deftest test-get-parser
@@ -72,7 +72,7 @@ Ball = Int/x Int/y Int/rad
             (is (str/includes? result "class Rect"))
             (is (str/includes? result "class Ball"))
             (is (str/includes? factory "public static function gameFactory("))
-            (is (str/includes? main "var game = gameFactory()"))))))))
+            (is (str/includes? main "var assemblage = gameFactory()"))))))))
 
 (deftest test-compile-wchnt-complex
   (testing "Compile complex WCHNT with arrays and disjunctions"
@@ -106,7 +106,7 @@ players = [:Array/Player [:Player \"Alice\" 100] [:Player \"Bob\" 85]] .
         (is (str/includes? classes "class Circle implements Shape"))
         (is (str/includes? classes "public var shapes: Array<Shape>"))
         (is (str/includes? classes "public var players: Array<Player>"))
-        (is (str/includes? classes "class ArrayExtensions"))))))
+        (is (str/includes? classes "helper.arrayToConstruction"))))))
 
 (deftest test-compile-wchnt-error-handling
   (testing "Compile WCHNT file with syntax errors"
@@ -160,13 +160,13 @@ Game = = PlayArea Ball
   (testing "Context relationships for simple schema"
     (let [schema-str "Car = :Engine\nEngine = Int/cylinders"
           schema-ast ((wchnt-lang.parser/get-schema-parser) schema-str)
-          context-map (wchnt-lang.haxegen/build-context-relationships schema-ast)]
+          context-map (wchnt-lang.ast-to-ir/build-context-relationships schema-ast)]
       (is (= {"Car" nil, "Engine" "Car"} context-map))))
 
   (testing "Context relationships for nested schema"
     (let [schema-str "A = :B\nB = :C\nC = Int/value"
           schema-ast ((wchnt-lang.parser/get-schema-parser) schema-str)
-          context-map (wchnt-lang.haxegen/build-context-relationships schema-ast)]
+          context-map (wchnt-lang.ast-to-ir/build-context-relationships schema-ast)]
       (is (= {"A" nil, "B" "A", "C" "B"} context-map)))))
 
 (deftest test-austen-example

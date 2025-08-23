@@ -3,7 +3,7 @@
 ## Schema
 
 ```
-Main = String/hello Config
+App = String/hello Config
 Direction = "Up" | "Down" | "Left" | "Right"
 Config = {Direction : String}/moves
 ```
@@ -12,6 +12,6 @@ Config = {Direction : String}/moves
 
 ```
 controls = [:Map/{Direction:String} Up:"jump", Down:"crouch", Left:"left" Right:"right"].
-[:Main "Hello" [:Config controls]]
+[:App "Hello" [:Config controls]]
 ```
  

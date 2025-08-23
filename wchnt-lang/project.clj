@@ -5,10 +5,11 @@
             :url "https://www.eclipse.org/legal/epl-2.0/"}
   :dependencies [[org.clojure/clojure "1.11.1"]
                  [instaparse "1.4.12"]
-                 [metosin/malli "0.15.0"]]
+                 [metosin/malli "0.15.0"]
+                 [com.rpl/specter "1.1.4"]]
   :repl-options {:init-ns wchnt-lang.core}
   :main wchnt-lang.core
-  :aot [wchnt-lang.core wchnt-lang.api wchnt-lang.parser wchnt-lang.haxegen wchnt-lang.eyeball wchnt-lang.schema wchnt-lang.newparser]
+               :aot [wchnt-lang.core wchnt-lang.api wchnt-lang.parser wchnt-lang.eyeball wchnt-lang.schema wchnt-lang.newparser]
   :prep-tasks ["javac" "compile"]
   :jar-name "wchnt-lang.jar"
   :uberjar-name "wchnt-lang-standalone.jar"
