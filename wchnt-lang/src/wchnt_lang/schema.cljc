@@ -60,7 +60,7 @@
        (every? vector? (rest ast))
        (every? #(and (vector? %) 
                      (keyword? (first %))
-                     (contains? #{:Expression :Statement :WS} (first %)))
+                     (contains? #{:Expression :Assignment :Statement :WS} (first %)))
                (rest ast))))
 
 (defn valid-ast-node? [node]

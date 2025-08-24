@@ -56,7 +56,7 @@ Expression = BooleanExpr
            | VariableRef
            | Literal
            | BlockOrLambda
-ObjectConstruction = <'['> <':'> ClassName ArgList ']' 
+ObjectConstruction = <'['> <':'> ClassName ArgList <']'> 
 InnerObjectConstruction = <'['> (<':'> ClassName)? ArgList <']'>
 ArrayConstruction = <'['> <':'> <'Array'> <'/'> Type ArgList <']'>
 MapConstruction = <'['> <':'> <'Map'> <'/'> <'{'> KeyType <':'> ValType <'}'> KeyValueList <']'>
