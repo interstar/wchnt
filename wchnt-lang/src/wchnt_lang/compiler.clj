@@ -62,6 +62,9 @@
              "parse-construction-unified")
            (p/stash :construction-ast)
            
+           ;; Validate construction AST schema
+           (p/validator schema/valid-construction-ast? "Construction AST matches schema")
+           
            ;; Generate construction IR from AST
            (p/retrieve :construction-ast)
            (p/cargo-processor (fn [cargo]
@@ -71,6 +74,10 @@
                              "construction-ast -> IR")
            (p/stash :construction-ir)
            (p/log-all "After stashing construction-ir")
+           
+           ;; Validate construction IR schema
+           (p/retrieve :construction-ir)
+           (p/validator schema/valid-construction-ir? "Construction IR matches schema")
            
            ;; Generate construction factory from IR
            (p/retrieve :construction-ir)
@@ -100,14 +107,18 @@
                    (str "public static function main():Void {\n    var assemblage = " factory-fn-name "();\n    var helper = new WCHNTHelper();\n    trace(assemblage.toConstruction(0, helper));\n}"))
             ;; Check if user defined a Main class - if so, don't generate factory/main functions
             user-defined-main? (str/includes? (-> final-cargo :stash :schema-haxe) "class Main")
-            ;; Generate a complete Haxe program with a main class (only if user didn't define Main)
-            main-class (if (or (str/blank? factory) user-defined-main?)
+            ;; Check if there's a construction section (if not, no need for Main class)
+            has-construction? (not (str/blank? factory))
+            ;; Generate a complete Haxe program with a main class (only if user didn't define Main AND there's a construction)
+            main-class (if (or (not has-construction?) user-defined-main?)
                         ""
                         (str "class Main {\n" factory "\n" main "\n}"))
             full-program {:classes (-> final-cargo :stash :schema-haxe)
                          :factory factory
                          :main main
                          :main-class main-class
+                         :has-construction? has-construction?
+                         :user-defined-main? user-defined-main?
                          :codeblocks (-> final-cargo :stash :codeblocks)
                          :warnings []}]
         (assoc final-cargo :value full-program)))))

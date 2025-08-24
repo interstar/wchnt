@@ -1,0 +1,18 @@
+## Schema
+```
+DB = [Book]/books
+Book = String/title String/author
+
+```
+
+## Construction
+
+```
+[:DB 
+  [:Array/Book
+     [:Book "Pride and Prejudice" "Jane Austen"]
+     [:Book "Northanger Abbey" "Jane Austen"]
+  ]
+]
+
+```

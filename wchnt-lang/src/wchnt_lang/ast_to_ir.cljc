@@ -235,11 +235,13 @@
                 (if is-enum-value
                   {:type :enum-value
                    :class-name "Enum"
-                   :args [var-name]
+                   :value var-name
+                   :args []
                    :index arg-index}
                   {:type :variable
                    :class-name "VariableRef"
-                   :args [var-name]
+                   :value var-name
+                   :args []
                    :index arg-index}))
               
               ;; InnerObjectConstruction
@@ -269,20 +271,23 @@
               (ast-utils/node-type? arg-item :IntLiteral)
               {:type :primitive
                :class-name "Int"
-               :args [(Integer/parseInt (second arg-item))]
+               :value (Integer/parseInt (second arg-item))
+               :args []
                :index arg-index}
               
               ;; StringLiteral
               (ast-utils/node-type? arg-item :StringLiteral)
               {:type :primitive
                :class-name "String"
-               :args [arg-item]
+               :value (second arg-item)
+               :args []
                :index arg-index}
               
               ;; Default to primitive
               :else {:type :primitive
                      :class-name "Unknown"
-                     :args [arg-item]
+                     :value arg-item
+                     :args []
                      :index arg-index}))
           
           (extract-arg-list [arg-list]
@@ -441,17 +446,45 @@
                   (throw (ex-info "Map construction missing value type node" 
                                 {:inner-expression inner-expression})))
         key-value-list (nth inner-expression 3)
-        key-value-pairs (if (ast-utils/node-type? key-value-list :KeyValueList)
-                        (map #(if (ast-utils/node-type? % :KeyValuePair)
-                               (let [key-expr (second %)
-                                     val-expr (nth % 2)]
-                                 [(second key-expr) (second val-expr)])
-                               %)
-                             (rest key-value-list))
+        structured-args (if (ast-utils/node-type? key-value-list :KeyValueList)
+                        (map-indexed (fn [index key-value-pair]
+                                      (if (ast-utils/node-type? key-value-pair :KeyValuePair)
+                                        (let [key-expr (second key-value-pair)
+                                              val-expr (nth key-value-pair 2)]
+                                          ;; Convert key and value to structured ConstructionArg objects
+                                          (let [key-arg (cond
+                                                         (ast-utils/node-type? key-expr :StringLiteral)
+                                                         {:type :primitive :class-name "String" :value (second key-expr) :args [] :index (* index 2)}
+                                                         (ast-utils/node-type? key-expr :VariableRef)
+                                                         {:type :variable :class-name "VariableRef" :value (second key-expr) :args [] :index (* index 2)}
+                                                         (and (ast-utils/node-type? key-expr :Expression) (ast-utils/node-type? (second key-expr) :StringLiteral))
+                                                         {:type :primitive :class-name "String" :value (second (second key-expr)) :args [] :index (* index 2)}
+                                                         (and (ast-utils/node-type? key-expr :Expression) (ast-utils/node-type? (second key-expr) :VariableRef))
+                                                         {:type :variable :class-name "VariableRef" :value (second (second key-expr)) :args [] :index (* index 2)}
+                                                         :else
+                                                         (throw (ex-info "Unsupported key type in map construction" {:key-expr key-expr})))
+                                                val-arg (cond
+                                                         (ast-utils/node-type? val-expr :StringLiteral)
+                                                         {:type :primitive :class-name "String" :value (second val-expr) :args [] :index (+ (* index 2) 1)}
+                                                         (ast-utils/node-type? val-expr :IntLiteral)
+                                                         {:type :primitive :class-name "Int" :value (second val-expr) :args [] :index (+ (* index 2) 1)}
+                                                         (ast-utils/node-type? val-expr :VariableRef)
+                                                         {:type :variable :class-name "VariableRef" :value (second val-expr) :args [] :index (+ (* index 2) 1)}
+                                                         (and (ast-utils/node-type? val-expr :Expression) (ast-utils/node-type? (second val-expr) :StringLiteral))
+                                                         {:type :primitive :class-name "String" :value (second (second val-expr)) :args [] :index (+ (* index 2) 1)}
+                                                         (and (ast-utils/node-type? val-expr :Expression) (ast-utils/node-type? (second val-expr) :IntLiteral))
+                                                         {:type :primitive :class-name "Int" :value (second (second val-expr)) :args [] :index (+ (* index 2) 1)}
+                                                         (and (ast-utils/node-type? val-expr :Expression) (ast-utils/node-type? (second val-expr) :VariableRef))
+                                                         {:type :variable :class-name "VariableRef" :value (second (second val-expr)) :args [] :index (+ (* index 2) 1)}
+                                                         :else
+                                                         (throw (ex-info "Unsupported value type in map construction" {:val-expr val-expr})))]
+                                            [key-arg val-arg]))
+                                        (throw (ex-info "Invalid key-value pair in map construction" {:key-value-pair key-value-pair}))))
+                                    (rest key-value-list))
                         [])]
     {:type :map
      :class-name (str "Map<" key-type ", " val-type ">")
-     :args key-value-pairs}))
+     :args (flatten structured-args)}))
 
 (defn process-assignment-expression
   "Process an assignment expression to extract object information"
@@ -825,7 +858,7 @@
   "Print debug information about construction processing"
   [root-class statements assignment-objects nested-objects all-assignment-objects 
    final-construction final-objects all-objects]
-)
+  )
 
 (defn construction-ast-to-ir
   "Transform construction AST to IR construction"
@@ -947,6 +980,10 @@
                                element-type)]
           (record-nested-object! nested-objects-atom object-counter-atom
                                 {:type :array, :class-name element-type, :args structured-args, :ast node})))
+
+      (= tag :MapConstruction)
+      (let [map-ir (process-map-construction-expression node)]
+        (record-nested-object! nested-objects-atom object-counter-atom map-ir))
 
       ;; --- Case 2: Structural nodes that are just rebuilt ---
       (#{:ObjectConstruction :ArgList :ClassName :Type :BlockStatements :Expression} tag)

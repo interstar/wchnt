@@ -73,11 +73,20 @@
             (if (and
                  (p/is-cargo? result)
                  (:success result))
-              (do
-                (println (:classes (:value result)))
-                (println (:main-class (:value result)))
+              (let [full-program (:value result)
+                    has-construction? (:has-construction? full-program)
+                    user-defined-main? (:user-defined-main? full-program)]
+                (cond
+                  (not has-construction?)
+                  (println "// WCHNT Library - No construction section, no Main class generated")
+                  user-defined-main?
+                  (println "// WCHNT Program with user-defined Main class - no main() method yet")
+                  :else
+                  (println "// WCHNT Program - Contains construction section"))
+                (println (:classes full-program))
+                (println (:main-class full-program))
                 (if verbose?                
-                  (pp/pprint result))) 
+                  (pp/pprint result)))
               (do
                 (println
                  (first (:errors result)) "file parsing" filename)

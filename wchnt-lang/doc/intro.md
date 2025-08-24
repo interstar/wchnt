@@ -53,6 +53,27 @@ WCHNT should not allow the creation of Engines in any other context. Or that the
 
 Therefore methods of Engine can safely access properties and methods of theCar which forms their context. The philosophy of assemblage programming which is explored here is that assemblages, ie. small, tightly coupled collections of objects designed to work together, do not need the usual black-box / abstraction layer that hides all details of one from another. There is a role for that degree of data-hiding in the relation between one assemblage and another. But not between members of the same assemblage.
 
+Example
+
+Car = :Engine
+Engine = Int/cc
+
+Should become (in pseudo haxe)
+
+class Car {
+  var engine:Engine;
+}
+
+class Engine {
+   var cc:Int;
+   var theEngine:Engine;
+   ...
+   public function setContext(c: Car) {
+      this.theCar = c;
+   }
+}
+
+
 
 #### External 
 

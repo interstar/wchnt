@@ -5,7 +5,7 @@
 ```
 Main = Config Config2
 
-Config = {String : int}/settings
+Config = {String : Int}/settings
 BuildType = "Dev" | "Local" | "Deploy"
 Config2 = {BuildType : String}/environments
 ```
@@ -13,5 +13,5 @@ Config2 = {BuildType : String}/environments
 ## Construction
 
 ```
-[:Main [:Config [:Map/{String:int} "0":0 "1":1]] [:Config2 [:Map/{BuildType:String} Dev:"dev" Local:"local" Deploy:"deploy"]]]
+[:Main [:Config [:Map/{String:Int} "0":0 "1":1]] [:Config2 [:Map/{BuildType:String} Dev:"dev" Local:"local" Deploy:"deploy"]]]
 ```

@@ -692,4 +692,35 @@ players = [:Array/Player [\"John\"] [\"Sally\"]].
           (println "Error:" (:error cargo-result))
           (is false "Array with external variable references should work"))))))
 
+(deftest test-map-construction-ir-validation
+  "Test that map constructions produce valid IR structure"
+  (testing "Map construction should produce valid IR with schema validation"
+    (let [wchnt-content "## Schema
+
+```
+Config = {String : int}/settings
+```
+
+## Construction
+
+```
+[:Config [:Map/{String:int} \"key1\":1 \"key2\":2]]
+```"
+          cargo-result (compiler/compile wchnt-content)]
+      
+      (is (p/is-cargo? cargo-result))
+      (if (:success cargo-result)
+        (let [result (:value cargo-result)
+              factory-code (:factory result)]
+          ;; Should have a factory function
+          (is (str/includes? factory-code "configFactory"))
+          ;; Should have proper map construction
+          (is (str/includes? factory-code "new Map"))
+          ;; Should use proper key-value syntax
+          (is (str/includes? factory-code "=>")))
+        (do
+          (println "Map construction IR validation test failed:")
+          (println "Error:" (:error cargo-result))
+          (is false "Map construction should produce valid IR"))))))
+
 

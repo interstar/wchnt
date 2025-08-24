@@ -1,0 +1,13 @@
+# Example: string_array_test.wcn
+
+## Schema
+
+```
+StringList = [String]/xs
+```
+
+## Construction
+
+```
+[:StringList ["hello" "world" "test"]]
+``` 

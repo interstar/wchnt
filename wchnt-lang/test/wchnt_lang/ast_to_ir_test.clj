@@ -440,14 +440,14 @@
       (let [objects (:objects result)]
         (doseq [[obj-id obj] objects]
           (when (= :object (:type obj))
-            (cond
+                (cond
               (= "Team" (:class-name obj))
               (is true "Team object correctly identified")
               (= "Player" (:class-name obj))
               (is true "Player object correctly identified")
               (= "League" (:class-name obj))
               (is true "League object correctly identified")
-              :else
+                  :else
               (is false (str "Unexpected object type: " (:class-name obj))))))))))
 
 (deftest test-inner-object-type-inference-with-explicit-class

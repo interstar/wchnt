@@ -56,12 +56,11 @@
 (defn valid-construction-ast? [ast]
   "Validate that construction AST has the expected structure"
   (and (vector? ast)
-       (= (first ast) :MultiStepConstruction)
+       (= (first ast) :BlockStatements)
        (every? vector? (rest ast))
-       (every? #(or (and (vector? %) 
-                         (keyword? (first %))
-                         (contains? #{:Statement :WS} (first %)))
-                    (string? %))
+       (every? #(and (vector? %) 
+                     (keyword? (first %))
+                     (contains? #{:Expression :Statement :WS} (first %)))
                (rest ast))))
 
 (defn valid-ast-node? [node]
@@ -234,18 +233,31 @@
 
 ;; Construction IR Schemas (for object instances being constructed)
 ;; Argument structure for construction objects
+;; ConstructionArg schema with runtime validation for nested args
 (def ConstructionArg
   [:map
-   [:type [:enum :object :primitive :variable :enum-value :array]]
+   [:type [:enum :object :primitive :variable :enum-value :array :map]]
    [:class-name string?]
-   [:args [:sequential any?]]
+   [:value [:maybe [:or string? int? boolean?]]]  ;; For primitives and variables: strings, integers, booleans. For objects, this is optional.
+   [:args [:sequential map?]]  ;; For objects, this contains nested args. For primitives and variables, this is empty.
    [:index int?]])
+
+;; Custom validation function for ConstructionArg that checks nested structure
+(defn valid-construction-arg? [arg]
+  "Validate that a ConstructionArg has proper structure, including nested args"
+  (and (m/validate ConstructionArg arg)
+       (every? (fn [nested-arg]
+                 (and (map? nested-arg)
+                      (contains? nested-arg :type)
+                      (contains? nested-arg :class-name)
+                      (contains? nested-arg :index)))
+               (:args arg))))
 
 (def ConstructionObjectSchema
   [:map
-   [:type [:enum :object :primitive :variable :enum-value :array]]
+   [:type [:enum :object :primitive :variable :enum-value :array :map]]
    [:class-name string?]
-   [:args [:sequential any?]]  ;; Can be structured args or raw AST nodes (for backward compatibility)
+   [:args [:sequential ConstructionArg]]  ;; Must be structured ConstructionArg maps, not raw AST nodes
    [:index int?]])
 
 (def Wiring
@@ -321,7 +333,11 @@
   (m/validate SchemaIR schema-ir))
 
 (defn valid-construction-ir? [construction-ir]
-  (m/validate ConstructionIR construction-ir))
+  "Validate construction IR with custom nested arg validation"
+  (and (m/validate ConstructionIR construction-ir)
+       (every? (fn [[obj-id obj-data]]
+                 (every? valid-construction-arg? (:args obj-data)))
+               (:objects construction-ir))))
 
 (defn valid-methods-ir? [methods-ir]
   (m/validate MethodsIR methods-ir))

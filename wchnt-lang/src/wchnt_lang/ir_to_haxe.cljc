@@ -360,11 +360,11 @@ interface IWCHNTObject {
     
     ;; Handle variable references
     (and (map? element) (= (:type element) :variable))
-    (first (:args element))  ;; Variable name
+    (:value element)  ;; Variable name
     
     ;; Handle primitive values
     (and (map? element) (= (:type element) :primitive))
-    (let [primitive-value (first (:args element))
+    (let [primitive-value (:value element)
           class-name (:class-name element)]
       (if (or (= class-name "String") (= class-name 'String))
         (str "\"" primitive-value "\"")  ;; String type - add quotes
@@ -372,7 +372,7 @@ interface IWCHNTObject {
     
     ;; Handle enum values
     (and (map? element) (= (:type element) :enum-value))
-    (first (:args element))  ;; Enum value (not quoted)
+    (:value element)  ;; Enum value (not quoted)
     
     ;; Handle nested arrays
     (and (map? element) (= (:type element) :array))
@@ -468,7 +468,7 @@ interface IWCHNTObject {
     
     ;; Handle enum values
     (and (map? arg) (= (:type arg) :enum-value))
-    (first (:args arg))  ;; Enum value (not quoted)
+    (:value arg)  ;; Enum value (not quoted)
     
     ;; Handle array types
     (and (map? arg) (= (:type arg) :array))
@@ -506,11 +506,11 @@ interface IWCHNTObject {
                           
                           ;; Handle variable references
                           (and (map? arg) (= (:type arg) :variable))
-                          (first (:args arg))  ;; Variable name
+                          (:value arg)  ;; Variable name
                           
                           ;; Handle primitive values
                           (and (map? arg) (= (:type arg) :primitive))
-                          (let [primitive-value (first (:args arg))
+                          (let [primitive-value (:value arg)
                                 class-name (:class-name arg)]
                             (if (or (= class-name "String") (= class-name 'String))
                               ;; Check if the primitive value is a raw AST node that needs processing
@@ -521,7 +521,7 @@ interface IWCHNTObject {
                           
                           ;; Handle enum values
                           (and (map? arg) (= (:type arg) :enum-value))
-                          (first (:args arg))  ;; Enum value (not quoted)
+                          (:value arg)  ;; Enum value (not quoted)
                           
                           ;; Handle array types
                           (and (map? arg) (= (:type arg) :array))
@@ -601,11 +601,22 @@ interface IWCHNTObject {
 
 (defn generate-map-assignment
   "Generate Haxe code for a map assignment"
-  [obj-id class-name args]
-  (let [key-value-pairs (map (fn [[key val]]
-                              (str key " => " val))
-                            args)]
-    (str "  var " obj-id " = new " class-name "([" (str/join ", " key-value-pairs) "]);")))
+  [obj-id class-name args schema-ir]
+  (let [key-value-pairs (map-indexed (fn [index arg]
+                                      ;; Handle structured ConstructionArg objects
+                                      (if (and (map? arg) (contains? arg :type))
+                                        (let [arg-type (:type arg)
+                                              arg-value (:value arg)]
+                                          (case arg-type
+                                            :primitive (str arg-value)
+                                            :variable arg-value
+                                            :else (str arg-value)))
+                                        ;; Fallback for backward compatibility
+                                        (str arg)))
+                                    args)
+        ;; Group into key-value pairs (every 2 elements)
+        pairs (partition 2 key-value-pairs)]
+    (str "  var " obj-id " = [" (str/join ", " (map #(str (first %) " => " (second %)) pairs)) "];")))
 
 (defn generate-primitive-assignment
   "Generate Haxe code for a primitive assignment"
@@ -632,7 +643,7 @@ interface IWCHNTObject {
       :enum-value (if (seq args)
                     (str "  var " obj-id " = " (first args) ";")
                     (throw (ex-info "Enum value assignment missing arguments" {:obj-id obj-id :args args})))
-      :map (generate-map-assignment obj-id class-name args)
+      :map (generate-map-assignment obj-id class-name args schema-ir)
       :primitive (generate-primitive-assignment obj-id obj-data)
       (throw (ex-info "Unknown object type in factory generation" 
                     {:obj-type obj-type

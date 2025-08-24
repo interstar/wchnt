@@ -3,6 +3,6 @@
 ## Schema
 
 ```
-Config = {String : int}
+Config = {String : Int}
 ```
  

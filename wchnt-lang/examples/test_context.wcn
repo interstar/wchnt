@@ -1,4 +1,4 @@
-# Example: test_sigil.wcn
+# Example: test_context.wcn
 
 ## Schema
 
@@ -14,4 +14,4 @@ Engine = Int/cylinders
   [:Engine 4]
   "Toyota"
 ]
-```
+``` 
