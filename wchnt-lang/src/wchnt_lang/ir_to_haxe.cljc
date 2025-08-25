@@ -441,19 +441,25 @@ interface IWCHNTObject {
 
 (defn generate-object-assignment-arg
   "Generate Haxe code for a single argument in object assignment"
-  [arg schema-ir]
+  [arg schema-ir variable-mappings]
   (cond
     ;; Handle structured IR objects
     (and (map? arg) (= (:type arg) :object))
     (let [arg-class-name (:class-name arg)
           arg-args (:args arg)]
       (str "new " arg-class-name "("
-           (str/join ", " (map #(generate-object-assignment-arg % schema-ir) arg-args))
+           (str/join ", " (map #(generate-object-assignment-arg % schema-ir variable-mappings) arg-args))
            ")"))
     
     ;; Handle variable references
     (and (map? arg) (= (:type arg) :variable))
-    (first (:args arg))  ;; Variable name
+    (let [var-name (:value arg)
+          mapped-obj-id (get variable-mappings var-name)]
+      (if mapped-obj-id
+        mapped-obj-id  ;; Use the mapped object ID
+        (throw (ex-info "Variable reference not found in mappings" 
+                       {:var-name var-name 
+                        :variable-mappings variable-mappings}))))
     
     ;; Handle primitive values
     (and (map? arg) (= (:type arg) :primitive))
@@ -475,7 +481,7 @@ interface IWCHNTObject {
     (let [array-type (:class-name arg)
           array-elements (:args arg)]
       (str "["
-           (str/join ", " (map #(generate-object-assignment-arg % schema-ir) array-elements))
+           (str/join ", " (map #(generate-object-assignment-arg % schema-ir variable-mappings) array-elements))
            "]"))
     
     ;; Handle raw AST nodes (fallback)
@@ -488,7 +494,7 @@ interface IWCHNTObject {
 
 (defn generate-object-assignment
   "Generate Haxe code for an object assignment using structured IR data"
-  [obj-id class-name args schema-ir]
+  [obj-id class-name args schema-ir variable-mappings]
   (let [;; Get component types from schema for proper type handling
         assemblage (first (filter #(= (:name %) class-name) (:assemblages schema-ir)))
         component-types (map :type-name (:components assemblage))
@@ -501,12 +507,18 @@ interface IWCHNTObject {
                           (let [arg-class-name (:class-name arg)
                                 arg-args (:args arg)]
                             (str "new " arg-class-name "("
-                                 (str/join ", " (map #(generate-object-assignment-arg % schema-ir) arg-args))
+                                 (str/join ", " (map #(generate-object-assignment-arg % schema-ir variable-mappings) arg-args))
                                  ")"))
                           
                           ;; Handle variable references
                           (and (map? arg) (= (:type arg) :variable))
-                          (:value arg)  ;; Variable name
+                          (let [var-name (:value arg)
+                                mapped-obj-id (get variable-mappings var-name)]
+                            (if mapped-obj-id
+                              mapped-obj-id  ;; Use the mapped object ID
+                              (throw (ex-info "Variable reference not found in mappings" 
+                                             {:var-name var-name 
+                                              :variable-mappings variable-mappings}))))
                           
                           ;; Handle primitive values
                           (and (map? arg) (= (:type arg) :primitive))
@@ -528,7 +540,7 @@ interface IWCHNTObject {
                           (let [array-type (:class-name arg)
                                 array-elements (:args arg)]
                             (str "["
-                                 (str/join ", " (map #(generate-object-assignment-arg % schema-ir) array-elements))
+                                 (str/join ", " (map #(generate-object-assignment-arg % schema-ir variable-mappings) array-elements))
                                  "]"))
                           
                           ;; Handle raw AST nodes (fallback for backward compatibility)
@@ -608,7 +620,9 @@ interface IWCHNTObject {
                                         (let [arg-type (:type arg)
                                               arg-value (:value arg)]
                                           (case arg-type
-                                            :primitive (str arg-value)
+                                            :primitive (if (string? arg-value)
+                                                        (str "\"" arg-value "\"")
+                                                        (str arg-value))
                                             :variable arg-value
                                             :else (str arg-value)))
                                         ;; Fallback for backward compatibility
@@ -632,13 +646,13 @@ interface IWCHNTObject {
 
 (defn generate-assignment-statement
   "Generate Haxe code for a single assignment statement"
-  [obj-id obj-data schema-ir]
+  [obj-id obj-data schema-ir variable-mappings]
   (let [obj-type (:type obj-data)
         class-name (:class-name obj-data)
         args (:args obj-data)]
     (case obj-type
       :array (generate-array-assignment obj-id args schema-ir class-name)
-      :object (generate-object-assignment obj-id class-name args schema-ir)
+      :object (generate-object-assignment obj-id class-name args schema-ir variable-mappings)
       :variable (generate-variable-assignment obj-id args)
       :enum-value (if (seq args)
                     (str "  var " obj-id " = " (first args) ";")
@@ -665,7 +679,7 @@ interface IWCHNTObject {
           ;; Generate assignment statements for all objects
           assignment-statements
           (for [[obj-id obj-data] all-objects]
-            (generate-assignment-statement obj-id obj-data schema-ir))
+            (generate-assignment-statement obj-id obj-data schema-ir variable-mappings))
 
           ;; Generate final return statement
           final-statement (str "  return " return-object ";")]

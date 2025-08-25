@@ -249,15 +249,44 @@
               (let [second-element (second arg-item)]
                 (if (ast-utils/node-type? second-element :ClassName)
                   ;; Class name is explicit
-                  {:type :object
-                   :class-name (second second-element)
-                   :args [arg-item]
-                   :index arg-index}
+                  (let [class-name (second second-element)
+                        arg-list (nth arg-item 2)
+                        nested-args (if (ast-utils/node-type? arg-list :ArgList)
+                                     (map-indexed (fn [nested-index nested-arg]
+                                                   (cond
+                                                     (ast-utils/node-type? nested-arg :StringLiteral)
+                                                     {:type :primitive :class-name "String" :value (second nested-arg) :args [] :index nested-index}
+                                                     (ast-utils/node-type? nested-arg :IntLiteral)
+                                                     {:type :primitive :class-name "Int" :value (Integer/parseInt (second nested-arg)) :args [] :index nested-index}
+                                                     (ast-utils/node-type? nested-arg :VariableRef)
+                                                     {:type :variable :class-name "VariableRef" :value (second nested-arg) :args [] :index nested-index}
+                                                     :else
+                                                     {:type :primitive :class-name "Unknown" :value nested-arg :args [] :index nested-index}))
+                                                 (rest arg-list))
+                                     [])]
+                    {:type :object
+                     :class-name class-name
+                     :args nested-args
+                     :index arg-index})
                   ;; Class name is omitted, need to look it up
-                  (let [expected-class-name (lookup-expected-class-name arg-index)]
+                  (let [expected-class-name (lookup-expected-class-name arg-index)
+                        arg-list (nth arg-item 2)
+                        nested-args (if (ast-utils/node-type? arg-list :ArgList)
+                                     (map-indexed (fn [nested-index nested-arg]
+                                                   (cond
+                                                     (ast-utils/node-type? nested-arg :StringLiteral)
+                                                     {:type :primitive :class-name "String" :value (second nested-arg) :args [] :index nested-index}
+                                                     (ast-utils/node-type? nested-arg :IntLiteral)
+                                                     {:type :primitive :class-name "Int" :value (Integer/parseInt (second nested-arg)) :args [] :index nested-index}
+                                                     (ast-utils/node-type? nested-arg :VariableRef)
+                                                     {:type :variable :class-name "VariableRef" :value (second nested-arg) :args [] :index nested-index}
+                                                     :else
+                                                     {:type :primitive :class-name "Unknown" :value nested-arg :args [] :index nested-index}))
+                                                 (rest arg-list))
+                                     [])]
                     {:type :object
                      :class-name expected-class-name
-                     :args [(assoc arg-item 1 [:ClassName expected-class-name])]
+                     :args nested-args
                      :index arg-index})))
               
               ;; ArrayConstruction - treat as object (will be flattened later)
@@ -495,7 +524,11 @@
       (process-variable-ref-expression inner-expression nested-objects)
       
       (ast-utils/node-type? inner-expression :ArrayConstruction)
-      (process-array-construction-expression inner-expression)
+      ;; Check if this array construction was already processed during flattening
+      (let [existing-obj (first (filter #(= (:ast (second %)) inner-expression) nested-objects))]
+        (if existing-obj
+          (second existing-obj)  ;; Return the existing object
+          (process-array-construction-expression inner-expression)))
       
       (ast-utils/node-type? inner-expression :ObjectConstruction)
       (process-object-construction-expression inner-expression)
@@ -624,19 +657,29 @@
 
 (defn process-assignments
   "Process assignment statements to build object table and variable mappings"
-  [statements nested-objects]
+  [statements nested-objects starting-counter]
   (let [assignments (filter #(and (vector? %) (= (first %) :Assignment)) statements)]
     (reduce (fn [[objects mappings counter] assignment]
-              (let [[_ var-name-node expression] assignment
-                    var-name (if (ast-utils/node-type? var-name-node :VariableName)
-                              (second var-name-node)
-                              (str var-name-node))
-                    obj-id (str "obj" (inc counter))
-                    processed-expression (process-assignment-expression expression nested-objects)]
-                [(assoc objects obj-id (assoc processed-expression :index counter))
-                 (assoc mappings var-name obj-id)
-                 (inc counter)]))
-            [{} {} 0]
+                              (let [[_ var-name-node expression] assignment
+                      var-name (if (ast-utils/node-type? var-name-node :VariableName)
+                                (second var-name-node)
+                                (str var-name-node))
+                                          ;; Check if the assignment expression is a simple variable reference to an existing nested object
+                    existing-obj-id (when (and (= (first expression) :Expression)
+                                              (= (first (second expression)) :VariableRef))
+                                     (second (second expression)))]
+                  (if (and existing-obj-id (contains? nested-objects existing-obj-id))
+                    ;; Use existing nested object
+                    [objects
+                     (assoc mappings var-name existing-obj-id)
+                     counter]
+                    ;; Create new object
+                    (let [obj-id (str "obj" (inc counter))
+                          processed-expression (process-assignment-expression expression nested-objects)]
+                      [(assoc objects obj-id (assoc processed-expression :index counter))
+                       (assoc mappings var-name obj-id)
+                       (inc counter)]))))
+            [{} {} starting-counter]
             assignments)))
 
 (defn find-final-construction
@@ -849,10 +892,8 @@
 (defn merge-variable-mappings
   "Create and merge variable mappings for nested objects"
   [variable-mappings nested-objects]
-  (let [nested-variable-mappings (into {} 
-                                      (for [[obj-id obj-data] nested-objects]
-                                        [obj-id obj-id]))] ; Map variable ref to object id
-    (merge variable-mappings nested-variable-mappings)))
+  ;; Nested objects don't have variable names, so just return the original mappings
+  variable-mappings)
 
 (defn debug-print-construction-state
   "Print debug information about construction processing"
@@ -872,8 +913,8 @@
         ;; Debug output for troubleshooting
 
         
-        ;; Process assignments from flattened AST
-        [assignment-objects variable-mappings] (process-assignments (rest flattened-ast) nested-objects)
+        ;; Process assignments from flattened AST, starting counter from number of nested objects
+        [assignment-objects variable-mappings] (process-assignments (rest flattened-ast) nested-objects (count nested-objects))
         
         ;; Combine all variable mappings and objects
         all-variable-mappings (merge-variable-mappings variable-mappings nested-objects)
@@ -936,16 +977,16 @@
 
 
 (defn record-nested-object!
-  "Record a nested object and return a VariableRef to it"
-  [nested-objects-atom object-counter-atom entry]
-  (let [obj-id (str "obj" (swap! object-counter-atom inc))
-        entry-with-index (assoc entry :index (count @nested-objects-atom))]
-    (swap! nested-objects-atom assoc obj-id entry-with-index)
-    [:VariableRef obj-id]))
+  "Record a nested object and return [obj-id updated-nested-objects]"
+  [nested-objects object-counter entry]
+  (let [obj-id (str "obj" (inc object-counter))
+        entry-with-index (assoc entry :index (count nested-objects))
+        updated-nested-objects (assoc nested-objects obj-id entry-with-index)]
+    [obj-id updated-nested-objects]))
 
 (defn visit-node
   "Process a single AST node with context and transformed children"
-  [node ctx nested-objects-atom object-counter-atom schema-ir]
+  [node ctx nested-objects object-counter schema-ir]
   (let [[tag & children] node]
     (cond
       ;; --- Case 1: Nodes that should be flattened ---
@@ -965,9 +1006,10 @@
         (let [structured-args (extract-args-from-object-construction 
                                [:ObjectConstruction [:ClassName class-name] arg-list] 
                                schema-ir 
-                               class-name)]
-          (record-nested-object! nested-objects-atom object-counter-atom 
-                                {:type :object, :class-name class-name, :args structured-args, :ast node})))
+                               class-name)
+              [obj-id updated-nested-objects] (record-nested-object! nested-objects object-counter
+                                                                    {:type :object, :class-name class-name, :args structured-args, :ast node})]
+          {:result [:VariableRef obj-id], :nested-objects updated-nested-objects, :object-counter (inc object-counter)}))
 
       (= tag :ArrayConstruction)
       (let [element-type (second (second node))  ; from [:Type "Person"]
@@ -977,57 +1019,88 @@
         (let [structured-args (extract-args-from-object-construction 
                                [:ObjectConstruction [:ClassName element-type] arg-list] 
                                schema-ir 
-                               element-type)]
-          (record-nested-object! nested-objects-atom object-counter-atom
-                                {:type :array, :class-name element-type, :args structured-args, :ast node})))
+                               element-type)
+              [obj-id updated-nested-objects] (record-nested-object! nested-objects object-counter
+                                                                    {:type :array, :class-name element-type, :args structured-args, :ast node})]
+          {:result [:VariableRef obj-id], :nested-objects updated-nested-objects, :object-counter (inc object-counter)}))
 
       (= tag :MapConstruction)
-      (let [map-ir (process-map-construction-expression node)]
-        (record-nested-object! nested-objects-atom object-counter-atom map-ir))
+      (let [map-ir (process-map-construction-expression node)
+            [obj-id updated-nested-objects] (record-nested-object! nested-objects object-counter map-ir)]
+        {:result [:VariableRef obj-id], :nested-objects updated-nested-objects, :object-counter (inc object-counter)})
 
       ;; --- Case 2: Structural nodes that are just rebuilt ---
       (#{:ObjectConstruction :ArgList :ClassName :Type :BlockStatements :Expression} tag)
-      (into [] (cons tag children))
+      {:result (into [] (cons tag children)), :nested-objects nested-objects, :object-counter object-counter}
 
       ;; --- Case 3: Leaf nodes ---
-      :else node)))
+      :else
+      {:result node, :nested-objects nested-objects, :object-counter object-counter})))
 
 (defn walk-ast
   "Walk AST tree with context, processing children before parents"
-  [node ctx nested-objects-atom object-counter-atom schema-ir]
+  [node ctx nested-objects object-counter schema-ir]
   (if (vector? node)
-    (let [[tag & children] node
-          new-ctx (case tag
-                    :ObjectConstruction
-                    (assoc ctx :parent-class (get-explicit-class-name node))
-                    :ArrayConstruction
-                    (assoc ctx :array-element-type (second (second node)))  ; Set array element type
-                    :InnerObjectConstruction
-                    (assoc ctx :parent-class (or (get-explicit-class-name node)
-                                                (:array-element-type ctx)
-                                                (type-from-class-and-position (:parent-class ctx) (:arg-index ctx) schema-ir)))
-                    ctx)
-          transformed-children (map-indexed
-                                (fn [i child] 
-                                  (walk-ast child (assoc new-ctx :arg-index i) 
-                                           nested-objects-atom object-counter-atom schema-ir))
-                                children)]
-      (visit-node (into [] (cons tag transformed-children)) new-ctx 
-                 nested-objects-atom object-counter-atom schema-ir))
+    (let [[tag & children] node]
+      (case tag
+        ;; Handle array constructions by processing children first, then flattening the array
+        :ArrayConstruction
+        (let [element-type (second (second node))  ; from [:Type "Person"]
+              arg-list (nth node 2)]               ; from [:ArgList ...]
+          ;; First, process all children (InnerObjectConstructions) to flatten them
+          (let [processed-children-result (reduce
+                                           (fn [acc [i child]]
+                                             (let [child-result (walk-ast child (assoc ctx :array-element-type element-type :arg-index i) 
+                                                                          (:nested-objects acc) (:object-counter acc) schema-ir)]
+                                               {:children (conj (:children acc) (:result child-result))
+                                                :nested-objects (:nested-objects child-result)
+                                                :object-counter (:object-counter child-result)}))
+                                           {:children [] :nested-objects nested-objects :object-counter object-counter}
+                                           (map-indexed vector (rest arg-list)))  ; Skip the :ArgList tag
+                ;; Then flatten the array itself
+                processed-array-result (visit-node (into [] (cons :ArrayConstruction (cons [:Type element-type] [:ArgList (:children processed-children-result)]))) 
+                                                  ctx (:nested-objects processed-children-result) (:object-counter processed-children-result) schema-ir)]
+            processed-array-result))
+        
+        :InnerObjectConstruction
+        (visit-node node ctx nested-objects object-counter schema-ir)
+        
+        :MapConstruction
+        (visit-node node ctx nested-objects object-counter schema-ir)
+        
+        ;; Handle other nodes by processing children
+        (let [new-ctx (case tag
+                        :ObjectConstruction
+                        (assoc ctx :parent-class (get-explicit-class-name node))
+                        :ArrayConstruction
+                        (assoc ctx :array-element-type (second (second node)))  ; Set array element type
+                        :InnerObjectConstruction
+                        (assoc ctx :parent-class (or (get-explicit-class-name node)
+                                                    (:array-element-type ctx)
+                                                    (type-from-class-and-position (:parent-class ctx) (:arg-index ctx) schema-ir)))
+                        ctx)
+              transformed-children-result (reduce
+                                           (fn [acc [i child]]
+                                             (let [child-result (walk-ast child (assoc new-ctx :arg-index i) 
+                                                                          (:nested-objects acc) (:object-counter acc) schema-ir)]
+                                               {:children (conj (:children acc) (:result child-result))
+                                                :nested-objects (:nested-objects child-result)
+                                                :object-counter (:object-counter child-result)}))
+                                           {:children [] :nested-objects nested-objects :object-counter object-counter}
+                                           (map-indexed vector children))]
+          (visit-node (into [] (cons tag (:children transformed-children-result))) new-ctx 
+                     (:nested-objects transformed-children-result) (:object-counter transformed-children-result) schema-ir))))
     ;; Leaf node, return as-is
-    node))
+    {:result node, :nested-objects nested-objects, :object-counter object-counter}))
 
 (defn flatten-nested-constructions
   "Flatten nested object and array constructions by extracting them into separate variables and replacing with variable references.
    Fail fast if a class name for an InnerObjectConstruction cannot be determined from explicit ClassName or schema context."
   [construction-ast schema-ir]
 
-  (let [nested-objects (atom {})
-        object-counter (atom 0)]
-    (let [flattened-ast (walk-ast construction-ast {} nested-objects object-counter schema-ir)]
-
-      {:flattened-ast flattened-ast
-       :nested-objects @nested-objects})))
+  (let [flattening-result (walk-ast construction-ast {} {} 0 schema-ir)]
+    {:flattened-ast (:result flattening-result)
+     :nested-objects (:nested-objects flattening-result)}))
 
 
 

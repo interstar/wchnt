@@ -3,15 +3,7 @@
             [malli.generator :as mg]
             [malli.error :as me]))
 
-;; Core result schemas
-(def CompilationResult
-  [:or
-   [:map
-    [:success [:= true]]
-    [:code [:sequential string?]]]
-   [:map
-    [:success [:= false]]
-    [:error string?]]])
+
 
 (def EyeballResult
   [:or
@@ -116,9 +108,7 @@
       result)))
 
  
-;; Validation functions
-(defn valid-compilation-result? [result]
-  (m/validate CompilationResult result))
+
 
 (defn valid-eyeball-result? [result]
   (m/validate EyeballResult result))
@@ -145,43 +135,9 @@
 
 
 
-;; Multi-step construction AST schema (legacy - keeping for compatibility)
-(def MultiStepConstructionAST
-  [:map
-   [:type [:= :MultiStepConstruction]]
-   [:assignments [:sequential 
-                  [:map
-                   [:name string?]
-                   [:construction any?]]]]
-   [:final-construction vector?]])
+ 
 
-(defn valid-multi-step-construction? [ast]
-  (m/validate MultiStepConstructionAST ast)) 
-
-;; Object Construction Table - the rich data structure built from AST walking
-(def ObjectConstructionEntry
-  [:map
-   [:parent [:maybe string?]]  ; Parent object ID (for context relationships)
-   [:class string?]            ; Class name to instantiate
-   [:var-name [:maybe string?]] ; Variable name (e.g., "o1", "o2")
-   [:ast any?]])               ; Original AST node for this object
-
-(def ObjectConstructionTable
-  [:map-of string? ObjectConstructionEntry])  ; ID -> Entry mapping
-
-(defn valid-object-construction-table? [table]
-  (m/validate ObjectConstructionTable table))
-
-;; Object Construction Result - what walk-ast-and-build-table returns
-(def ObjectConstructionResult
-  [:tuple
-   string?                    ; Root object ID
-   int?                       ; Final counter value
-   ObjectConstructionTable    ; The object table
-   [:map-of string? string?]]) ; Variable mapping
-
-(defn valid-object-construction-result? [result]
-  (m/validate ObjectConstructionResult result)) 
+ 
 
 ;; =============================================================================
 ;; IR Data Structure Schemas (Malli)
@@ -233,31 +189,31 @@
 
 ;; Construction IR Schemas (for object instances being constructed)
 ;; Argument structure for construction objects
-;; ConstructionArg schema with runtime validation for nested args
-(def ConstructionArg
-  [:map
-   [:type [:enum :object :primitive :variable :enum-value :array :map]]
-   [:class-name string?]
-   [:value [:maybe [:or string? int? boolean?]]]  ;; For primitives and variables: strings, integers, booleans. For objects, this is optional.
-   [:args [:sequential map?]]  ;; For objects, this contains nested args. For primitives and variables, this is empty.
-   [:index int?]])
+;; Registry for recursive schemas
+(def construction-registry
+  (merge
+    (m/default-schemas)                   ;; keep built-ins like :map, :sequential, :maybe, etc.
+    {::ConstructionArg
+     [:map
+      [:type [:enum :object :primitive :variable :enum-value :array :map]]
+      [:class-name string?]
+      [:args [:sequential [:ref ::ConstructionArg]]]  ;; All nested args should be structured ConstructionArg objects
+      [:index int?]
+      [:value {:optional true} [:maybe [:or string? int? boolean?]]]]}))  ;; For primitives and variables: strings, integers, booleans. For objects, this is optional.
 
-;; Custom validation function for ConstructionArg that checks nested structure
+;; ConstructionArg schema - references the registry
+(def ConstructionArg [:ref ::ConstructionArg])
+
+;; Simple validation function - schema handles the structure validation
 (defn valid-construction-arg? [arg]
-  "Validate that a ConstructionArg has proper structure, including nested args"
-  (and (m/validate ConstructionArg arg)
-       (every? (fn [nested-arg]
-                 (and (map? nested-arg)
-                      (contains? nested-arg :type)
-                      (contains? nested-arg :class-name)
-                      (contains? nested-arg :index)))
-               (:args arg))))
+  "Validate that a ConstructionArg has proper structure"
+  (m/validate ConstructionArg arg {:registry construction-registry}))
 
 (def ConstructionObjectSchema
   [:map
    [:type [:enum :object :primitive :variable :enum-value :array :map]]
    [:class-name string?]
-   [:args [:sequential ConstructionArg]]  ;; Must be structured ConstructionArg maps, not raw AST nodes
+   [:args [:sequential [:ref ::ConstructionArg]]]  ;; Must be structured ConstructionArg maps, not raw AST nodes
    [:index int?]])
 
 (def Wiring
@@ -334,7 +290,7 @@
 
 (defn valid-construction-ir? [construction-ir]
   "Validate construction IR with custom nested arg validation"
-  (and (m/validate ConstructionIR construction-ir)
+  (and (m/validate ConstructionIR construction-ir {:registry construction-registry})
        (every? (fn [[obj-id obj-data]]
                  (every? valid-construction-arg? (:args obj-data)))
                (:objects construction-ir))))
@@ -351,7 +307,7 @@
 
 (defn explain-construction-ir [construction-ir]
   (when-not (valid-construction-ir? construction-ir)
-    (m/explain ConstructionIR construction-ir)))
+    (m/explain ConstructionIR construction-ir {:registry construction-registry})))
 
 (defn explain-ir [ir]
   (when-not (valid-ir? ir)
