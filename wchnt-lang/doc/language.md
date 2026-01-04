@@ -24,15 +24,15 @@ ClassName = Component1 Component2/altName Component3
 
 ### Basic Types
 
-WCHNT supports standard primitive types:
+WCHNT assumes any type which is not explicitly declared is available from the underlying platform.
 
 ```wchnt
-Person = String/name int/age Bool/isActive Float/height
+Person = String/name Int/age Bool/isActive Float/height
 ```
 
-**Available primitive types:**
+**Primitive types from Haxe :**
 - `String` - Text strings
-- `int` - Integer numbers
+- `Int` - Integer numbers
 - `Float` - Decimal numbers
 - `Bool` - Boolean values (true/false)
 
@@ -53,8 +53,8 @@ Use the pipe operator `|` to define interface relationships. **Important**: A li
 
 ```wchnt
 Shape = Triangle | Circle
-Triangle = int/base int/height
-Circle = int/radius
+Triangle = Int/base Int/height
+Circle = Int/radius
 ```
 
 This creates a `Shape` interface that can be either a `Triangle` or a `Circle`.
@@ -66,9 +66,9 @@ This creates a `Shape` interface that can be either a `Triangle` or a `Circle`.
 ```wchnt
 Game = PlayArea Ball Paddle/paddle1 Paddle/paddle2
 PlayArea = Rect
-Ball = int/x int/y int/dx int/dy int/rad
-Paddle = int/x int/y
-Rect = int/x int/y int/width int/height
+Ball = Int/x Int/y Int/dx Int/dy Int/rad
+Paddle = Int/x Int/y
+Rect = Int/x Int/y Int/width Int/height
 ```
 
 **Generated classes:**
@@ -93,12 +93,12 @@ Address = String/street String/city String/zipCode
 
 ```wchnt
 Shape = Triangle | Circle
-Triangle = int/base int/height
-Circle = int/radius
+Triangle = Int/base Int/height
+Circle = Int/radius
 ```
 
 **Generated classes:**
-- `Shape` interface
+- `Shape` Interface
 - `Triangle` implementing `Shape` with fields: `base`, `height`
 - `Circle` implementing `Shape` with field: `radius`
 
@@ -114,7 +114,7 @@ Circle = int/radius
 - Use camelCase for custom names (e.g., `playerName`, `gameScore`)
 
 ### Type Names
-- Primitive types: `String`, `int`, `Float`, `Bool`
+- Primitive types: `String`, `Int`, `Float`, `Bool`
 - Array types: `[TypeName]`
 - Union types: `Type1 | Type2`
 
@@ -125,13 +125,13 @@ Define classes in dependency order - define components before the classes that u
 
 ```wchnt
 # Good: Define Rect before PlayArea
-Rect = int/x int/y int/width int/height
+Rect = Int/x Int/y Int/width Int/height
 PlayArea = Rect
 Game = PlayArea Ball
 
 # Bad: PlayArea references Rect before it's defined
 PlayArea = Rect
-Rect = int/x int/y int/width int/height
+Rect = Int/x Int/y Int/width Int/height
 ```
 
 ### 2. Meaningful Names
@@ -139,10 +139,10 @@ Use descriptive names for classes and fields:
 
 ```wchnt
 # Good
-Player = String/playerName int/playerScore
+Player = String/playerName Int/playerScore
 
 # Less clear
-Player = String/n int/s
+Player = String/n Int/s
 ```
 
 ### 3. Consistent Structure
@@ -150,9 +150,9 @@ Group related classes together and use consistent naming patterns:
 
 ```wchnt
 # Game entities
-Player = String/name int/score
-Enemy = String/type int/health
-GameObject = int/x int/y
+Player = String/name Int/score
+Enemy = String/type Int/health
+GameObject = Int/x Int/y
 
 # UI components
 Button = String/text Bool/enabled
@@ -163,14 +163,14 @@ Label = String/content
 
 ### 1. Configuration Objects
 ```wchnt
-GameConfig = int/maxPlayers int/roundTime String/gameMode
+GameConfig = Int/maxPlayers Int/roundTime String/gameMode
 PlayerConfig = String/name String/color Bool/isAI
 ```
 
 ### 2. Data Transfer Objects
 ```wchnt
 UserData = String/username String/email [String]/roles
-ProfileData = String/bio String/avatarUrl int/joinDate
+ProfileData = String/bio String/avatarUrl Int/joinDate
 ```
 
 ### 3. State Management

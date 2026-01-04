@@ -21,11 +21,13 @@ The schema is a declaration of classes and how they interrelate.
 
 A simple example might be
 
+```
 Game = PlayArea Ball Paddle/paddle1 Paddle/paddle2
 PlayArea = Rect
 Ball = Int/x Int/y Int/dx Int/dy Int/radius
 Rect = Int/x Int/y Int/width Int/height
 Paddle = Rect
+```
 
 This defines the structure of a simple Pong game in 5 classes
 
@@ -45,9 +47,11 @@ However, it's possible to give an alternative name to a variable using the /altN
 
 The first alternative relationship we introduce is the "context specific component"
 
+```
 Car = :Engine
+```
 
-The sigil used here is the colon : and it means that an object of this class MUST BELONG to an object of the parent class. In practice as a component, the Engine is constructed at the same time as the Car in the same construction expression. But also the Engine gets an implicit instance variable called theCar, which is the reference to the context or parent which contains it.
+The sigil used here is the colon : and it means that an object of this class MUST BELONG to an object of the parent class. In practice as a component, the Engine is constructed at the same time as the Car in the same construction block. But also the Engine gets an implicit instance variable called theCar, which is the reference to the context or parent which contains it.
 
 WCHNT should not allow the creation of Engines in any other context. Or that theCar ever changes or doesn't exist.
 
@@ -142,7 +146,7 @@ The full construction for the Game will look something like this
   [:Paddle [:Rect 50 50 20 80]]
   [:Paddle [:Rect 430 50 20 80]] ]
 
-Square brackets delimit objects. The first element is a label that indicates the class or type the rest, the data values for the components, by position.
+Square brackets delimit objects. The first element is a label that indicates the class or type. The rest, the data values for the components, by position.
 
 In order to maximize readability in constructions, a) newlines are meaningless whitespace. b) labels which can be meaningfully infered from the context are optional.
 
@@ -199,7 +203,7 @@ As with the outermost class. The type labels of Arrays and Maps are NOT optional
      ]
     ]
 
-But no more. The other labels here are required.
+But no more. The other labels here are necessary.
 
 #### Sum Types
 
@@ -233,7 +237,7 @@ players = [:Array/Person ["John"...] ...].
 [:Team "Crystal Palace" players]
 ```
 
-The name players is bound to an array of people once. It can not be updated. But can be referenced later in the construction.
+The name "players" is bound to an array of people once. It can not be updated. But can be referenced later in the construction.
 
 A single expression can get quite complex - it can include sub-expressions which are constructions, arithmetic and logic expressions, other method calls, and control structures like ifs and loops. These are all expressions themselves. Complex expressions that do a lot of work without the statement separator (full stop) are just single complex expressions rather than sequences of bindings.
 
@@ -243,7 +247,7 @@ A single expression can get quite complex - it can include sub-expressions which
 
 WCHNT is an OO language so behaviour is in the form of methods of classes which are invoked by sending messages to objects of those classes in a traditional way.
 
-We want to restrit mutability though, so the first of our behaviour phases or sections of the wchnt program is the "Reaction".
+We want to restrict mutability though, so the first of our behaviour phases or sections of the wchnt program is the "Reaction".
 
 In this section there is (almost) no mutation of objects. Methods are (almost) pure functions which return new data
 
@@ -257,7 +261,7 @@ In the Reaction
 
 Rect::area = { (width * height)}
  
-The area method of the Rect takes no arguments, but has access to the instance variables of the Rect objec.
+The area method of the Rect takes no arguments, but has access to the instance variables of the Rect object.
 
 Curly brackets delimit the code block in which we can put typical mathematical and logical expressions. And calls to other objects. But also constructions.
 
@@ -282,7 +286,7 @@ will evaluate to 43
 
 A code block demarcated by { } is like a block in Smalltalk. It's a first class citizen of the language. And can take arguments, becoming a lambda expression. Eg.
 
-{x | x * 2}
+{Int/x | x * 2}
 
 This block takes an argument and returns it multiplied by 2.
 
@@ -291,7 +295,7 @@ Methods are just code-blocks attached to objects.
 
 Booster = Int/x
 
-Booster::boost = {y| (x * y)}
+Booster::boost = {Int/y | (x * y)}
 
 The boost method takes the argument y and multiplies it by the Booster's x field.
 
@@ -299,16 +303,16 @@ The boost method takes the argument y and multiplies it by the Booster's x field
 
 Like Smalltalk, WCHNT uses code blocks to handle typical control structures like looping and conditions. Rather than building explicit control flow into the language like for loops and if statements, we achieve the same thing by passing code blocks to methods. These methods act as "combinators" for control flow.
 
-The Boolean class will have methods like `booleanVal.ifo(exp,exp)` and `booleanVal.ifno(exp,exp)`
+The Boolean class will have methods like `booleanVal.true?(exp,exp)` and `booleanVal.false?(exp,exp)`
 
-`ifo` is a conditional operator: if the boolean is true, then return the first value, otherwise the second. `ifno` is the opposite: if the boolean is false return the first, otherwise the second.
+`true?` is a conditional operator: if the boolean is true, then return the first value, otherwise the second. `false?` is the opposite: if the boolean is false return the first, otherwise the second.
 
 For example:
 ```
-bool.ifo({3+4}, {5*2})
+bool.true?({3+4}, {5*2})
 ```
 
-Using blocks allows us to defer evaluation until we decide which branch we want. Without blocks, `bool.ifo(3+4, 5*2)` would evaluate both expressions before passing them to the method.
+Using blocks allows us to defer evaluation until we decide which branch we want. Without blocks, `bool.true?(3+4, 5*2)` would evaluate both expressions before passing them to the method.
 
 Ints will have a `times(codeblock)` method for iteration.
 
@@ -325,8 +329,8 @@ Therefore the update method of a class must return a construction for that class
 For example
 
 Ball::update = {
-  newdx = ((x < 0) or (x > theGame.playArea.width)).ifo(-dx, dx)
-  newdy = ((y < 0) or (y > theGame.playArea.width)).ifo(-dy, dy)
+  newdx = ((x < 0) or (x > theGame.playArea.width)).true?(-dx, dx)
+  newdy = ((y < 0) or (y > theGame.playArea.width)).true?(-dy, dy)
   [:Ball (x + newdx) (y + newdy) newdx newdy radius]
 }
 
@@ -336,7 +340,7 @@ For example
 
 Game = PlayArea Ball $Time
 
-will make the Time objec observable and the Game object subscribed to it.
+will make the Time object observable and the Game object subscribed to it.
 
 When the Time updates itself, the update method of the Game should be called automatically.
 
@@ -365,69 +369,4 @@ So in a method we might write
 %trace(x)
 
 The Target section IS the configuration - it's where you specify that this trace should be expanded into `print` to the command line or `console.log` or a call to a special logging framework you have installed.
-
-## Current Implementation Status
-
-### ✅ **Completed Features**
-
-**Schema Phase**: ✅ Fully implemented
-- Schema parsing and validation using Instaparse
-- Compilation to Haxe classes with proper type annotations
-- Support for composition, disjunctions (interfaces), and enums
-- Context-specific components with automatic parent references
-- External references and reactive dependencies
-
-**Construction Phase**: ✅ Fully implemented  
-- Unified grammar in `newparser.clj` handles construction expressions
-- Hiccup-style syntax: `[:Game [:Ball 10 20]]`
-- Multi-statement constructions with let-like bindings
-- Factory function generation for complete assemblage creation
-- Support for arrays, maps, and complex nested structures
-
-**Compiler Pipeline**: ✅ Fully implemented
-- Mainfile parsing with section extraction
-- Schema → Haxe class generation
-- Construction → Factory function generation
-- Error handling with cargo pattern
-- Comprehensive test suite (75 tests, 371 assertions)
-
-**MCP Server Integration**: ✅ Fully implemented
-- Java API wrapper (`WchntAPI`) for external integration
-- Neh-Thalggu MCP server integration
-- Endpoints: `/compile-wchnt-haxe`, `/header-wchnt-haxe`, `/eyeball-wchnt-haxe`
-- Robust JAR deployment with embedded grammar
-
-### 🔄 **In Development**
-
-**Reaction Phase**: 🚧 Planned
-- Method definitions with unified grammar
-- Immutable reactive methods returning new objects
-- Automatic update propagation for reactive dependencies
-- Target commands for platform-specific features
-
-**Imperative Phase**: 📋 Future
-- Mutable state management
-- Control flow and loops
-- Advanced reactive patterns
-
-**Target Phase**: 📋 Future  
-- Platform-specific implementation details
-- Cross-cutting concerns (logging, tracing, profiling)
-- Multi-platform compilation support
-
-### 🏗️ **Architecture**
-
-**Unified Grammar Approach**: The current implementation uses a unified expression grammar in `newparser.clj` that can handle both construction expressions and future reaction method bodies. This eliminates the complexity of schema-derived grammars while providing flexibility for external objects and complex expressions.
-
-**Cargo Pattern**: Error handling uses a cargo pattern that preserves state through the compilation pipeline, enabling detailed error reporting and debugging.
-
-**Embedded Resources**: Grammar files are embedded directly in the code to avoid classloader issues in plugin environments.
-
-### 🎯 **Next Steps**
-
-1. **Reaction Phase Implementation**: Extend the unified grammar to support method definitions and reactive behavior
-2. **Enhanced Error Messages**: Improve parsing error messages with context and suggestions
-3. **Performance Optimization**: Optimize the unified grammar for better parsing performance
-4. **Documentation**: Update examples and tutorials to reflect current implementation
-
-
+ 
