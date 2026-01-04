@@ -140,7 +140,7 @@
                      :enums [{:name "Direction" :values ["North" "South" "East" "West"]}]}
           result (ast-to-ir/extract-args-from-object-construction object-construction schema-ir "Player")]
       (is (= 1 (count result)))
-      (is (= {:type :enum-value, :class-name "Enum", :args ["North"], :index 0} (first result))))))
+      (is (= {:type :enum-value, :class-name "Enum", :value "North", :args [], :index 0} (first result))))))
 
 (deftest test-extract-args-from-object-construction-with-inner-object
   (testing "extract-args-from-object-construction should handle inner object constructions"
