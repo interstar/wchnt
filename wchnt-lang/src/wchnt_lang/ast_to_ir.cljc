@@ -240,54 +240,25 @@
                    :index arg-index}
                   {:type :variable
                    :class-name "VariableRef"
-                   :value var-name
-                   :args []
+                   :args [var-name]
                    :index arg-index}))
               
-              ;; InnerObjectConstruction
-              (ast-utils/node-type? arg-item :InnerObjectConstruction)
-              (let [second-element (second arg-item)]
-                (if (ast-utils/node-type? second-element :ClassName)
-                  ;; Class name is explicit
-                  (let [class-name (second second-element)
-                        arg-list (nth arg-item 2)
-                        nested-args (if (ast-utils/node-type? arg-list :ArgList)
-                                     (map-indexed (fn [nested-index nested-arg]
-                                                   (cond
-                                                     (ast-utils/node-type? nested-arg :StringLiteral)
-                                                     {:type :primitive :class-name "String" :value (second nested-arg) :args [] :index nested-index}
-                                                     (ast-utils/node-type? nested-arg :IntLiteral)
-                                                     {:type :primitive :class-name "Int" :value (Integer/parseInt (second nested-arg)) :args [] :index nested-index}
-                                                     (ast-utils/node-type? nested-arg :VariableRef)
-                                                     {:type :variable :class-name "VariableRef" :value (second nested-arg) :args [] :index nested-index}
-                                                     :else
-                                                     {:type :primitive :class-name "Unknown" :value nested-arg :args [] :index nested-index}))
-                                                 (rest arg-list))
-                                     [])]
-                    {:type :object
-                     :class-name class-name
-                     :args nested-args
-                     :index arg-index})
-                  ;; Class name is omitted, need to look it up
-                  (let [expected-class-name (lookup-expected-class-name arg-index)
-                        arg-list (nth arg-item 2)
-                        nested-args (if (ast-utils/node-type? arg-list :ArgList)
-                                     (map-indexed (fn [nested-index nested-arg]
-                                                   (cond
-                                                     (ast-utils/node-type? nested-arg :StringLiteral)
-                                                     {:type :primitive :class-name "String" :value (second nested-arg) :args [] :index nested-index}
-                                                     (ast-utils/node-type? nested-arg :IntLiteral)
-                                                     {:type :primitive :class-name "Int" :value (Integer/parseInt (second nested-arg)) :args [] :index nested-index}
-                                                     (ast-utils/node-type? nested-arg :VariableRef)
-                                                     {:type :variable :class-name "VariableRef" :value (second nested-arg) :args [] :index nested-index}
-                                                     :else
-                                                     {:type :primitive :class-name "Unknown" :value nested-arg :args [] :index nested-index}))
-                                                 (rest arg-list))
-                                     [])]
-                    {:type :object
-                     :class-name expected-class-name
-                     :args nested-args
-                     :index arg-index})))
+                             ;; InnerObjectConstruction
+               (ast-utils/node-type? arg-item :InnerObjectConstruction)
+               (let [second-element (second arg-item)]
+                 (if (ast-utils/node-type? second-element :ClassName)
+                   ;; Class name is explicit: [:InnerObjectConstruction [:ClassName "X"] [:ArgList ...]]
+                   (let [class-name (second second-element)]
+                     {:type :object
+                      :class-name class-name
+                      :args [arg-item]
+                      :index arg-index})
+                   ;; Class name is omitted: [:InnerObjectConstruction [:ArgList ...]]
+                   (let [expected-class-name (lookup-expected-class-name arg-index)]
+                     {:type :object
+                      :class-name expected-class-name
+                      :args [arg-item]
+                      :index arg-index})))
               
               ;; ArrayConstruction - treat as object (will be flattened later)
               (ast-utils/node-type? arg-item :ArrayConstruction)
@@ -300,16 +271,14 @@
               (ast-utils/node-type? arg-item :IntLiteral)
               {:type :primitive
                :class-name "Int"
-               :value (Integer/parseInt (second arg-item))
-               :args []
+               :args [arg-item]
                :index arg-index}
               
               ;; StringLiteral
               (ast-utils/node-type? arg-item :StringLiteral)
               {:type :primitive
                :class-name "String"
-               :value (second arg-item)
-               :args []
+               :args [arg-item]
                :index arg-index}
               
               ;; Default to primitive
@@ -966,6 +935,9 @@
 ;; Refactored Flattening Functions (New Architecture)
 ;; =============================================================================
 
+;; Forward declarations for functions that reference each other
+(declare walk-ast-for-flattening visit-node)
+
 (defn get-explicit-class-name
   "Extract explicit class name from AST node"
   [node]
@@ -975,6 +947,40 @@
              (= :ClassName (first (second node))))
     (second (second node))))
 
+(defn determine-class-name-for-inner-construction
+  "Determine the class name for an InnerObjectConstruction node"
+  [node ctx schema-ir]
+  (or (get-explicit-class-name node)
+      ;; If no explicit class name, try to get it from context
+      (if (:array-element-type ctx)
+        (:array-element-type ctx)  ; Use array element type if we're inside an array
+        (let [parent-class (:parent-class ctx)
+              arg-index (:arg-index ctx)]
+          (if (and parent-class arg-index)
+            (let [assemblage (first (filter #(= (:name %) parent-class) (:assemblages schema-ir)))
+                  components (:components assemblage)]
+              (if (and assemblage components (< arg-index (count components)))
+                (:type-name (nth components arg-index))
+                (throw (ex-info "Could not determine expected class name for argument"
+                              {:arg-index arg-index
+                               :parent-class parent-class
+                               :schema-ir schema-ir}))))
+            (throw (ex-info "Could not determine class name for inner construction" {:ast node :ctx ctx}))))))
+
+(defn extract-arg-list-from-node
+  "Extract the argument list from an InnerObjectConstruction node"
+  [node]
+  (if (get-explicit-class-name node)
+    (nth node 2)  ; [:ClassName "X"] [:ArgList ...]
+    (second node))) ; [:ArgList ...]
+
+(defn process-structured-arguments
+  "Process arguments into structured IR format"
+  [class-name arg-list schema-ir]
+  (extract-args-from-object-construction 
+    [:ObjectConstruction [:ClassName class-name] arg-list] 
+    schema-ir 
+    class-name))
 
 (defn record-nested-object!
   "Record a nested object and return [obj-id updated-nested-objects]"
@@ -984,6 +990,13 @@
         updated-nested-objects (assoc nested-objects obj-id entry-with-index)]
     [obj-id updated-nested-objects]))
 
+(defn create-and-record-object
+  "Create an object and record it in the nested objects map"
+  [class-name structured-args nested-objects object-counter object-type]
+  (let [obj-entry {:type object-type, :class-name class-name, :args structured-args}
+        [obj-id updated-nested-objects] (record-nested-object! nested-objects object-counter obj-entry)]
+    {:obj-id obj-id, :nested-objects updated-nested-objects, :object-counter (inc object-counter)}))
+
 (defn visit-node
   "Process a single AST node with context and transformed children"
   [node ctx nested-objects object-counter schema-ir]
@@ -991,38 +1004,20 @@
     (cond
       ;; --- Case 1: Nodes that should be flattened ---
       (= tag :InnerObjectConstruction)
-      (let [class-name (or (get-explicit-class-name node)
-                           ;; If no explicit class name, try to get it from context
-                           (if (:array-element-type ctx)
-                             (:array-element-type ctx)  ; Use array element type if we're inside an array
-                             (:parent-class ctx)))  ; Use parent class directly instead of going deeper
-            arg-list (if (get-explicit-class-name node)
-                       (nth node 2)  ; [:ClassName "X"] [:ArgList ...]
-                       (second node))] ; [:ArgList ...]
-
+      (let [class-name (determine-class-name-for-inner-construction node ctx schema-ir)]
         (when-not class-name
           (throw (ex-info "Could not determine class name for inner construction" {:ast node :ctx ctx})))
-        ;; Process arguments into structured IR format
-        (let [structured-args (extract-args-from-object-construction 
-                               [:ObjectConstruction [:ClassName class-name] arg-list] 
-                               schema-ir 
-                               class-name)
-              [obj-id updated-nested-objects] (record-nested-object! nested-objects object-counter
-                                                                    {:type :object, :class-name class-name, :args structured-args, :ast node})]
-          {:result [:VariableRef obj-id], :nested-objects updated-nested-objects, :object-counter (inc object-counter)}))
+        (let [arg-list (extract-arg-list-from-node node)
+              structured-args (process-structured-arguments class-name arg-list schema-ir)
+              result (create-and-record-object class-name structured-args nested-objects object-counter :object)]
+          {:result [:VariableRef (:obj-id result)], :nested-objects (:nested-objects result), :object-counter (:object-counter result)}))
 
       (= tag :ArrayConstruction)
       (let [element-type (second (second node))  ; from [:Type "Person"]
             arg-list (nth node 2)]               ; from [:ArgList ...]
-
-        ;; Process array elements as object constructions of the element type
-        (let [structured-args (extract-args-from-object-construction 
-                               [:ObjectConstruction [:ClassName element-type] arg-list] 
-                               schema-ir 
-                               element-type)
-              [obj-id updated-nested-objects] (record-nested-object! nested-objects object-counter
-                                                                    {:type :array, :class-name element-type, :args structured-args, :ast node})]
-          {:result [:VariableRef obj-id], :nested-objects updated-nested-objects, :object-counter (inc object-counter)}))
+        (let [structured-args (process-structured-arguments element-type arg-list schema-ir)
+              result (create-and-record-object element-type structured-args nested-objects object-counter :array)]
+          {:result [:VariableRef (:obj-id result)], :nested-objects (:nested-objects result), :object-counter (:object-counter result)}))
 
       (= tag :MapConstruction)
       (let [map-ir (process-map-construction-expression node)
@@ -1037,31 +1032,115 @@
       :else
       {:result node, :nested-objects nested-objects, :object-counter object-counter})))
 
-(defn walk-ast
+(defn process-array-construction
+  "Process array construction by flattening children first, then the array itself"
+  [node ctx nested-objects object-counter schema-ir]
+  (let [element-type (second (second node))  ; from [:Type "Person"]
+        arg-list (nth node 2)]               ; from [:ArgList ...]
+    ;; First, process all children (InnerObjectConstructions) to flatten them
+    (let [processed-children-result (reduce
+                                     (fn [acc [i child]]
+                                       (let [child-result (walk-ast-for-flattening child (assoc ctx :array-element-type element-type :arg-index i) 
+                                                                    (:nested-objects acc) (:object-counter acc) schema-ir)]
+                                         {:children (conj (:children acc) (:result child-result))
+                                          :nested-objects (:nested-objects child-result)
+                                          :object-counter (:object-counter child-result)}))
+                                     {:children [] :nested-objects nested-objects :object-counter object-counter}
+                                     (map-indexed vector (rest arg-list)))  ; Skip the :ArgList tag
+          ;; Then flatten the array itself
+          processed-array-result (visit-node (into [] (cons :ArrayConstruction (cons [:Type element-type] [:ArgList (:children processed-children-result)]))) 
+                                            ctx (:nested-objects processed-children-result) (:object-counter processed-children-result) schema-ir)]
+      processed-array-result)))
+
+(defn process-inner-object-construction-with-class-name
+  "Process inner object construction with explicit class name"
+  [node ctx nested-objects object-counter schema-ir]
+  (let [class-name (second (second node))
+        arg-list (nth node 2)]
+    ;; First, process all children to flatten any nested constructions
+    (let [processed-children-result (reduce
+                                     (fn [acc [i child]]
+                                       (let [child-result (walk-ast-for-flattening child (assoc ctx :parent-class class-name :arg-index i) 
+                                                                    (:nested-objects acc) (:object-counter acc) schema-ir)]
+                                         {:children (conj (:children acc) (:result child-result))
+                                          :nested-objects (:nested-objects child-result)
+                                          :object-counter (:object-counter child-result)}))
+                                     {:children [] :nested-objects nested-objects :object-counter object-counter}
+                                     (map-indexed vector (rest arg-list)))  ; Skip the :ArgList tag
+          ;; Then flatten the object itself
+          processed-object-result (visit-node (into [] (cons :InnerObjectConstruction (cons [:ClassName class-name] [:ArgList (:children processed-children-result)]))) 
+                                            ctx (:nested-objects processed-children-result) (:object-counter processed-children-result) schema-ir)]
+      processed-object-result)))
+
+(defn process-inner-object-construction-without-class-name
+  "Process inner object construction without explicit class name"
+  [node ctx nested-objects object-counter schema-ir]
+  (let [expected-class-name (or (:array-element-type ctx) (:parent-class ctx))
+        arg-list (second node)]
+    ;; First, process all children to flatten any nested constructions
+    (let [processed-children-result (reduce
+                                     (fn [acc [i child]]
+                                       (let [child-result (walk-ast-for-flattening child (assoc ctx :parent-class expected-class-name :arg-index i) 
+                                                                    (:nested-objects acc) (:object-counter acc) schema-ir)]
+                                         {:children (conj (:children acc) (:result child-result))
+                                          :nested-objects (:nested-objects child-result)
+                                          :object-counter (:object-counter child-result)}))
+                                     {:children [] :nested-objects nested-objects :object-counter object-counter}
+                                     (map-indexed vector (rest arg-list)))  ; Skip the :ArgList tag
+          ;; Then flatten the object itself
+          processed-object-result (visit-node (into [] (cons :InnerObjectConstruction [:ArgList (:children processed-children-result)])) 
+                                            ctx (:nested-objects processed-children-result) (:object-counter processed-children-result) schema-ir)]
+      processed-object-result)))
+
+(defn process-inner-object-construction
+  "Process inner object construction by flattening children first, then the object itself"
+  [node ctx nested-objects object-counter schema-ir]
+  (let [second-element (second node)]
+    (if (ast-utils/node-type? second-element :ClassName)
+      ;; Class name is explicit: [:InnerObjectConstruction [:ClassName "X"] [:ArgList ...]]
+      (process-inner-object-construction-with-class-name node ctx nested-objects object-counter schema-ir)
+      ;; Class name is omitted: [:InnerObjectConstruction [:ArgList ...]]
+      (process-inner-object-construction-without-class-name node ctx nested-objects object-counter schema-ir))))
+
+(defn process-children
+  "Process children of a node and return updated context and results"
+  [children ctx nested-objects object-counter schema-ir]
+  (reduce
+   (fn [acc [i child]]
+     (let [child-result (walk-ast-for-flattening child (assoc ctx :arg-index i) 
+                                  (:nested-objects acc) (:object-counter acc) schema-ir)]
+       {:children (conj (:children acc) (:result child-result))
+        :nested-objects (:nested-objects child-result)
+        :object-counter (:object-counter child-result)}))
+   {:children [] :nested-objects nested-objects :object-counter object-counter}
+   (map-indexed vector children)))
+
+(defn build-context-for-node
+  "Build appropriate context for a node type"
+  [node ctx schema-ir]
+  (case (first node)
+    :ObjectConstruction
+    (assoc ctx :parent-class (get-explicit-class-name node))
+    :ArrayConstruction
+    (assoc ctx :array-element-type (second (second node)))  ; Set array element type
+    :InnerObjectConstruction
+    (assoc ctx :parent-class
+           (or (get-explicit-class-name node)
+               (:array-element-type ctx)
+               (type-from-class-and-position (:parent-class ctx) (:arg-index ctx) schema-ir)))
+    ctx))
+
+(defn walk-ast-for-flattening
   "Walk AST tree with context, processing children before parents"
   [node ctx nested-objects object-counter schema-ir]
   (if (vector? node)
     (let [[tag & children] node]
       (case tag
-        ;; Handle array constructions by processing children first, then flattening the array
+        ;; Handle array constructions by flattening them
         :ArrayConstruction
-        (let [element-type (second (second node))  ; from [:Type "Person"]
-              arg-list (nth node 2)]               ; from [:ArgList ...]
-          ;; First, process all children (InnerObjectConstructions) to flatten them
-          (let [processed-children-result (reduce
-                                           (fn [acc [i child]]
-                                             (let [child-result (walk-ast child (assoc ctx :array-element-type element-type :arg-index i) 
-                                                                          (:nested-objects acc) (:object-counter acc) schema-ir)]
-                                               {:children (conj (:children acc) (:result child-result))
-                                                :nested-objects (:nested-objects child-result)
-                                                :object-counter (:object-counter child-result)}))
-                                           {:children [] :nested-objects nested-objects :object-counter object-counter}
-                                           (map-indexed vector (rest arg-list)))  ; Skip the :ArgList tag
-                ;; Then flatten the array itself
-                processed-array-result (visit-node (into [] (cons :ArrayConstruction (cons [:Type element-type] [:ArgList (:children processed-children-result)]))) 
-                                                  ctx (:nested-objects processed-children-result) (:object-counter processed-children-result) schema-ir)]
-            processed-array-result))
+        (visit-node node ctx nested-objects object-counter schema-ir)
         
+        ;; Handle inner object constructions by flattening them
         :InnerObjectConstruction
         (visit-node node ctx nested-objects object-counter schema-ir)
         
@@ -1069,36 +1148,19 @@
         (visit-node node ctx nested-objects object-counter schema-ir)
         
         ;; Handle other nodes by processing children
-        (let [new-ctx (case tag
-                        :ObjectConstruction
-                        (assoc ctx :parent-class (get-explicit-class-name node))
-                        :ArrayConstruction
-                        (assoc ctx :array-element-type (second (second node)))  ; Set array element type
-                        :InnerObjectConstruction
-                        (assoc ctx :parent-class (or (get-explicit-class-name node)
-                                                    (:array-element-type ctx)
-                                                    (type-from-class-and-position (:parent-class ctx) (:arg-index ctx) schema-ir)))
-                        ctx)
-              transformed-children-result (reduce
-                                           (fn [acc [i child]]
-                                             (let [child-result (walk-ast child (assoc new-ctx :arg-index i) 
-                                                                          (:nested-objects acc) (:object-counter acc) schema-ir)]
-                                               {:children (conj (:children acc) (:result child-result))
-                                                :nested-objects (:nested-objects child-result)
-                                                :object-counter (:object-counter child-result)}))
-                                           {:children [] :nested-objects nested-objects :object-counter object-counter}
-                                           (map-indexed vector children))]
+        (let [new-ctx (build-context-for-node node ctx schema-ir)
+              transformed-children-result (process-children children new-ctx nested-objects object-counter schema-ir)]
           (visit-node (into [] (cons tag (:children transformed-children-result))) new-ctx 
                      (:nested-objects transformed-children-result) (:object-counter transformed-children-result) schema-ir))))
     ;; Leaf node, return as-is
-    {:result node, :nested-objects nested-objects, :object-counter object-counter}))
+    {:result node, :nested-objects nested-objects, :object-counter object-counter})))
 
 (defn flatten-nested-constructions
   "Flatten nested object and array constructions by extracting them into separate variables and replacing with variable references.
    Fail fast if a class name for an InnerObjectConstruction cannot be determined from explicit ClassName or schema context."
   [construction-ast schema-ir]
 
-  (let [flattening-result (walk-ast construction-ast {} {} 0 schema-ir)]
+  (let [flattening-result (walk-ast-for-flattening construction-ast {} {} 0 schema-ir)]
     {:flattened-ast (:result flattening-result)
      :nested-objects (:nested-objects flattening-result)}))
 

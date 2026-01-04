@@ -453,7 +453,7 @@ interface IWCHNTObject {
     
     ;; Handle variable references
     (and (map? arg) (= (:type arg) :variable))
-    (let [var-name (:value arg)
+    (let [var-name (first (:args arg))
           mapped-obj-id (get variable-mappings var-name)]
       (if mapped-obj-id
         mapped-obj-id  ;; Use the mapped object ID
@@ -512,7 +512,7 @@ interface IWCHNTObject {
                           
                           ;; Handle variable references
                           (and (map? arg) (= (:type arg) :variable))
-                          (let [var-name (:value arg)
+                          (let [var-name (first (:args arg))
                                 mapped-obj-id (get variable-mappings var-name)]
                             (if mapped-obj-id
                               mapped-obj-id  ;; Use the mapped object ID
@@ -522,7 +522,7 @@ interface IWCHNTObject {
                           
                           ;; Handle primitive values
                           (and (map? arg) (= (:type arg) :primitive))
-                          (let [primitive-value (:value arg)
+                          (let [primitive-value (first (:args arg))
                                 class-name (:class-name arg)]
                             (if (or (= class-name "String") (= class-name 'String))
                               ;; Check if the primitive value is a raw AST node that needs processing

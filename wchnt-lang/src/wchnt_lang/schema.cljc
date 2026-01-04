@@ -139,9 +139,7 @@
 
  
 
-;; =============================================================================
-;; IR Data Structure Schemas (Malli)
-;; =============================================================================
+
 
 ;; Schema IR Schemas
 (def Component
@@ -331,5 +329,59 @@
     (if (has-structured-args? construction-ir)
       {:valid true :message "IR has proper structured arguments"}
       {:valid false :message "IR contains raw AST nodes instead of structured arguments"})))
+
+;; =============================================================================
+;; Three-Stage Pipeline Data Structure Schemas (Malli)
+;; =============================================================================
+
+;; Stage 1: Flattened AST Schemas
+(def FlattenedASTNode
+  [:or
+   [:Assignment string? any?]  ;; [:Assignment "obj1" construction-node]
+   [:Expression any?]
+   [:Statement any?]
+   [:WS string?]])
+
+(def FlattenedAST
+  [:map
+   [:type [:= :BlockStatements]]
+   [:statements [:sequential FlattenedASTNode]]])
+
+;; Stage 2: Construction IR Schemas (Simplified)
+(def NewConstructionObject
+  [:map
+   [:type [:enum :object :array :map :primitive :variable :enum-value :error]]
+   [:class-name [:maybe string?]]
+   [:args [:sequential [:ref ::ConstructionArg]]]
+   [:index int?]
+   [:value {:optional true} [:maybe [:or string? int? boolean?]]]])
+
+(def NewConstructionIR
+  [:map
+   [:objects [:map-of string? NewConstructionObject]]
+   [:variable-mappings [:map-of string? string?]]
+   [:return-object string?]])
+
+;; Stage 3: Complete IR Schema (Combined)
+(def NewCompleteIR
+  [:map
+   [:schema SchemaIR]
+   [:construction NewConstructionIR]])
+
+;; =============================================================================
+;; Three-Stage Pipeline Validation Functions
+;; =============================================================================
+
+(defn valid-flattened-ast? [ast]
+  "Validate that flattened AST has the expected structure"
+  (m/validate FlattenedAST ast))
+
+(defn valid-new-construction-ir? [construction-ir]
+  "Validate new construction IR structure"
+  (m/validate NewConstructionIR construction-ir {:registry construction-registry}))
+
+(defn valid-new-complete-ir? [ir]
+  "Validate new complete IR structure"
+  (m/validate NewCompleteIR ir {:registry construction-registry}))
 
 ;; ============================================================================= 
