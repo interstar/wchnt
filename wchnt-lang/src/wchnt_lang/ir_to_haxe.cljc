@@ -439,131 +439,103 @@ interface IWCHNTObject {
     ;; Default case
     :else (str ast-node)))
 
+(declare generate-object-assignment-arg)
+
+(defn render-variable-ref
+  [arg variable-mappings]
+  (let [var-name (or (:value arg) (first (:args arg)))]
+    (get variable-mappings var-name var-name)))
+
+(defn render-primitive-value
+  [arg]
+  (let [primitive-value (or (:value arg) (first (:args arg)))
+        class-name (:class-name arg)]
+    (if (or (= class-name "String") (= class-name 'String))
+      (if (and (vector? primitive-value) (= (first primitive-value) :StringLiteral))
+        (str "\"" (second primitive-value) "\"")
+        (str "\"" primitive-value "\""))
+      (str primitive-value))))
+
+(defn render-object-arg
+  [arg schema-ir variable-mappings]
+  (str "new " (:class-name arg) "("
+       (str/join ", " (map #(generate-object-assignment-arg % schema-ir variable-mappings)
+                           (:args arg)))
+       ")"))
+
+(defn render-array-arg
+  [arg schema-ir variable-mappings]
+  (str "["
+       (str/join ", " (map #(generate-object-assignment-arg % schema-ir variable-mappings)
+                           (:args arg)))
+       "]"))
+
+(defn render-map-entry
+  [arg]
+  (if (and (map? arg) (contains? arg :type))
+    (case (:type arg)
+      :primitive (render-primitive-value arg)
+      :variable (or (:value arg) (first (:args arg)))
+      :enum-value (:value arg)
+      (str (:value arg)))
+    (str arg)))
+
+(defn render-map-literal
+  [args]
+  (let [pairs (partition 2 (map render-map-entry args))]
+    (str "[" (str/join ", " (map #(str (first %) " => " (second %)) pairs)) "]")))
+
+(defn render-map-arg
+  [arg]
+  (render-map-literal (:args arg)))
+
+(defn render-plain-string-arg
+  [arg component-types arg-index]
+  (if (and (< arg-index (count component-types))
+           (= (nth component-types arg-index) "String"))
+    (str "\"" arg "\"")
+    arg))
+
 (defn generate-object-assignment-arg
   "Generate Haxe code for a single argument in object assignment"
   [arg schema-ir variable-mappings]
   (cond
-    ;; Handle structured IR objects
     (and (map? arg) (= (:type arg) :object))
-    (let [arg-class-name (:class-name arg)
-          arg-args (:args arg)]
-      (str "new " arg-class-name "("
-           (str/join ", " (map #(generate-object-assignment-arg % schema-ir variable-mappings) arg-args))
-           ")"))
-    
-    ;; Handle variable references
+    (render-object-arg arg schema-ir variable-mappings)
+
     (and (map? arg) (= (:type arg) :variable))
-    (let [var-name (first (:args arg))
-          mapped-obj-id (get variable-mappings var-name)]
-      (if mapped-obj-id
-        mapped-obj-id  ;; Use the mapped object ID
-        (throw (ex-info "Variable reference not found in mappings" 
-                       {:var-name var-name 
-                        :variable-mappings variable-mappings}))))
-    
-    ;; Handle primitive values
+    (render-variable-ref arg variable-mappings)
+
     (and (map? arg) (= (:type arg) :primitive))
-    (let [primitive-value (first (:args arg))
-          class-name (:class-name arg)]
-      (if (or (= class-name "String") (= class-name 'String))
-        ;; Check if the primitive value is a raw AST node that needs processing
-        (if (and (vector? primitive-value) (= (first primitive-value) :StringLiteral))
-          (str "\"" (second primitive-value) "\"")  ;; Extract string from AST node
-          (str "\"" primitive-value "\""))  ;; String type - add quotes
-        (str primitive-value)))  ;; Other primitives - no quotes
-    
-    ;; Handle enum values
+    (render-primitive-value arg)
+
     (and (map? arg) (= (:type arg) :enum-value))
-    (:value arg)  ;; Enum value (not quoted)
-    
-    ;; Handle array types
+    (:value arg)
+
     (and (map? arg) (= (:type arg) :array))
-    (let [array-type (:class-name arg)
-          array-elements (:args arg)]
-      (str "["
-           (str/join ", " (map #(generate-object-assignment-arg % schema-ir variable-mappings) array-elements))
-           "]"))
-    
-    ;; Handle raw AST nodes (fallback)
+    (render-array-arg arg schema-ir variable-mappings)
+
+    (and (map? arg) (= (:type arg) :map))
+    (render-map-arg arg)
+
     (vector? arg)
     (generate-ast-node-arg arg schema-ir nil 0)
-    
-    ;; Default case
+
     :else
     (str arg)))
 
 (defn generate-object-assignment
   "Generate Haxe code for an object assignment using structured IR data"
   [obj-id class-name args schema-ir variable-mappings]
-  (let [;; Get component types from schema for proper type handling
-        assemblage (first (filter #(= (:name %) class-name) (:assemblages schema-ir)))
+  (let [assemblage (first (filter #(= (:name %) class-name) (:assemblages schema-ir)))
         component-types (map :type-name (:components assemblage))
-        
-        ;; Process arguments using structured IR data
         processed-args (for [[arg-index arg] (map-indexed vector args)]
-                        (cond
-                          ;; Handle structured IR objects
-                          (and (map? arg) (= (:type arg) :object))
-                          (let [arg-class-name (:class-name arg)
-                                arg-args (:args arg)]
-                            (str "new " arg-class-name "("
-                                 (str/join ", " (map #(generate-object-assignment-arg % schema-ir variable-mappings) arg-args))
-                                 ")"))
-                          
-                          ;; Handle variable references
-                          (and (map? arg) (= (:type arg) :variable))
-                          (let [var-name (first (:args arg))
-                                mapped-obj-id (get variable-mappings var-name)]
-                            (if mapped-obj-id
-                              mapped-obj-id  ;; Use the mapped object ID
-                              (throw (ex-info "Variable reference not found in mappings" 
-                                             {:var-name var-name 
-                                              :variable-mappings variable-mappings}))))
-                          
-                          ;; Handle primitive values
-                          (and (map? arg) (= (:type arg) :primitive))
-                          (let [primitive-value (first (:args arg))
-                                class-name (:class-name arg)]
-                            (if (or (= class-name "String") (= class-name 'String))
-                              ;; Check if the primitive value is a raw AST node that needs processing
-                              (if (and (vector? primitive-value) (= (first primitive-value) :StringLiteral))
-                                (str "\"" (second primitive-value) "\"")  ;; Extract string from AST node
-                                (str "\"" primitive-value "\""))  ;; String type - add quotes
-                              (str primitive-value)))  ;; Other primitives - no quotes
-                          
-                          ;; Handle enum values
-                          (and (map? arg) (= (:type arg) :enum-value))
-                          (:value arg)  ;; Enum value (not quoted)
-                          
-                          ;; Handle array types
-                          (and (map? arg) (= (:type arg) :array))
-                          (let [array-type (:class-name arg)
-                                array-elements (:args arg)]
-                            (str "["
-                                 (str/join ", " (map #(generate-object-assignment-arg % schema-ir variable-mappings) array-elements))
-                                 "]"))
-                          
-                          ;; Handle raw AST nodes (fallback for backward compatibility)
-                          (vector? arg)
-                          (generate-ast-node-arg arg schema-ir nil 0)
-                          
-                          ;; Handle plain strings (fallback)
-                          (string? arg)
-                          (if (and (< arg-index (count component-types))
-                                   (= (nth component-types arg-index) "String"))
-                            (str "\"" arg "\"")  ;; String component
-                            arg)  ;; Non-string component
-                          
-                          ;; Default case
-                          :else
-                          (str arg)))
-        
-        ;; Generate the assignment statement
+                         (if (string? arg)
+                           (render-plain-string-arg arg component-types arg-index)
+                           (generate-object-assignment-arg arg schema-ir variable-mappings)))
         assignment-code (if (str/starts-with? class-name "Array<")
-                         ;; Array type - use array literal syntax
                          (str "  var " obj-id " = ["
                               (str/join ", " processed-args) "];")
-                         ;; Object type - use constructor syntax
                          (str "  var " obj-id " = new " class-name "("
                               (str/join ", " processed-args) ");"))]
     assignment-code))
@@ -614,23 +586,7 @@ interface IWCHNTObject {
 (defn generate-map-assignment
   "Generate Haxe code for a map assignment"
   [obj-id class-name args schema-ir]
-  (let [key-value-pairs (map-indexed (fn [index arg]
-                                      ;; Handle structured ConstructionArg objects
-                                      (if (and (map? arg) (contains? arg :type))
-                                        (let [arg-type (:type arg)
-                                              arg-value (:value arg)]
-                                          (case arg-type
-                                            :primitive (if (string? arg-value)
-                                                        (str "\"" arg-value "\"")
-                                                        (str arg-value))
-                                            :variable arg-value
-                                            :else (str arg-value)))
-                                        ;; Fallback for backward compatibility
-                                        (str arg)))
-                                    args)
-        ;; Group into key-value pairs (every 2 elements)
-        pairs (partition 2 key-value-pairs)]
-    (str "  var " obj-id " = [" (str/join ", " (map #(str (first %) " => " (second %)) pairs)) "];")))
+  (str "  var " obj-id " = " (render-map-literal args) ";"))
 
 (defn generate-primitive-assignment
   "Generate Haxe code for a primitive assignment"
@@ -653,9 +609,9 @@ interface IWCHNTObject {
     (case obj-type
       :array (generate-array-assignment obj-id args schema-ir class-name)
       :object (generate-object-assignment obj-id class-name args schema-ir variable-mappings)
-      :variable (generate-variable-assignment obj-id args)
-      :enum-value (if (seq args)
-                    (str "  var " obj-id " = " (first args) ";")
+      :variable (generate-variable-assignment obj-id (if (contains? obj-data :value) [(:value obj-data)] args))
+      :enum-value (if (or (contains? obj-data :value) (seq args))
+                    (str "  var " obj-id " = " (or (:value obj-data) (first args)) ";")
                     (throw (ex-info "Enum value assignment missing arguments" {:obj-id obj-id :args args})))
       :map (generate-map-assignment obj-id class-name args schema-ir)
       :primitive (generate-primitive-assignment obj-id obj-data)

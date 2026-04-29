@@ -8,7 +8,8 @@
 
 (declare flatten-nested-constructions)
 
-(declare type-from-class-and-position walk visit-node walk-with-context 
+(declare type-from-class-and-position walk visit-node walk-with-context
+         process-map-construction-expression
          establish-context! establish-object-construction-context 
          establish-inner-object-construction-context establish-array-construction-context
          flatten-with-context flatten-inner-object-construction-with-context 
@@ -240,7 +241,8 @@
                    :index arg-index}
                   {:type :variable
                    :class-name "VariableRef"
-                   :args [var-name]
+                   :value var-name
+                   :args []
                    :index arg-index}))
               
                              ;; InnerObjectConstruction
@@ -248,37 +250,47 @@
                (let [second-element (second arg-item)]
                  (if (ast-utils/node-type? second-element :ClassName)
                    ;; Class name is explicit: [:InnerObjectConstruction [:ClassName "X"] [:ArgList ...]]
-                   (let [class-name (second second-element)]
+                   (let [class-name (second second-element)
+                         arg-list (nth arg-item 2)]
                      {:type :object
                       :class-name class-name
-                      :args [arg-item]
+                      :args (extract-arg-list arg-list)
                       :index arg-index})
                    ;; Class name is omitted: [:InnerObjectConstruction [:ArgList ...]]
-                   (let [expected-class-name (lookup-expected-class-name arg-index)]
+                   (let [expected-class-name (lookup-expected-class-name arg-index)
+                         arg-list (second arg-item)]
                      {:type :object
                       :class-name expected-class-name
-                      :args [arg-item]
+                      :args (extract-arg-list arg-list)
                       :index arg-index})))
               
               ;; ArrayConstruction - treat as object (will be flattened later)
               (ast-utils/node-type? arg-item :ArrayConstruction)
-              {:type :array
-               :class-name (second (second arg-item))
-               :args [arg-item]
-               :index arg-index}
+              (let [arg-list (nth arg-item 2)]
+                {:type :array
+                 :class-name (second (second arg-item))
+                 :args (extract-arg-list arg-list)
+                 :index arg-index})
+
+              ;; MapConstruction
+              (ast-utils/node-type? arg-item :MapConstruction)
+              (assoc (process-map-construction-expression arg-item)
+                     :index arg-index)
               
               ;; IntLiteral
               (ast-utils/node-type? arg-item :IntLiteral)
               {:type :primitive
                :class-name "Int"
-               :args [arg-item]
+               :value (Integer/parseInt (second arg-item))
+               :args []
                :index arg-index}
               
               ;; StringLiteral
               (ast-utils/node-type? arg-item :StringLiteral)
               {:type :primitive
                :class-name "String"
-               :args [arg-item]
+               :value (second arg-item)
+               :args []
                :index arg-index}
               
               ;; Default to primitive
@@ -398,37 +410,66 @@
        :class-name "VariableRef"
        :args [var-name]})))
 
+(defn process-array-construction-element
+  "Process one item inside an ArrayConstruction."
+  [array-type element index schema-ir]
+  (if (and schema-ir
+           (ast-utils/node-type? element :InnerObjectConstruction)
+           (not (ast-utils/node-type? (second element) :ClassName)))
+    (let [arg-list (second element)]
+      {:type :object
+       :class-name array-type
+       :args (extract-args-from-object-construction
+              [:ObjectConstruction [:ClassName array-type] arg-list]
+              schema-ir
+              array-type)
+       :index index})
+    (first (extract-args-from-object-construction
+            [:ObjectConstruction [:ClassName array-type] [:ArgList element]]
+            schema-ir
+            array-type))))
+
 (defn process-array-construction-expression
   "Process an ArrayConstruction expression"
-  [inner-expression]
+  ([inner-expression]
+   (process-array-construction-expression inner-expression nil))
+  ([inner-expression schema-ir]
   (let [type-node (second inner-expression)
         array-type (if (ast-utils/node-type? type-node :Type)
                     (second type-node)
                     (throw (ex-info "Array construction missing type node" 
                                   {:inner-expression inner-expression})))
         arg-list (nth inner-expression 2)
-        array-elements (if (ast-utils/node-type? arg-list :ArgList)
-                       (rest arg-list)
-                       [])]
+        array-elements (if schema-ir
+                         (map-indexed
+                          #(process-array-construction-element array-type %2 %1 schema-ir)
+                          (rest arg-list))
+                         (if (ast-utils/node-type? arg-list :ArgList)
+                           (rest arg-list)
+                           []))]
     {:type :array
      :class-name array-type
-     :args array-elements}))
+     :args array-elements})))
 
 (defn process-object-construction-expression
   "Process an ObjectConstruction expression"
-  [inner-expression]
+  ([inner-expression]
+   (process-object-construction-expression inner-expression nil))
+  ([inner-expression schema-ir]
   (let [class-name-node (second inner-expression)
         class-name (if (ast-utils/node-type? class-name-node :ClassName)
                     (second class-name-node)
                     (throw (ex-info "Object construction missing class name node" 
                                   {:inner-expression inner-expression})))
         arg-list (nth inner-expression 2)
-        args (if (ast-utils/node-type? arg-list :ArgList)
-              (rest arg-list)
-              [])]
+        args (if schema-ir
+               (extract-args-from-object-construction inner-expression schema-ir class-name)
+               (if (ast-utils/node-type? arg-list :ArgList)
+                 (rest arg-list)
+                 []))]
     {:type :object
      :class-name class-name
-     :args args}))
+     :args args})))
 
 (defn process-map-construction-expression
   "Process a MapConstruction expression"
@@ -486,7 +527,9 @@
 
 (defn process-assignment-expression
   "Process an assignment expression to extract object information"
-  [expression nested-objects]
+  ([expression nested-objects]
+   (process-assignment-expression expression nested-objects nil))
+  ([expression nested-objects schema-ir]
   (let [inner-expression (second expression)]  ;; Get the expression inside [:Expression ...]
     (cond
       (ast-utils/node-type? inner-expression :VariableRef)
@@ -497,17 +540,17 @@
       (let [existing-obj (first (filter #(= (:ast (second %)) inner-expression) nested-objects))]
         (if existing-obj
           (second existing-obj)  ;; Return the existing object
-          (process-array-construction-expression inner-expression)))
+          (process-array-construction-expression inner-expression schema-ir)))
       
       (ast-utils/node-type? inner-expression :ObjectConstruction)
-      (process-object-construction-expression inner-expression)
+      (process-object-construction-expression inner-expression schema-ir)
       
       (ast-utils/node-type? inner-expression :MapConstruction)
       (process-map-construction-expression inner-expression)
       
       :else
       (throw (ex-info "Unknown expression type in assignment" 
-                     {:inner-expression inner-expression})))))
+                     {:inner-expression inner-expression}))))))
 
 (defn extract-root-class-from-construction
   "Extract the root class name from construction AST using schema IR"
@@ -626,7 +669,9 @@
 
 (defn process-assignments
   "Process assignment statements to build object table and variable mappings"
-  [statements nested-objects starting-counter]
+  ([statements nested-objects starting-counter]
+   (process-assignments statements nested-objects starting-counter nil))
+  ([statements nested-objects starting-counter schema-ir]
   (let [assignments (filter #(and (vector? %) (= (first %) :Assignment)) statements)]
     (reduce (fn [[objects mappings counter] assignment]
                               (let [[_ var-name-node expression] assignment
@@ -644,12 +689,12 @@
                      counter]
                     ;; Create new object
                     (let [obj-id (str "obj" (inc counter))
-                          processed-expression (process-assignment-expression expression nested-objects)]
+                          processed-expression (process-assignment-expression expression nested-objects schema-ir)]
                       [(assoc objects obj-id (assoc processed-expression :index counter))
                        (assoc mappings var-name obj-id)
                        (inc counter)]))))
             [{} {} starting-counter]
-            assignments)))
+            assignments))))
 
 (defn find-final-construction
   "Find the final ObjectConstruction node in the statements"
@@ -883,7 +928,7 @@
 
         
         ;; Process assignments from flattened AST, starting counter from number of nested objects
-        [assignment-objects variable-mappings] (process-assignments (rest flattened-ast) nested-objects (count nested-objects))
+        [assignment-objects variable-mappings] (process-assignments (rest flattened-ast) nested-objects (count nested-objects) schema-ir)
         
         ;; Combine all variable mappings and objects
         all-variable-mappings (merge-variable-mappings variable-mappings nested-objects)
@@ -965,7 +1010,7 @@
                               {:arg-index arg-index
                                :parent-class parent-class
                                :schema-ir schema-ir}))))
-            (throw (ex-info "Could not determine class name for inner construction" {:ast node :ctx ctx}))))))
+            (throw (ex-info "Could not determine class name for inner construction" {:ast node :ctx ctx})))))))
 
 (defn extract-arg-list-from-node
   "Extract the argument list from an InnerObjectConstruction node"
@@ -1015,7 +1060,9 @@
       (= tag :ArrayConstruction)
       (let [element-type (second (second node))  ; from [:Type "Person"]
             arg-list (nth node 2)]               ; from [:ArgList ...]
-        (let [structured-args (process-structured-arguments element-type arg-list schema-ir)
+        (let [structured-args (map-indexed
+                               #(process-array-construction-element element-type %2 %1 schema-ir)
+                               (rest arg-list))
               result (create-and-record-object element-type structured-args nested-objects object-counter :array)]
           {:result [:VariableRef (:obj-id result)], :nested-objects (:nested-objects result), :object-counter (:object-counter result)}))
 
@@ -1153,7 +1200,7 @@
           (visit-node (into [] (cons tag (:children transformed-children-result))) new-ctx 
                      (:nested-objects transformed-children-result) (:object-counter transformed-children-result) schema-ir))))
     ;; Leaf node, return as-is
-    {:result node, :nested-objects nested-objects, :object-counter object-counter})))
+    {:result node, :nested-objects nested-objects, :object-counter object-counter}))
 
 (defn flatten-nested-constructions
   "Flatten nested object and array constructions by extracting them into separate variables and replacing with variable references.
