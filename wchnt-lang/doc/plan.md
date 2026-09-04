@@ -1,262 +1,158 @@
 # WCHNT Language Development Plan
 
-## Guidelines for our development
-- don't use atoms and mutable state. prefer immutability unless absolutely necessary
-- keep functions short. Ideally below 30 lines. If a function gets signifantly bigger, break it up into smaller pieces. Use forward reference declarations if this gets circular
-- FAIL FAST. We don't use things like (nil? node "undefined") ... if a value isn't what we're expecting, throw an error
-- we do use the Cargo structure (defined in @pipeline.cljc) for trapping bad user input. But for everything else there's "throw".
+This replaces the previous plan (the abandoned AST → Flattened AST → IR → Haxe rewrite, extra IR layers, and clojure.spec). That work left fossils in the compiler. This document is the current source of truth for *what we are building* and *what we will delete*.
 
-### NEW THREE STAGE PIPELINE
+Language philosophy lives in `intro.md` and `podcast_ramble.md`. This file is about the compiler and the next slices of work.
 
-## Overview
+## Goals
 
-The current AST → IR → Haxe pipeline is suffering from complex interdependencies and circular function calls. We're implementing a new three-stage pipeline to separate concerns and eliminate these issues:
+Near term: a preprocessor. One assemblage file compiles to a Haxe package. Schema + Construction already do this. The program must eventually be complete enough to write small games and music (Pong, Gbloink!, string processing) without hand-editing generated classes. Libraries are allowed. Stub generation that needs a round-trip into Haxe is a failure.
 
-**AST → Flattened AST → IR → Haxe**
+V1 Target: the evolving world is written in WCHNT; the outer environment (terminal loop, OpenFL frame, later a P5-like `init`/`step`) is named in Target. That is enough to play. It is not the success criterion.
 
-## Current Status (Updated)
+Far term: a live Smalltalk-like system. Same language, other end of the spectrum.
 
-### ✅ Phase 1: Create New Pipeline Structure - COMPLETED
-- ✅ Created new namespaces:
-  - `wchnt-lang.ast-flattening` (Stage 1)
-  - `wchnt-lang.flattened-to-ir` (Stage 2) 
-  - `wchnt-lang.ir-to-haxe-multimethods` (Stage 3)
-- ✅ Updated schema with new data structures for three-stage pipeline
-- ✅ Created comprehensive unit tests for Stage 1
-- ✅ Established architectural foundation with clear separation of concerns
+Success for the *idea* is other OO languages adopting assemblage programming. WCHNT-the-compiler is the proof.
 
-### 🔄 Phase 2: Implement Stage 1 (AST → Flattened AST) - IN PROGRESS
-- ✅ Basic structure and function framework implemented
-- ✅ Unit tests created and syntax errors resolved
-- 🔄 Flattening logic needs refinement to properly extract nested objects
-- 🔄 Tests currently failing due to incomplete extraction logic
+## Current state (honest)
 
-### 🔄 Phase 3: Implement Stage 2 (Flattened AST → IR) - FRAMEWORK READY
-- ✅ Basic structure implemented with proper error handling
-- ✅ Function ordering issues resolved (removed atoms, implemented fail-fast)
-- 🔄 Type inference logic for `InnerObjectConstruction` needs implementation
-- 🔄 Variable mapping logic needs completion
+**Works.** Markdown mainfile → schema grammar → schema IR → Haxe classes. Construction → unified grammar → construction IR → factory. Methods (lets, paths, calls, `if`, collections, `update` + `$` notify). Target is a real section: `%name` Haxe helpers callable from Methods, `%main` spliced into generated `class Main`. Construction programs without `%main` fail. Schema class `Main` is reserved. Examples are the spec; `go.sh` / `go_all_examples.sh` compile Haxe to JS and run Node.
 
-### ✅ Phase 4: Implement Stage 3 (IR → Haxe with Multimethods) - COMPLETED
-- ✅ Multimethods implemented for each IR node type
-- ✅ Simple, focused code generation functions
-- ✅ Easy extensibility for new node types
-- ✅ Clean separation of concerns
+**Does not work as a language yet.** `imperative` is parsed and ignored. `@external` is recorded, not generated. OpenFL drawing is still Haxe in `%init` / `%step`; the assemblage does not know about pixels. See `doc/reaction.md`.
 
-### ⏳ Phase 5: Switch Over - PENDING
-- ⏳ Update main pipeline to use new three-stage approach
-- ⏳ Remove old code once new pipeline is working
-- ⏳ Update tests to use new structure
+**The compiler is still messy.** Live code and abandoned attempts share namespaces, especially `parser.cljc`, `ast_to_ir.cljc`, `ir_to_haxe.cljc`, `schema.cljc`, `ir.cljc`. Do not extend dead helpers. The live compile path in `compiler.clj` is the source of truth.
 
-## Key Achievements
+## Architecture we keep
 
-1. **Architecture Established**: Clear three-stage pipeline with well-defined responsibilities
-2. **Code Quality**: Adhered to Clojure best practices (immutability, short functions, fail-fast)
-3. **Test Infrastructure**: Comprehensive unit tests for Stage 1 with proper error handling
-4. **Schema Integration**: Updated Malli schemas for all new data structures
-5. **Error Handling**: Implemented fail-fast approach with detailed error messages
+- **Cargo pipeline** (`pipeline.clj`). Compiler bugs throw. Bad user input fails the cargo. Stash intermediate results.
+- **Two grammars** (`grammars.cljc`): one schema grammar, one unified construction/expression grammar. Construction is *not* a grammar generated from the schema.
+- **Markdown mainfile** with ordered sections. Prose around the fences is optional.
+- **One IR.** Schema IR is maps of assemblages, components, and relationship sigils. Construction IR is objects to allocate, assignments, and wiring. Haxe is a backend. We are not inserting extra IR layers between flatten and codegen.
+- **Flattening as a construction problem**, not a second architecture: nested literals become an ordered list of object creations. Finish that so codegen sees values and variable names, not leftover AST — or stop pretending and call it a decorated AST. Prefer finishing flatten.
+- **Examples in `examples/`** are the language spec. Unit tests of abandoned APIs are not.
+- **Haxe v1 target**, including `setContext` for `:`.
+- **`toConstruction` + helper** stay. They are debug output so we can see the heap as construction syntax. They are not a user-facing language feature. Programs dump them from `%main` when they want to.
+- **`$` observables** are live: subscribe in the factory, `update` rewrites `this` and notifies subscribers.
+- **Fail-fast.** No defaults-for-nil, no compatibility cushion. Experimental language, no legacy corpus.
+- **Malli** for Clojure data schemas. Not clojure.spec.
 
-## Stage 1: AST → Flattened AST
+## What we burn (no mourning)
 
-**Purpose**: Extract nested constructions and assign sequential names to all objects being constructed.
+Do this as we touch the files, or in a dedicated cleanup pass. Do not revive any of it.
 
-**Input**: Raw AST with nested `InnerObjectConstruction` and `ArrayConstruction` nodes
-**Output**: Flat AST with all nested objects extracted as separate `ObjectConstruction` nodes with variable references
+- Per-schema construction grammars: `extract-class-info`, `generate-strict-arg-rules`, atom walks in `parser.cljc`.
+- Forward declarations of functions that do not exist (`walk-with-context`, `flatten-with-context`, `establish-context!`, …).
+- Empty placeholders: `method-ast-to-ir`, `debug-print-construction-state`.
+- clojure.spec IR in `ir.cljc`. Keep the *constructors* if they are convenient; drop spec validation. Malli in `schema.cljc` is the checker. Delete `valid-flattened-ast?`, `valid-new-construction-ir?`, `valid-new-complete-ir?` unless they still match the live IR.
+- Tests whose only job is the abandoned flatten API (`clean_flatten_test` and similar).
+- The old `plan.md` three-stage namespace plan. Already gone; do not follow leftover comments that still mention it.
+- Hidden debug `Main` in `compiler.clj`. Gone. `%main` is the entry. Do not put a default loop back into the compiler.
 
-**Key Principles**:
-- **No type inference** - Preserve `InnerObjectConstruction` nodes where type isn't explicit
-- **Sequential naming** - Each object gets a name like `obj1`, `obj2`, etc.
-- **Linear structure** - Output is a sequence of object creation instructions
-- **Self-contained** - Each object creation includes its variable assignment
+Ignore the `neo4j/` tree. It is a side experiment, not part of this compiler.
 
-**Example**:
+## Compilation pipeline (live)
+
 ```
-Input:  [:PlayArea [:Rect 0 0 800 600]]
-
-Output: [:BlockStatements 
-          [:Assignment "obj1" [:ObjectConstruction [:ClassName "Rect"] [:ArgList 0 0 800 600]]]
-          [:Assignment "obj2" [:ObjectConstruction [:ClassName "PlayArea"] [:ArgList [:VariableRef "obj1"]]]]
-        ]
+.wcn markdown
+  → mainfile (section map)
+  → schema text → Instaparse schema AST → schema IR → Haxe classes
+  → Target text → host + % bindings + %main or %init/%step Haxe
+  → methods text (if present) → unified parse → methods IR → Haxe on classes
+  → construction text (if present) → unified parse → construction IR → factory Haxe
+  → wrap class Main from factory, Target helpers, and %main
 ```
 
-**Implementation**:
-- Simple tree walker that identifies nested constructions
-- Extracts each nested object as a separate top-level assignment
-- Replaces nested constructions with variable references
-- No schema knowledge required - pure structural transformation
+`imperative` is a key on the section map with no stages.
 
-## Stage 2: Flattened AST → IR
+Construction flattening lives inside `construction-ast-to-ir` today. That is fine. Do not split it into new namespaces unless the file becomes unreadable after cleanup.
 
-**Purpose**: Add type information and create structured IR with proper validation.
+Codegen must not grow new knowledge of Instaparse node shapes. If it still does (`InnerObjectConstruction` in `ir_to_haxe.cljc`), that is debt to pay down, not a pattern to copy.
 
-**Input**: Flattened AST with all objects at top level
-**Output**: Structured IR with resolved types, validated arguments, and object mappings
+## Language phases
 
-**Key Responsibilities**:
-- **Type inference** - Resolve `InnerObjectConstruction` types using schema
-- **Argument normalization** - Convert AST nodes to simple values
-- **Validation** - Ensure all types are resolved and arguments are valid
-- **Object mapping** - Create variable mappings from WCHNT names to object IDs
+| Section | Status | Notes |
+|---|---|---|
+| Schema | Working | Ordinary, `:`, `@`, `$` parsed. `:` emits `setContext`. `$` emits subscribe/notify. Class name `Main` is reserved. |
+| Construction | Working | Same expression grammar as Methods. |
+| Methods | Working for v1 | Official heading `## Methods`. Arithmetic, logic, lets, paths, calls, `if`, collections, strings, in-place `update`. Informal name: reaction. |
+| Target | Working | Terminal: `%main`. OpenFL: `%init` / `%step` on a Sprite. `%name` Haxe is callable from Methods. Host is `%terminal` or `%openfl`. |
+| Imperative | Parsed, unused | May never be a separate language. Mutation strategy is unsettled. |
 
-**Example**:
+Schema, Construction, Methods, and Target are the phases we are using. Whether Imperative stays is an experiment, not an architecture decision.
+
+## How Target names the environment
+
+The host is **not** a CLI flag and **not** a markdown heading. Schema, Construction, and Methods stay the same file. Target names the outer environment, because that is the shearing layer that changes when you move from a Node dump to a windowed frame.
+
+First useful form: a `%` with no Haxe body.
+
 ```
-Input:  [:Assignment "obj1" [:InnerObjectConstruction [:ArgList 0 0 800 600]]]
+## Target
 
-Output: {:objects {"obj1" {:type :object
-                          :class-name "Rect"  ; Inferred from schema
-                          :args [0 0 800 600] ; Normalized values
-                          :index 0}}
-         :variable-mappings {"playArea" "obj1"}}
-```
+%terminal
 
-**Implementation**:
-- Process each assignment in order
-- Use schema to infer types for `InnerObjectConstruction` nodes
-- Normalize all arguments to simple values (strings, numbers, object references)
-- Create clean, validated IR structure
-
-## Stage 3: IR → Haxe (Multimethods)
-
-**Purpose**: Generate Haxe code using multimethods for clean, extensible code generation.
-
-**Input**: Well-formed, validated IR
-**Output**: Haxe source code
-
-**Key Principles**:
-- **Multimethods** - One method per IR node type
-- **Simple generation** - Each method handles its specific case
-- **No complex logic** - Just straightforward code generation
-- **Easy extension** - Add new node types by adding new methods
-
-**Example**:
-```clojure
-(defmulti generate-haxe (fn [ir-node] (:type ir-node)))
-
-(defmethod generate-haxe :object [node]
-  (str "new " (:class-name node) "(" 
-       (clojure.string/join ", " (map generate-arg (:args node)))
-       ")"))
-
-(defmethod generate-haxe :array [node]
-  (str "[" (clojure.string/join ", " (map generate-haxe (:elements node))) "]"))
+%main
+public static function main():Void {
+    var assemblage = gameFactory();
+    ...
+}
 ```
 
-## Implementation Strategy
-
-### Phase 1: Create New Pipeline Structure ✅ COMPLETED
-1. ✅ Created new namespaces:
-   - `wchnt-lang.ast-flattening` (Stage 1)
-   - `wchnt-lang.flattened-to-ir` (Stage 2)
-   - `wchnt-lang.ir-to-haxe-multimethods` (Stage 3)
-2. ✅ Updated schema with new data structures
-3. ✅ Created comprehensive unit tests
-4. ✅ Established architectural foundation
-
-### Phase 2: Implement Stage 1 (AST → Flattened AST) 🔄 IN PROGRESS
-- ✅ Basic structure and function framework implemented
-- ✅ Unit tests created and syntax errors resolved
-- 🔄 Flattening logic needs refinement to properly extract nested objects
-- 🔄 Tests currently failing due to incomplete extraction logic
-
-### Phase 3: Implement Stage 2 (Flattened AST → IR) 🔄 FRAMEWORK READY
-- ✅ Basic structure implemented with proper error handling
-- ✅ Function ordering issues resolved (removed atoms, implemented fail-fast)
-- 🔄 Type inference logic for `InnerObjectConstruction` needs implementation
-- 🔄 Variable mapping logic needs completion
-
-### Phase 4: Implement Stage 3 (IR → Haxe with Multimethods) ✅ COMPLETED
-- ✅ Multimethods implemented for each IR node type
-- ✅ Simple, focused code generation
-- ✅ Easy to extend with new node types
-- ✅ Clean separation of concerns
-
-### Phase 5: Switch Over ⏳ PENDING
-- ⏳ Update main pipeline to use new three-stage approach
-- ⏳ Remove old code once new pipeline is working
-- ⏳ Update tests to use new structure
-
-## Next Steps
-
-### Immediate Priorities
-1. **Fix Stage 1 Flattening Logic**: Complete the nested object extraction in `ast_flattening.cljc`
-2. **Implement Type Inference**: Add logic to resolve `InnerObjectConstruction` types in Stage 2
-3. **Complete Variable Mapping**: Finish the object mapping logic in Stage 2
-4. **Integration Testing**: Connect all three stages and test with real examples
-
-### Technical Debt
-- Remove validation check from Stage 1 main function (already done)
-- Fix function ordering in Stage 2 (already done)
-- Ensure all functions follow the "short functions" rule (mostly done)
-
-## Benefits
-
-1. **Separation of Concerns**: Each stage has one clear job
-2. **Eliminates Circular Dependencies**: No complex function interdependencies
-3. **Easier Debugging**: Can inspect intermediate Flattened AST
-4. **Simpler Logic**: Each transformation is focused and independent
-5. **Better Testing**: Each stage can be tested independently
-6. **Extensible**: Easy to add new node types or target languages
-7. **Maintainable**: Clear data flow and simple function responsibilities
-
-## Migration Approach
-
-- **Incremental**: Build and test each stage independently
-- **Safe**: Old code keeps working while building new code
-- **Clear**: Each stage has one job and is easy to understand
-- **Testable**: Each stage can be unit tested in isolation
-
-This three-stage approach will eliminate the current complexity and provide a solid foundation for future WCHNT development.
-
-
-
-
-
-
-## FUTURE WORK
-### 2. Relationship Types
-
-The IR explicitly represents the four relationship types:
-
-#### Ordinary Components (no sigil)
-```clojure
-{:relationship :ordinary}
 ```
-- Object belongs to parent
-- Lifecycle connected to parent
-- Default variable name: lowercase first letter of class name
-- Can specify alternative name with `/altName`
+## Target
 
-#### Context-Specific Components (`:` sigil)
-```clojure
-{:relationship :context-specific
- :context-parent "Game"}  ; Parent class that provides context
+%openfl
+
+%init
+var assemblage:Game;
+
+function init():Void {
+    assemblage = gameFactory();
+}
+
+%step
+function step():Void {
+    assemblage = assemblage.step();
+    // draw with OpenFL Graphics
+}
 ```
-- Must belong to parent
-- Gets implicit parent reference (e.g., `theGame`)
-- Cannot be created outside parent context
-- Methods can safely access parent properties
 
-#### External References (`@` sigil)
-```clojure
-{:relationship :external
- :external-type "Person"}  ; Type of external object
-```
-- Lent objects, independent lifecycle
-- No assumption about lifecycle connection
-- Reference passed in during construction
+Known hosts: `terminal`, `openfl`. `%terminal` / `%openfl` are not callable from Methods. If you omit the host, it is `terminal` (what every current example is). Two hosts, a host with a Haxe body, or an unknown empty `%` used as a helper without a function, fail.
 
-#### Reactive Dependencies (`$` sigil)
-```clojure
-{:relationship :reactive
- :observable true
- :subscribers ["Game"]}  ; 
-```
-- Observable/subscriber pattern
-- Automatic update propagation
-- Changes trigger `update()` method calls in subscribers
+What the host is for:
 
-NB: THIS IS COMPLICATED AND NEEDS CAREFUL THINKING.
+- **terminal** — compiler emits `class Main` with static `main()`. `go.sh` runs `haxe -js … -main Main` then Node. `%main` is required. `%init` / `%step` are not allowed.
+- **openfl** — compiler emits `class Main extends Sprite`. It calls the user's `%init` once and `%step` every frame (`ENTER_FRAME`). `%main` is not allowed. `go.sh` writes a lime `project.xml` and runs `lime test neko`. Drawing stays in the Haxe of `%init` / `%step` for now; the assemblage (schema, construction, methods) does not change.
 
-Game = $Time 
+Do not invent a second grammar for this. Do not put `openfl` in the Schema. The first windowed example is `examples/bounce_openfl.wcn`.
 
-means that the Game class subscribes to Time. Which means the Time class now needs the extra infrastructure that allows it to be an observable. Although this line occurs in the declaration of the Game class, it has implications for the shape of the Time class.
+`class Main` in the schema is reserved because every host still generates a Haxe `Main` as the entry.
+
+## Neh-Thalggu
+
+WCHNT is a DSL plugin for Neh-Thalggu (sibling project) — MCP / CLI / web for compiling DSL snippets so coding agents call a real compiler instead of guessing.
+
+That is why these exist and must keep working:
+
+- **Java API** (`wchnt-lang.api` → `wchnt_lang.WchntAPI`): `compileToHaxe`, `eyeball`, grammar/parser accessors. JAR is the legacy java-jar plugin shape. Construction parser/grammar must **not** take a schema string as if we still generated per-schema grammars (the Java methods still have that parameter; ignore it or clean the signature when we next touch the plugin).
+- **Eyeball** (`eyeball.cljc`): cheap checks that generated Haxe was incorporated. Keep the entrypoint. The current checks (immutable, public fields, has constructor) can evolve; the contract is `{:status :issues :notes}`.
+- **Examples** (`examples.clj` and/or `examples/*.wcn`): Neh-Thalggu `examples` tool. Keep a stable list of snippets with descriptions. Prefer pointing at real `.wcn` files over a second copy of schemas.
+
+Compile / eyeball / examples / docs / header are the plugin surface. Do not break them for internal refactors.
+
+## Immediate work (ordered)
+
+1. **Cleanup pass on the live path.** Done.
+2. **`$` stubs actually wired.** Done. `update` exists; notify is live.
+3. **Target as a real section.** Done for terminal: `%main` is required, no hidden debug Main, examples name their own loop. Host `%terminal` / `%openfl` parsed; OpenFL emission is next.
+4. **Methods in the expression grammar.** Done for the v1 surface in `doc/reaction.md`.
+5. **OpenFL Main.** Done for a first window: `%openfl` emits `Main extends Sprite`, `%init` / `%step` are Haxe, `go.sh` runs lime. `examples/bounce_openfl.wcn` is the bouncing ball. Next: pull more of the Haxe draw loop back into WCHNT, then Pong, then Gbloink!.
+
+Do not start a second IR layer. Do not generate construction grammars from schemas. Do not edit `neo4j/` as part of this plan. Do not put the game loop back into `compiler.clj`.
+
+## Working rules (compiler)
+
+- Short functions; kebab-case; immutable Clojure unless an atom is clearly better (and then say so).
+- No hardcoded class names (`Player`, `Rect`, …). Schema is the only source of class identity.
+- Class labels optional in nested construction; bracket structure is not. Sum types must be tagged.
+- When flattening or inferring a missing class tag, derive it from schema position. If you cannot, fail fast.

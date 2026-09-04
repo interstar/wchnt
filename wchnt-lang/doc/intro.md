@@ -243,21 +243,21 @@ A single expression can get quite complex - it can include sub-expressions which
 
 
 
-### Behaviour (Reaction and Imperative)
+### Behaviour (Methods)
 
 WCHNT is an OO language so behaviour is in the form of methods of classes which are invoked by sending messages to objects of those classes in a traditional way.
 
-We want to restrict mutability though, so the first of our behaviour phases or sections of the wchnt program is the "Reaction".
+The official section heading is **Methods**. (Informally we still say “reaction” for this expression language.) We are not committed to a separate Imperative section; splitting mutating and non-mutating methods may not be how mutation is managed.
 
-In this section there is (almost) no mutation of objects. Methods are (almost) pure functions which return new data
+In this section there is (almost) no mutation of objects. Methods are (almost) pure functions which return new data.
 
-The simplest example we can think of. 
+The simplest example we can think of.
 
 In the Schema
 
 Rect = Int/width Int/height
 
-In the Reaction
+In Methods
 
 Rect::area = { (width * height)}
  
@@ -270,6 +270,8 @@ Rect::doubleWidth = {
 }
 
 This returns a new Rect object, double the width of the original. In fact, the construction section of the wchnt is nothing but a special global case of a code-block that delivers a construction. Constructions in methods follow the same rules as the construction section. Can include multi-statements and let bindings etc. Expressions are, in fact, available to use in the main construction.
+
+Calls on the current object are written `this.move()`. Bare `move()` is not allowed yet.
 
 In a multi-statement code-block, the value of the last statement is the return value. 
 
@@ -284,9 +286,9 @@ will evaluate to 43
 
 #### Blocks with arguments / lambdas
 
-A code block demarcated by { } is like a block in Smalltalk. It's a first class citizen of the language. And can take arguments, becoming a lambda expression. Eg.
+A code block demarcated by { } is like a block in Smalltalk. It's a first class citizen of the language. And can take arguments, becoming a lambda expression. Arguments are names only (no types in v1). Schema often derives field names from types (`PlayArea` → `playArea`); method arguments cannot, so the names are always written.
 
-{Int/x | x * 2}
+{x | x * 2}
 
 This block takes an argument and returns it multiplied by 2.
 
@@ -295,58 +297,47 @@ Methods are just code-blocks attached to objects.
 
 Booster = Int/x
 
-Booster::boost = {Int/y | (x * y)}
+Booster::boost = {y | (x * y)}
 
 The boost method takes the argument y and multiplies it by the Booster's x field.
 
 #### Control structures
 
-Like Smalltalk, WCHNT uses code blocks to handle typical control structures like looping and conditions. Rather than building explicit control flow into the language like for loops and if statements, we achieve the same thing by passing code blocks to methods. These methods act as "combinators" for control flow.
+Conditionals are C-like `if`, and they are expressions. Both branches are required. The compiler emits a Haxe `if` expression.
 
-The Boolean class will have methods like `booleanVal.true?(exp,exp)` and `booleanVal.false?(exp,exp)`
-
-`true?` is a conditional operator: if the boolean is true, then return the first value, otherwise the second. `false?` is the opposite: if the boolean is false return the first, otherwise the second.
-
-For example:
 ```
-bool.true?({3+4}, {5*2})
+if (dx < 0) { -dx } else { dx }
 ```
 
-Using blocks allows us to defer evaluation until we decide which branch we want. Without blocks, `bool.true?(3+4, 5*2)` would evaluate both expressions before passing them to the method.
+Collections use combinators: `map`, `filter`, `fold`. The block is a delayed function.
 
-Ints will have a `times(codeblock)` method for iteration.
+```
+players.map({ p | p.name })
+players.filter({ p | p.score > 0 })
+players.fold(0, { acc, p | acc + p.score })
+```
 
-And collections will have typical map, filter, reduce (or fold) type methods.
+Strings have `length()`, `concat`, and `substring(start, end)`. Arrays have `cons` (prepend), `head`, and `tail`. Maps have `put`, `get`, and `remove`. Map writes copy; Target can later choose a persistent or mutating backing store. You can construct arrays and maps in a method the same way as in Construction, including empty ones: `[:Array/Player]`, `[:Map/{String:Int}]`.
 
-The exact implementation of blocks in the target language (Haxe) is still being worked out - whether to use Haxe's Lambda library or create wrapper classes to represent code blocks as objects. 
+Ints have `times`: `3.times({ i | i * 2 })` returns an array. The block takes the index from 0.
 
 #### The update method.
 
-The method update() is special in WCHNT. While WCHNT is generally immutable, the job of the update function is to mutate the object itself.
+`update` is the one mutation of object identity. In source it looks like a construction of the same class, listing every field. Codegen rewrites `this` in place, then notifies subscribers if this object is observable, then returns `this`. Ordinary methods stay immutable (`return new Ball(...)`).
 
-Therefore the update method of a class must return a construction for that class itself.
+`update` takes no arguments. `$Time` makes Time observable and Game a subscriber: when Time finishes `update`, it calls `Game.update()` with no arguments. Naming `time` in Game’s update picture is a read, not another tick.
 
-For example
+Children do not update automatically. A parent ticks a child only by writing `ball.update()` (or by constructing a new child). Give a class its own `$` if you want sideways notify instead.
 
-Ball::update = {
-  newdx = ((x < 0) or (x > theGame.playArea.width)).true?(-dx, dx)
-  newdy = ((y < 0) or (y > theGame.playArea.width)).true?(-dy, dy)
-  [:Ball (x + newdx) (y + newdy) newdx newdy radius]
+The first Target is a dumb loop that ticks the root’s `$` component(s). See `examples/bounce_loop.wcn`.
+
+```
+Time::update = { [:Time (t + 1)] }
+
+Game::update = {
+  [:Game playArea [:Ball (ball.x + ball.dx) (ball.y + ball.dy) ball.dx ball.dy ball.rad] time]
 }
-
-The idea here is that this should be tied to the reactive dependencies we discussed in the Schema section earlier.
-
-For example 
-
-Game = PlayArea Ball $Time
-
-will make the Time object observable and the Game object subscribed to it.
-
-When the Time updates itself, the update method of the Game should be called automatically.
-
-Game can obviously trigger update() in its components. I'm still open minded on the question as to whether, if Game has its update triggered automatically then context specific classes eg. Game = :Ball  would also have their update called automatically.
-
-We still have to think how this will be implemented. It could be that in target code we have a special optimisation whereby the update() method doesn't create a new object of the class, but mutates the existing one in place. This will be an optimisation though. 
+```
 
 #### Target Commands
 
@@ -368,5 +359,5 @@ So in a method we might write
 
 %trace(x)
 
-The Target section IS the configuration - it's where you specify that this trace should be expanded into `print` to the command line or `console.log` or a call to a special logging framework you have installed.
+The Target section binds `%trace` to a Haxe function that returns `x`, and `%main` is the Haxe entry (the loop, the dumps). Methods are not auto-run.
  
