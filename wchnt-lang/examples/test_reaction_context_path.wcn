@@ -1,4 +1,6 @@
-# Example: test_sigil.wcn
+# Example: context parent field path
+
+Engine is a : context child of Car, so it has theCar.
 
 ## Schema
 
@@ -10,10 +12,16 @@ Engine = Int/cylinders
 ## Construction
 
 ```
-[:Car 
+[:Car
   [:Engine 4]
   "Toyota"
 ]
+```
+
+## Methods
+
+```
+Engine::carModel = { theCar.model }
 ```
 
 ## Target

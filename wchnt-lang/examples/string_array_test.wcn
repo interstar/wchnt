@@ -10,4 +10,15 @@ StringList = [String]/xs
 
 ```
 [:StringList ["hello" "world" "test"]]
-``` 
+```
+
+## Target
+
+```
+%main
+public static function main():Void {
+    var assemblage = stringListFactory();
+    var helper = new WCHNTHelper();
+    trace(assemblage.toConstruction(0, helper));
+}
+```

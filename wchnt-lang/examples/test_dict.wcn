@@ -1,9 +1,11 @@
 # Example: test_dict.wcn
 
+Nested map construction with string keys and enum keys.
+
 ## Schema
 
 ```
-Main = Config Config2
+App = Config Config2
 
 Config = {String : Int}/settings
 BuildType = "Dev" | "Local" | "Deploy"
@@ -13,5 +15,16 @@ Config2 = {BuildType : String}/environments
 ## Construction
 
 ```
-[:Main [:Config [:Map/{String:Int} "0":0 "1":1]] [:Config2 [:Map/{BuildType:String} Dev:"dev" Local:"local" Deploy:"deploy"]]]
+[:App [:Config [:Map/{String:Int} "0":0 "1":1]] [:Config2 [:Map/{BuildType:String} Dev:"dev" Local:"local" Deploy:"deploy"]]]
+```
+
+## Target
+
+```
+%main
+public static function main():Void {
+    var assemblage = appFactory();
+    var helper = new WCHNTHelper();
+    trace(assemblage.toConstruction(0, helper));
+}
 ```

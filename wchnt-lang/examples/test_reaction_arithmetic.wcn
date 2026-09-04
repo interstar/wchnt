@@ -1,4 +1,4 @@
-# Example: construction_simple.wcn
+# Example: arithmetic methods
 
 ## Schema
 
@@ -12,10 +12,22 @@ Ball = Int/x Int/y Int/dx Int/dy Int/rad
 ## Construction
 
 ```
-[:Game 
+[:Game
   [:PlayArea [0 0 800 600]]
   [:Ball 100 100 1 1 5]
 ]
+```
+
+## Methods
+
+```
+Rect::area = { width * height }
+
+Rect::doubleWidth = { [:Rect x y (width * 2) height] }
+
+Ball::move = { [:Ball (x + dx) (y + dy) dx dy rad] }
+
+Rect::wrapX = { x % width }
 ```
 
 ## Target

@@ -14,4 +14,15 @@ Engine = Int/cylinders
   [:Engine 4]
   "Toyota"
 ]
-``` 
+```
+
+## Target
+
+```
+%main
+public static function main():Void {
+    var assemblage = carFactory();
+    var helper = new WCHNTHelper();
+    trace(assemblage.toConstruction(0, helper));
+}
+```

@@ -16,3 +16,14 @@ Book = String/title String/author
 ]
 
 ```
+
+## Target
+
+```
+%main
+public static function main():Void {
+    var assemblage = dBFactory();
+    var helper = new WCHNTHelper();
+    trace(assemblage.toConstruction(0, helper));
+}
+```

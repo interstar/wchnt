@@ -1,0 +1,39 @@
+# %trace from Methods, bound in Target
+
+`%trace` is a Target function used as an expression. It peeks at a value and returns it. Blocks stay lets plus one result.
+
+## Schema
+
+```
+Rect = Int/x Int/y Int/width Int/height
+```
+
+## Construction
+
+```
+[:Rect 0 0 10 20]
+```
+
+## Methods
+
+```
+Rect::area = { %trace(width * height) }
+```
+
+## Target
+
+```
+%trace
+public static function wchnt_trace<T>(x:T):T {
+    haxe.Log.trace(x);
+    return x;
+}
+
+%main
+public static function main():Void {
+    var assemblage = rectFactory();
+    var helper = new WCHNTHelper();
+    trace(assemblage.toConstruction(0, helper));
+    assemblage.area();
+}
+```

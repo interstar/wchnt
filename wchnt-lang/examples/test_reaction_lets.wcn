@@ -1,4 +1,6 @@
-# Example: construction_simple.wcn
+# Example: let-bindings in a method
+
+Intermediate names are immutable. The last statement is the result.
 
 ## Schema
 
@@ -12,10 +14,25 @@ Ball = Int/x Int/y Int/dx Int/dy Int/rad
 ## Construction
 
 ```
-[:Game 
+[:Game
   [:PlayArea [0 0 800 600]]
   [:Ball 100 100 1 1 5]
 ]
+```
+
+## Methods
+
+```
+Ball::move = {
+  nx = x + dx.
+  ny = y + dy.
+  [:Ball nx ny dx dy rad]
+}
+
+Rect::area = {
+  a = width * height.
+  a
+}
 ```
 
 ## Target

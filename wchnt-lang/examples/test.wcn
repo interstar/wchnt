@@ -29,3 +29,14 @@ scores = [:Scores 0 0].
   scores
 ]
 ```
+
+## Target
+
+```
+%main
+public static function main():Void {
+    var assemblage = gameFactory();
+    var helper = new WCHNTHelper();
+    trace(assemblage.toConstruction(0, helper));
+}
+```

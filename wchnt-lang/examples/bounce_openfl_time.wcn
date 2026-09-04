@@ -1,0 +1,71 @@
+# Bounce on OpenFL with $Time
+
+Same window as `bounce_openfl.wcn`, but the clock lives in the assemblage. Target ticks `Time`; Game moves because `$` notifies. Do not also call `Game::update` from `%step`.
+
+## Schema
+
+```
+Game = PlayArea Ball $Time
+PlayArea = Rect
+Rect = Int/x Int/y Int/width Int/height
+Ball = Int/x Int/y Int/dx Int/dy Int/rad
+Time = Int/t
+```
+
+## Construction
+
+```
+[:Game
+  [:PlayArea [0 0 800 600]]
+  [:Ball 200 150 6 5 16]
+  [:Time 0]
+]
+```
+
+## Methods
+
+```
+Time::update = { [:Time (t + 1)] }
+
+Ball::bounceDx = { Rect/playAreaRect |
+  if ((x < playAreaRect.x) or (x > (playAreaRect.x + playAreaRect.width))) { -dx } else { dx }
+}
+
+Ball::bounceDy = { Rect/playAreaRect |
+  if ((y < playAreaRect.y) or (y > (playAreaRect.y + playAreaRect.height))) { -dy } else { dy }
+}
+
+Game::update = {
+  ndx = ball.bounceDx(playArea.rect).
+  ndy = ball.bounceDy(playArea.rect).
+  moved = [:Ball (ball.x + ndx) (ball.y + ndy) ndx ndy ((ball.rad+1)% 50)].
+  [:Game playArea moved time]
+}
+```
+
+## Target
+
+```
+%openfl
+
+%init
+var assemblage:Game;
+
+function init():Void {
+    assemblage = gameFactory();
+}
+
+%step
+function step():Void {
+    assemblage.time.update();
+    var r = assemblage.playArea.rect;
+    var b = assemblage.ball;
+    graphics.clear();
+    graphics.beginFill(0x2a2a2a);
+    graphics.drawRect(r.x, r.y, r.width, r.height);
+    graphics.endFill();
+    graphics.beginFill(0xf2f2f2);
+    graphics.drawCircle(b.x, b.y, b.rad);
+    graphics.endFill();
+}
+```

@@ -1,4 +1,6 @@
-# Example: construction_simple.wcn
+# Example: field paths in a method
+
+Walk into another object with dots. PlayArea is Rect, so the ball's walls are playArea.rect.
 
 ## Schema
 
@@ -12,10 +14,18 @@ Ball = Int/x Int/y Int/dx Int/dy Int/rad
 ## Construction
 
 ```
-[:Game 
+[:Game
   [:PlayArea [0 0 800 600]]
   [:Ball 100 100 1 1 5]
 ]
+```
+
+## Methods
+
+```
+Game::inBounds = {
+  (ball.x > playArea.rect.x) and (ball.x < (playArea.rect.x + playArea.rect.width))
+}
 ```
 
 ## Target
@@ -26,5 +36,7 @@ public static function main():Void {
     var assemblage = gameFactory();
     var helper = new WCHNTHelper();
     trace(assemblage.toConstruction(0, helper));
+    trace("inBounds");
+    trace(assemblage.inBounds());
 }
 ```

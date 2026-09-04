@@ -1,10 +1,9 @@
-# Example: construction_simple.wcn
+# Example: comparison and boolean methods
 
 ## Schema
 
 ```
-Game = PlayArea Ball
-PlayArea = Rect
+Game = Rect Ball
 Rect = Int/x Int/y Int/width Int/height
 Ball = Int/x Int/y Int/dx Int/dy Int/rad
 ```
@@ -12,10 +11,18 @@ Ball = Int/x Int/y Int/dx Int/dy Int/rad
 ## Construction
 
 ```
-[:Game 
-  [:PlayArea [0 0 800 600]]
-  [:Ball 100 100 1 1 5]
+[:Game
+  [0 0 800 600]
+  [100 100 1 1 5]
 ]
+```
+
+## Methods
+
+```
+Ball::movingRight = { dx > 0 }
+
+Rect::contains = {px, py | (px >= x) and (px <= (x + width)) and (py >= y) and (py <= (y + height))}
 ```
 
 ## Target

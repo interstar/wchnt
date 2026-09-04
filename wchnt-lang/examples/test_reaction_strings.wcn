@@ -1,0 +1,42 @@
+# Example: string length, concat, and substring
+
+`length()` is a method; Haxe exposes length as a property. `concat` joins a string with a string or number. `substring(start, end)` is a half-open range; a bad range fails at runtime.
+
+## Schema
+
+```
+Player = String/name Int/score
+```
+
+## Construction
+
+```
+[:Player "Ada" 3]
+```
+
+## Methods
+
+```
+Player::nameLen = { name.length() }
+
+Player::tag = { name.concat(":").concat(score) }
+
+Player::initial = { name.substring(0, 1) }
+```
+
+## Target
+
+```
+%main
+public static function main():Void {
+    var assemblage = playerFactory();
+    var helper = new WCHNTHelper();
+    trace(assemblage.toConstruction(0, helper));
+    trace("nameLen");
+    trace(assemblage.nameLen());
+    trace("tag");
+    trace(assemblage.tag());
+    trace("initial");
+    trace(assemblage.initial());
+}
+```

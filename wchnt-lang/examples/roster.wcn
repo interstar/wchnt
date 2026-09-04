@@ -1,0 +1,83 @@
+# Roster: cons/head/tail, put/get/remove, times
+
+Arrays and maps are copied on write. Target can later name a persistent or mutating backing store; for now copy is fine.
+
+`head` / `tail` pull an array apart. Empty head or tail fails at runtime.
+`get` / `remove` take a map apart. A missing key fails at runtime.
+`times` on Int runs a block with the index from 0.
+
+## Schema
+
+```
+Team = String/name [Player]/players {String : Int}/scores
+Player = String/name Int/score
+```
+
+## Construction
+
+```
+[:Team
+  "Rockets"
+  [:Array/Player
+    ["Ada" 3]
+    ["Cy" 5]
+  ]
+  [:Map/{String:Int} "Ada":3 "Cy":5]
+]
+```
+
+## Methods
+
+```
+Player::tag = { name.concat(":").concat(score) }
+
+Player::initial = { name.substring(0, 1) }
+
+Team::headline = { name.concat(" x").concat(players.length()) }
+
+Team::captain = { players.head() }
+
+Team::bench = { players.tail() }
+
+Team::adaScore = { scores.get("Ada") }
+
+Team::noAda = { scores.remove("Ada") }
+
+Team::addNamed = {n, s |
+  p = [:Player n s].
+  [:Team name players.cons(p) scores.put(n, s)]
+}
+
+Team::withDi = { this.addNamed("Di", 7) }
+
+Team::fresh = { [:Team name [:Array/Player] [:Map/{String:Int}]] }
+
+Team::zeros = { 13.times({ i | i*1 }) }
+```
+
+## Target
+
+```
+%main
+public static function main():Void {
+    var assemblage = teamFactory();
+    var helper = new WCHNTHelper();
+    trace(assemblage.toConstruction(0, helper));
+    trace("headline");
+    trace(assemblage.headline());
+    trace("captain");
+    trace(assemblage.captain().toConstruction(0, helper));
+    trace("bench");
+    trace(helper.arrayToConstruction(assemblage.bench(), 0));
+    trace("adaScore");
+    trace(assemblage.adaScore());
+    trace("noAda");
+    trace(helper.mapToConstruction(assemblage.noAda(), 0));
+    trace("withDi");
+    trace(assemblage.withDi().toConstruction(0, helper));
+    trace("fresh");
+    trace(assemblage.fresh().toConstruction(0, helper));
+    trace("zeros");
+    trace(helper.arrayToConstruction(assemblage.zeros(), 0));
+}
+```

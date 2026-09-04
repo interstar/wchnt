@@ -1,0 +1,36 @@
+# Example: $ mixed with nested ordinary components
+
+## Schema
+
+```
+Game = PlayArea $Time
+PlayArea = Rect
+Rect = Int/x Int/y Int/width Int/height
+Time = Int/t
+```
+
+## Construction
+
+```
+[:Game [:PlayArea [0 0 800 600]] [:Time 0]]
+```
+
+## Methods
+
+```
+Time::update = { [:Time t] }
+Game::update = { [:Game playArea time] }
+```
+
+## Target
+
+```
+%main
+public static function main():Void {
+    var assemblage = gameFactory();
+    var helper = new WCHNTHelper();
+    trace(assemblage.toConstruction(0, helper));
+    assemblage.time.update();
+    trace(assemblage.toConstruction(0, helper));
+}
+```

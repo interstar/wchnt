@@ -1,0 +1,52 @@
+# Example: calling methods
+
+Receiver required. Parentheses and commas on arguments. PlayArea is Rect, so area lives on playArea.rect.
+
+## Schema
+
+```
+Game = PlayArea Ball
+PlayArea = Rect
+Rect = Int/x Int/y Int/width Int/height
+Ball = Int/x Int/y Int/dx Int/dy Int/rad
+```
+
+## Construction
+
+```
+[:Game
+  [:PlayArea [0 0 800 600]]
+  [:Ball 100 100 1 1 5]
+]
+```
+
+## Methods
+
+```
+Rect::area = { width * height }
+
+Rect::contains = {px, py | (px >= x) and (px <= (x + width)) and (py >= y) and (py <= (y + height))}
+
+Ball::move = { [:Ball (x + dx) (y + dy) dx dy rad] }
+
+Ball::step = { this.move() }
+
+Game::playAreaSize = { playArea.rect.area() }
+
+Game::ballInside = { playArea.rect.contains(ball.x, ball.y) }
+```
+
+## Target
+
+```
+%main
+public static function main():Void {
+    var assemblage = gameFactory();
+    var helper = new WCHNTHelper();
+    trace(assemblage.toConstruction(0, helper));
+    trace("playAreaSize");
+    trace(assemblage.playAreaSize());
+    trace("ballInside");
+    trace(assemblage.ballInside());
+}
+```

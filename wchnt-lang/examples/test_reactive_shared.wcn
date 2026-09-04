@@ -1,0 +1,35 @@
+# Example: shared Time bound once, used as a $ component
+
+## Schema
+
+```
+Game = $Time
+Time = Int/t
+```
+
+## Construction
+
+```
+t = [:Time 0].
+[:Game t]
+```
+
+## Methods
+
+```
+Time::update = { [:Time t] }
+Game::update = { [:Game time] }
+```
+
+## Target
+
+```
+%main
+public static function main():Void {
+    var assemblage = gameFactory();
+    var helper = new WCHNTHelper();
+    trace(assemblage.toConstruction(0, helper));
+    assemblage.time.update();
+    trace(assemblage.toConstruction(0, helper));
+}
+```

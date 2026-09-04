@@ -1,0 +1,70 @@
+# Bounce on OpenFL
+
+The assemblage is the ball against a wall — same model as `bounce.wcn`. Target is OpenFL with P5-style `init` / `step` in Haxe: `init` builds the heap, `step` asks Game to step then draws. The compiler only wires those two functions onto a Sprite frame loop.
+
+For the same window driven by `$Time` (Target ticks the clock, Game reacts), see `bounce_openfl_time.wcn`.
+
+## Schema
+
+```
+Game = PlayArea Ball
+PlayArea = Rect
+Rect = Int/x Int/y Int/width Int/height
+Ball = Int/x Int/y Int/dx Int/dy Int/rad
+```
+
+## Construction
+
+```
+[:Game
+  [:PlayArea [0 0 800 600]]
+  [:Ball 200 150 6 5 16]
+]
+```
+
+## Methods
+
+```
+Game::bounceDx = {
+  r = playArea.rect.
+  if ((ball.x < r.x) or (ball.x > (r.x + r.width))) { -ball.dx } else { ball.dx }
+}
+
+Game::bounceDy = {
+  r = playArea.rect.
+  if ((ball.y < r.y) or (ball.y > (r.y + r.height))) { -ball.dy } else { ball.dy }
+}
+
+Game::step = {
+  ndx = this.bounceDx().
+  ndy = this.bounceDy().
+  [:Game playArea [:Ball (ball.x + ndx) (ball.y + ndy) ndx ndy ball.rad]]
+}
+```
+
+## Target
+
+```
+%openfl
+
+%init
+var assemblage:Game;
+
+function init():Void {
+    assemblage = gameFactory();
+}
+
+%step
+function step():Void {
+    assemblage = assemblage.step();
+    var r = assemblage.playArea.rect;
+    var b = assemblage.ball;
+    graphics.clear();
+    graphics.beginFill(0x2a2a2a);
+    graphics.drawRect(r.x, r.y, r.width, r.height);
+    graphics.endFill();
+    graphics.beginFill(0xf2f2f2);
+    graphics.drawCircle(b.x, b.y, b.rad);
+    graphics.endFill();
+}
+```

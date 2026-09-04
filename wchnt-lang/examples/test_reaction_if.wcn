@@ -1,0 +1,36 @@
+# Example: if as an expression
+
+C-like if/else. Both branches required. The value of the if is the value of the chosen branch.
+
+## Schema
+
+```
+Ball = Int/x Int/y Int/dx Int/dy Int/rad
+```
+
+## Construction
+
+```
+[:Ball 100 100 -3 1 5]
+```
+
+## Methods
+
+```
+Ball::absDx = {
+  if (dx < 0) { -dx } else { dx }
+}
+```
+
+## Target
+
+```
+%main
+public static function main():Void {
+    var assemblage = ballFactory();
+    var helper = new WCHNTHelper();
+    trace(assemblage.toConstruction(0, helper));
+    trace("absDx");
+    trace(assemblage.absDx());
+}
+```

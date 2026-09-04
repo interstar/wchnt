@@ -1,0 +1,58 @@
+# Team stats: map, filter, fold, and if
+
+Array combinators take a block. `fold` takes the seed first. `if` is an expression, including inside a method that map calls.
+
+## Schema
+
+```
+Team = String/name [Player]/players
+Player = String/name Int/score
+```
+
+## Construction
+
+```
+[:Team
+  "Rockets"
+  [:Array/Player
+    ["Ada" 3]
+    ["Bob" 0]
+    ["Cy" 5]
+  ]
+]
+```
+
+## Methods
+
+```
+Player::label = {
+  if (score > 0) { name } else { "bench" }
+}
+
+Team::names = { players.map({ p | p.name }) }
+
+Team::labels = { players.map({ p | p.label() }) }
+
+Team::scorers = { players.filter({ p | p.score > 0 }) }
+
+Team::total = { players.fold(0, { acc, p | acc + p.score }) }
+```
+
+## Target
+
+```
+%main
+public static function main():Void {
+    var assemblage = teamFactory();
+    var helper = new WCHNTHelper();
+    trace(assemblage.toConstruction(0, helper));
+    trace("names");
+    trace(helper.arrayToConstruction(assemblage.names(), 0));
+    trace("labels");
+    trace(helper.arrayToConstruction(assemblage.labels(), 0));
+    trace("scorers");
+    trace(helper.arrayToConstruction(assemblage.scorers(), 0));
+    trace("total");
+    trace(assemblage.total());
+}
+```

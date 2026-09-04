@@ -1,0 +1,36 @@
+# Example: test_reactive.wcn
+
+`$Time` wires Time.subscribe(Game). Both classes define identity `update` so notify and the tick loop have something to call.
+
+## Schema
+
+```
+Game = $Time
+Time = Int/t
+```
+
+## Construction
+
+```
+[:Game [:Time 0]]
+```
+
+## Methods
+
+```
+Time::update = { [:Time t] }
+Game::update = { [:Game time] }
+```
+
+## Target
+
+```
+%main
+public static function main():Void {
+    var assemblage = gameFactory();
+    var helper = new WCHNTHelper();
+    trace(assemblage.toConstruction(0, helper));
+    assemblage.time.update();
+    trace(assemblage.toConstruction(0, helper));
+}
+```
