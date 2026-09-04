@@ -1,7 +1,5 @@
 (ns wchnt-lang.schema
-  (:require [malli.core :as m]
-            [malli.generator :as mg]
-            [malli.error :as me]))
+  (:require [malli.core :as m]))
 
 
 
@@ -28,7 +26,7 @@
   [:map
    [:schema string?]
    [:construction string?]
-   [:reactive string?]
+   [:methods string?]
    [:imperative string?]
    [:target string?]])
 
@@ -50,9 +48,17 @@
   (and (vector? ast)
        (= (first ast) :BlockStatements)
        (every? vector? (rest ast))
-       (every? #(and (vector? %) 
+       (every? #(and (vector? %)
                      (keyword? (first %))
                      (contains? #{:Expression :Assignment :Statement :WS} (first %)))
+               (rest ast))))
+
+(defn valid-reaction-ast? [ast]
+  "Validate that reaction AST is a Code node of method definitions"
+  (and (vector? ast)
+       (= (first ast) :Code)
+       (every? #(and (vector? %)
+                     (contains? #{:MethodDefinition :WS} (first %)))
                (rest ast))))
 
 (defn valid-ast-node? [node]
@@ -95,17 +101,7 @@
 
 
 (defn valid-full-program? [result]
-  (let [test (m/validate FullProgramStructure result) ]
-    (println "In valid-full-program?")
-    (println test)
-    (if-not test
-      (let [exp (m/explain FullProgramStructure result)]
-        (println "FULL-PROGRAM-STRUCTURE FAILED")
-        (println exp)
-        (println (me/humanize exp))
-        (println "====================== .... end of FAIL =====")
-        result)
-      result)))
+  (m/validate FullProgramStructure result))
 
  
 
@@ -267,7 +263,9 @@
    [:method-name string?]
    [:parameters [:sequential Parameter]]
    [:return-type string?]
-   [:body any?]])
+   [:interface-signature {:optional true} boolean?]
+   [:lets [:sequential [:map [:name string?] [:value any?]]]]
+   [:body {:optional true} any?]])
 
 (def MethodsIR
   [:sequential Method])
@@ -328,60 +326,4 @@
   (let [construction-ir (:construction ir)]
     (if (has-structured-args? construction-ir)
       {:valid true :message "IR has proper structured arguments"}
-      {:valid false :message "IR contains raw AST nodes instead of structured arguments"})))
-
-;; =============================================================================
-;; Three-Stage Pipeline Data Structure Schemas (Malli)
-;; =============================================================================
-
-;; Stage 1: Flattened AST Schemas
-(def FlattenedASTNode
-  [:or
-   [:Assignment string? any?]  ;; [:Assignment "obj1" construction-node]
-   [:Expression any?]
-   [:Statement any?]
-   [:WS string?]])
-
-(def FlattenedAST
-  [:map
-   [:type [:= :BlockStatements]]
-   [:statements [:sequential FlattenedASTNode]]])
-
-;; Stage 2: Construction IR Schemas (Simplified)
-(def NewConstructionObject
-  [:map
-   [:type [:enum :object :array :map :primitive :variable :enum-value :error]]
-   [:class-name [:maybe string?]]
-   [:args [:sequential [:ref ::ConstructionArg]]]
-   [:index int?]
-   [:value {:optional true} [:maybe [:or string? int? boolean?]]]])
-
-(def NewConstructionIR
-  [:map
-   [:objects [:map-of string? NewConstructionObject]]
-   [:variable-mappings [:map-of string? string?]]
-   [:return-object string?]])
-
-;; Stage 3: Complete IR Schema (Combined)
-(def NewCompleteIR
-  [:map
-   [:schema SchemaIR]
-   [:construction NewConstructionIR]])
-
-;; =============================================================================
-;; Three-Stage Pipeline Validation Functions
-;; =============================================================================
-
-(defn valid-flattened-ast? [ast]
-  "Validate that flattened AST has the expected structure"
-  (m/validate FlattenedAST ast))
-
-(defn valid-new-construction-ir? [construction-ir]
-  "Validate new construction IR structure"
-  (m/validate NewConstructionIR construction-ir {:registry construction-registry}))
-
-(defn valid-new-complete-ir? [ir]
-  "Validate new complete IR structure"
-  (m/validate NewCompleteIR ir {:registry construction-registry}))
-
-;; ============================================================================= 
+      {:valid false :message "IR contains raw AST nodes instead of structured arguments"}))) 

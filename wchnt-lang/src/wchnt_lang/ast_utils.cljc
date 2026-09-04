@@ -6,17 +6,22 @@
   [ast kw]
   (and (vector? ast) (= (first ast) kw)))
 
+(defn- find-nodes-by-type*
+  [node node-type]
+  (cond
+    (node-type? node node-type)
+    [node]
+
+    (vector? node)
+    (mapcat #(find-nodes-by-type* % node-type) (rest node))
+
+    :else
+    []))
+
 (defn find-nodes-by-type
   "Find all nodes of a specific type in an AST"
   [ast node-type]
-  (letfn [(find-nodes [node]
-            (cond
-              (node-type? node node-type)
-              [node]
-              (vector? node)
-              (mapcat find-nodes (rest node))
-              :else []))]
-    (find-nodes ast)))
+  (find-nodes-by-type* ast node-type))
 
 (defn find-first-node-by-type
   "Find the first node of a specific type in an AST"
@@ -35,12 +40,14 @@
   (when (vector? ast)
     (first ast)))
 
+(defn- walk-ast*
+  [node visitor-fn]
+  (let [result (visitor-fn node)]
+    (if (vector? node)
+      (map #(walk-ast* % visitor-fn) (rest node))
+      result)))
+
 (defn walk-ast
   "Walk an AST and apply a function to each node"
   [ast visitor-fn]
-  (letfn [(walk [node]
-            (let [result (visitor-fn node)]
-              (if (vector? node)
-                (map walk (rest node))
-                result)))]
-    (walk ast))) 
+  (walk-ast* ast visitor-fn))

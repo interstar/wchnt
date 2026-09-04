@@ -22,7 +22,7 @@
 
 
 (defn compile-wchnt-file
-  "Compile a WCHNT file using the new pipeline structure.
+  "Compile a WCHNT file.
    
    Args:
      file-path - Path to the WCHNT file
@@ -75,14 +75,14 @@
                  (:success result))
               (let [full-program (:value result)
                     has-construction? (:has-construction? full-program)
-                    user-defined-main? (:user-defined-main? full-program)]
-                (cond
-                  (not has-construction?)
-                  (println "// WCHNT Library - No construction section, no Main class generated")
-                  user-defined-main?
-                  (println "// WCHNT Program with user-defined Main class - no main() method yet")
-                  :else
-                  (println "// WCHNT Program - Contains construction section"))
+                    host (or (:host full-program) "none")
+                    preamble (:preamble full-program)]
+                (println (str "// WCHNT host: " host))
+                (if has-construction?
+                  (println "// WCHNT Program - Contains construction section")
+                  (println "// WCHNT Library - No construction section, no Main class generated"))
+                (when-not (str/blank? preamble)
+                  (println preamble))
                 (println (:classes full-program))
                 (println (:main-class full-program))
                 (if verbose?                

@@ -121,10 +121,10 @@
             (.put error-map "error" (.getMessage e))
             error-map))))))
 
-(defn -getConstructionParser [this ^String schema-input]
+(defn -getConstructionParser [this ^String _schema-input]
+  ;; _schema-input is unused: construction grammar is unified, not generated from the schema.
   (try
-    (let [parser-fn parser/parse-construction-unified]
-          (create-parser-function parser-fn))
+    (create-parser-function grammars/parse-construction)
     (catch Exception e
       (create-error-function (.getMessage e)))))
 
@@ -134,7 +134,8 @@
     (catch Exception e
       (str "Error getting schema grammar: " (.getMessage e)))))
 
-(defn -getConstructionGrammarAsString [this ^String schema-input]
+(defn -getConstructionGrammarAsString [this ^String _schema-input]
+  ;; _schema-input is unused: one construction grammar, independent of schema.
   (try
     grammars/construction-grammar
     (catch Exception e

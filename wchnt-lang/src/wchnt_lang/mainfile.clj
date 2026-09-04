@@ -2,7 +2,7 @@
   (:require [clojure.string :as str]
             [wchnt-lang.pipeline :as p]))
 
-(def section-order ["schema" "construction" "reactive" "imperative" "target"])
+(def section-order ["schema" "construction" "methods" "imperative" "target"])
 
 (defn valid-section? [section-name]
   "Check if section name is valid and return its index"
@@ -45,6 +45,70 @@
       :else
       true)))
 
+(defn- finalize-extract-state
+  [{:keys [in-code-block current-section current-code section-map]}]
+  (when in-code-block
+    (throw (ex-info "Malformed markdown: unclosed code block" {})))
+  (let [final-section-map (finalize-current-section current-section current-code section-map)]
+    ;; Fill in missing sections with ""
+    (mapv #(vector % (get final-section-map % "")) section-order)))
+
+(defn- handle-line-in-code-block
+  [{:keys [current-section current-section-idx current-code section-map code-block-seen seen-sections] :as state}
+   {:keys [original-line trimmed-line code-block-start code-block-end section-pattern]}]
+  (cond
+    (re-matches code-block-end trimmed-line)
+    (let [updated-section-map (assoc section-map current-section (str/join "\n" current-code))
+          updated-code-block-seen (conj code-block-seen current-section)]
+      (assoc state
+             :in-code-block false
+             :current-code []
+             :section-map updated-section-map
+             :code-block-seen updated-code-block-seen))
+
+    (re-matches section-pattern trimmed-line)
+    (throw (ex-info "Malformed markdown: unclosed code block" {}))
+
+    (re-matches code-block-start trimmed-line)
+    (throw (ex-info "Malformed markdown: nested code block" {}))
+
+    :else
+    (assoc state :current-code (conj current-code original-line))))
+
+(defn- handle-line-outside-code-block
+  [{:keys [current-section current-section-idx current-code section-map code-block-seen seen-sections] :as state}
+   {:keys [trimmed-line code-block-start code-block-end section-pattern]}]
+  (cond
+    ;; Section header - always reset code block state
+    (re-matches section-pattern trimmed-line)
+    (let [section-name (str/lower-case (second (re-matches section-pattern trimmed-line)))
+          new-section-idx (check-section-order section-name current-section-idx)
+          updated-section-map (try
+                                (finalize-current-section current-section current-code section-map)
+                                (catch Exception e
+                                  (throw (ex-info (.getMessage e) {:section current-section}))))]
+      (assoc state
+             :current-section section-name
+             :current-section-idx new-section-idx
+             :current-code []
+             :section-map updated-section-map
+             :seen-sections (conj seen-sections section-name)))
+
+    ;; Code block start
+    (re-matches code-block-start trimmed-line)
+    (do
+      (when (contains? code-block-seen current-section)
+        (throw (ex-info (str "Section '" current-section "' has multiple code blocks") {:section current-section})))
+      (assoc state :in-code-block true :current-code []))
+
+    ;; Code block end (should not happen outside code block)
+    (re-matches code-block-end trimmed-line)
+    (throw (ex-info "Malformed markdown: stray code block end" {}))
+
+    ;; Outside code block, ignore line
+    :else
+    state))
+
 (defn extract-code-blocks [content]
   "Extract code blocks from markdown, enforcing one code block per section, correct order, and proper error handling."
   (let [lines (str/split-lines content)
@@ -52,63 +116,27 @@
         code-block-end #"^```\s*$"
         section-pattern #"^##\s*(\w+)\s*$"]
     (loop [lines lines
-           current-section nil
-           current-section-idx -1
-           in-code-block false
-           current-code []
-           section-map {}
-           code-block-seen #{} ; track sections that have had a code block
-           seen-sections #{}]
+           state {:current-section nil
+                  :current-section-idx -1
+                  :in-code-block false
+                  :current-code []
+                  :section-map {}
+                  :code-block-seen #{}
+                  :seen-sections #{}}]
       (if (empty? lines)
-        ;; End of file: finalize last section if needed
-        (if in-code-block
-          (throw (ex-info "Malformed markdown: unclosed code block" {}))
-          (let [final-section-map (finalize-current-section current-section current-code section-map)]
-            ;; Fill in missing sections with ""
-            (mapv #(vector % (get final-section-map % "")) section-order)))
+        (finalize-extract-state state)
         (let [original-line (first lines)
               trimmed-line (str/trim original-line)
-              remaining-lines (rest lines)]
-          (cond
-            ;; Inside code block: check for code block end first
-            in-code-block
-            (cond
-              (re-matches code-block-end trimmed-line)
-              (let [updated-section-map (assoc section-map current-section (str/join "\n" current-code))
-                    updated-code-block-seen (conj code-block-seen current-section)]
-                (recur remaining-lines current-section current-section-idx false [] updated-section-map updated-code-block-seen seen-sections))
-              (re-matches section-pattern trimmed-line)
-              (throw (ex-info "Malformed markdown: unclosed code block" {}))
-              (re-matches code-block-start trimmed-line)
-              (throw (ex-info "Malformed markdown: nested code block" {}))
-              :else
-              (recur remaining-lines current-section current-section-idx true (conj current-code original-line) section-map code-block-seen seen-sections))
-
-            ;; Section header - always reset code block state
-            (re-matches section-pattern trimmed-line)
-            (let [section-name (str/lower-case (second (re-matches section-pattern trimmed-line)))
-                  new-section-idx (check-section-order section-name current-section-idx)
-                  updated-section-map (try
-                                        (finalize-current-section current-section current-code section-map)
-                                        (catch Exception e
-                                          (throw (ex-info (.getMessage e) {:section current-section}))))
-                  updated-seen-sections (conj seen-sections section-name)]
-              (recur remaining-lines section-name new-section-idx false [] updated-section-map code-block-seen updated-seen-sections))
-
-            ;; Code block start
-            (re-matches code-block-start trimmed-line)
-            (do
-              (when (contains? code-block-seen current-section)
-                (throw (ex-info (str "Section '" current-section "' has multiple code blocks") {:section current-section})))
-              (recur remaining-lines current-section current-section-idx true [] section-map code-block-seen seen-sections))
-
-            ;; Code block end (should not happen outside code block)
-            (re-matches code-block-end trimmed-line)
-            (throw (ex-info "Malformed markdown: stray code block end" {}))
-
-            ;; Outside code block, ignore line
-            :else
-            (recur remaining-lines current-section current-section-idx false current-code section-map code-block-seen seen-sections)))))))
+              remaining-lines (rest lines)
+              ctx {:original-line original-line
+                   :trimmed-line trimmed-line
+                   :code-block-start code-block-start
+                   :code-block-end code-block-end
+                   :section-pattern section-pattern}]
+          (recur remaining-lines
+                 (if (:in-code-block state)
+                   (handle-line-in-code-block state ctx)
+                   (handle-line-outside-code-block state ctx))))))))
 
 (defn validate-sections [sections]
   "Validate that required sections are present and return error message if not"
@@ -128,7 +156,7 @@
         (let [section-map (into {} sections)]
           (p/success-cargo {:schema (get section-map "schema" "")
            :construction (get section-map "construction" "")
-           :reactive (get section-map "reactive" "")
+           :methods (get section-map "methods" "")
            :imperative (get section-map "imperative" "")
                            :target (get section-map "target" "")}))))
     (catch clojure.lang.ExceptionInfo e

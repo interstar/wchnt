@@ -3,17 +3,10 @@
   (:require [wchnt-lang.ir :as ir]
             [wchnt-lang.parser :as parser]
             [wchnt-lang.ast-utils :as ast-utils]
-            [com.rpl.specter :as s]
+            [wchnt-lang.ast-args :as ast-args]
             [clojure.string :as str]))
 
 (declare flatten-nested-constructions)
-
-(declare type-from-class-and-position walk visit-node walk-with-context
-         process-map-construction-expression
-         establish-context! establish-object-construction-context 
-         establish-inner-object-construction-context establish-array-construction-context
-         flatten-with-context flatten-inner-object-construction-with-context 
-         flatten-array-construction-with-context)
 
 ;; =============================================================================
 ;; Schema AST to IR Transformation
@@ -41,45 +34,44 @@
      :relationship relationship
      :optional-name optional-name}))
 
+(defn- walk-for-contexts!
+  [node parent-class context-map]
+  (when (vector? node)
+    (let [[tag & children] node]
+      (case tag
+        :Schema
+        (doseq [child (filter vector? children)]
+          (walk-for-contexts! child parent-class context-map))
+
+        :CompositionLine
+        (let [definee-node (first (filter #(= (first %) :Definee) children))
+              class-name (second definee-node)
+              element-nodes (filter #(= (first %) :Element) children)
+              processed-elements (map parser/process-element element-nodes)
+              context-elements (filter #(= (:sigil %) ":") processed-elements)]
+          (doseq [element context-elements]
+            (swap! context-map assoc (:type element) class-name))
+          (when (nil? (get @context-map class-name))
+            (swap! context-map assoc class-name nil))
+          (doseq [child (filter vector? children)]
+            (walk-for-contexts! child class-name context-map)))
+
+        :DisjunctionLine
+        (doseq [child (filter vector? children)]
+          (walk-for-contexts! child parent-class context-map))
+
+        :EnumLine
+        nil
+
+        (doseq [child (filter vector? children)]
+          (walk-for-contexts! child parent-class context-map))))))
+
 (defn build-context-relationships
   "Build context relationship mappings from schema AST"
   [schema-ast]
   (let [context-map (atom {})]
-    (letfn [(walk-for-contexts [node parent-class]
-              (when (vector? node)
-                (let [[tag & children] node]
-                  (case tag
-                    :Schema 
-                    (doseq [child (filter vector? children)]
-                      (walk-for-contexts child parent-class))
-                    :CompositionLine
-                    (let [definee-node (first (filter #(= (first %) :Definee) children))
-                          class-name (second definee-node)
-                          element-nodes (filter #(= (first %) :Element) children)
-                          processed-elements (map parser/process-element element-nodes)
-                          context-elements (filter #(= (:sigil %) ":") processed-elements)]
-                      ;; Record context relationships: context-specific components get this class as their context
-                      (doseq [element context-elements]
-                        (swap! context-map assoc (:type element) class-name))
-                      ;; Initialize this class to nil only if it doesn't already have a context
-                      (when (nil? (get @context-map class-name))
-                        (swap! context-map assoc class-name nil))
-                      ;; Recursively check nested contexts
-                      (doseq [child (filter vector? children)]
-                        (walk-for-contexts child class-name)))
-                    :DisjunctionLine
-                    (let [definee-node (first (filter #(= (first %) :Definee) children))
-                          interface-name (second definee-node)]
-                      (doseq [child (filter vector? children)]
-                        (walk-for-contexts child parent-class)))
-                    :EnumLine
-                    ;; Enums don't have contexts
-                    nil
-                    ;; Recursively process other nodes
-                    (doseq [child (filter vector? children)]
-                      (walk-for-contexts child parent-class))))))]
-      (walk-for-contexts schema-ast nil)
-      @context-map)))
+    (walk-for-contexts! schema-ast nil context-map)
+    @context-map))
 
 (defn build-interface-implementers
   "Build interface implementation mappings from schema AST"
@@ -100,42 +92,62 @@
                         acc type-names)))
             {} disjunction-nodes)))
 
+(def primitive-type-names #{"Int" "String" "Float" "Bool"})
+
+(defn- collection-type-name?
+  [type-name]
+  (or (str/starts-with? type-name "Array<")
+      (str/starts-with? type-name "Map<")))
+
+(defn- reactive-pairs-from-composition-line
+  [composition-line]
+  (let [[_ & children] composition-line
+        definee-node (first (filter #(= (first %) :Definee) children))
+        class-name (second definee-node)
+        elements (map parser/process-element
+                      (filter #(= (first %) :Element) children))]
+    (for [element elements
+          :when (= "$" (:sigil element))]
+      {:subscriber class-name
+       :observable (:type element)})))
+
 (defn build-observable-and-subscriber-classes
   "Build observable and subscriber class lists from schema AST"
   [schema-ast]
-  (let [observable-classes (atom #{})
-        subscriber-classes (atom #{})]
-    (letfn [(walk-for-reactive [node parent-class]
-              (when (vector? node)
-                (let [[tag & children] node]
-                  (case tag
-                    :Schema 
-                    (doseq [child (filter vector? children)]
-                      (walk-for-reactive child parent-class))
-                    :CompositionLine
-                    (let [definee-node (first (filter #(= (first %) :Definee) children))
-                          class-name (second definee-node)
-                          element-nodes (filter #(= (first %) :Element) children)
-                          processed-elements (map parser/process-element element-nodes)
-                          reactive-elements (filter #(= (:sigil %) "$") processed-elements)]
-                      ;; Record reactive relationships
-                      (doseq [element reactive-elements]
-                        (swap! observable-classes conj (:type element))
-                        (swap! subscriber-classes conj class-name))
-                      ;; Recursively check nested contexts
-                      (doseq [child (filter vector? children)]
-                        (walk-for-reactive child class-name)))
-                    :DisjunctionLine
-                    (doseq [child (filter vector? children)]
-                      (walk-for-reactive child parent-class))
-                    :EnumLine
-                    nil
-                    ;; Recursively process other nodes
-                    (doseq [child (filter vector? children)]
-                      (walk-for-reactive child parent-class))))))]
-      (walk-for-reactive schema-ast nil)
-      {:observable-classes (vec @observable-classes)
-       :subscriber-classes (vec @subscriber-classes)})))
+  (let [pairs (mapcat reactive-pairs-from-composition-line
+                      (parser/find-all-nodes :CompositionLine schema-ast))]
+    {:observable-classes (vec (distinct (map :observable pairs)))
+     :subscriber-classes (vec (distinct (map :subscriber pairs)))}))
+
+(defn- validate-reactive-component!
+  [subscriber-class {:keys [type-name component-name]} assemblage-names]
+  (cond
+    (contains? primitive-type-names type-name)
+    (throw (ex-info (str "Reactive component $" type-name " on " subscriber-class
+                         " must be a schema class, not a primitive")
+                    {:class subscriber-class :type-name type-name}))
+
+    (collection-type-name? type-name)
+    (throw (ex-info (str "Reactive component $" type-name " on " subscriber-class
+                         " must be a single object, not a collection")
+                    {:class subscriber-class :type-name type-name}))
+
+    (not (contains? assemblage-names type-name))
+    (throw (ex-info (str "Reactive component $" type-name
+                         (when component-name (str "/" component-name))
+                         " on " subscriber-class
+                         " is not a class in this schema")
+                    {:class subscriber-class :type-name type-name}))))
+
+(defn- validate-reactive-components!
+  [assemblages]
+  (let [assemblage-names (set (map :name assemblages))]
+    (doseq [assemblage assemblages
+            component (:components assemblage)
+            :when (= :reactive (:relationship component))]
+      (validate-reactive-component! (:name assemblage) component assemblage-names)))
+  assemblages)
+
 
 (defn transform-composition-line
   "Transform a composition line to an assemblage"
@@ -186,6 +198,12 @@
      :depth-parameter true
      :format :hiccup}))
 
+(defn- assert-no-reserved-class-names!
+  [assemblages]
+  (when (some #(= "Main" (:name %)) assemblages)
+    (throw (ex-info "Schema class 'Main' is reserved. The compiler generates class Main as the program entry. Rename the class."
+                    {:reserved "Main"}))))
+
 (defn schema-ast-to-ir
   "Transform schema AST to IR schema"
   [schema-ast]
@@ -193,124 +211,28 @@
         disjunction-lines (parser/find-all-nodes :DisjunctionLine schema-ast)
         enum-lines (parser/find-all-nodes :EnumLine schema-ast)
         
-        assemblages (map transform-composition-line composition-lines)
-        interfaces (map transform-disjunction-line disjunction-lines)
-        enums (map transform-enum-line enum-lines)
-        
-        context-relationships (build-context-relationships schema-ast)
-        interface-implementers (build-interface-implementers schema-ast)
-        {:keys [observable-classes subscriber-classes]} (build-observable-and-subscriber-classes schema-ast)
-        debug-methods (create-debug-methods assemblages)]
-    
-    (ir/create-schema-ir assemblages interfaces enums context-relationships 
-                         interface-implementers observable-classes subscriber-classes debug-methods)))
+        assemblages (validate-reactive-components!
+                     (map transform-composition-line composition-lines))]
+    (assert-no-reserved-class-names! assemblages)
+    (let [interfaces (map transform-disjunction-line disjunction-lines)
+          enums (map transform-enum-line enum-lines)
+          context-relationships (build-context-relationships schema-ast)
+          interface-implementers (build-interface-implementers schema-ast)
+          {:keys [observable-classes subscriber-classes]} (build-observable-and-subscriber-classes schema-ast)
+          debug-methods (create-debug-methods assemblages)]
+      (ir/create-schema-ir assemblages interfaces enums context-relationships
+                           interface-implementers observable-classes subscriber-classes debug-methods))))
 
 ;; =============================================================================
-;; Construction AST to IR Transformation (Placeholder)
+;; Construction AST to IR
 ;; =============================================================================
-
-
 
 (defn extract-args-from-object-construction
-  "Extract arguments from a single ObjectConstruction node"
+  "Extract structured arguments from a single ObjectConstruction node.
+
+  Implementation lives in wchnt-lang.ast-args so it can be reused across phases."
   [object-construction schema-ir root-class-name]
-  (letfn [(lookup-expected-class-name [arg-index]
-            "Look up the expected class name for an argument at the given index"
-            (let [assemblage (first (filter #(= (:name %) root-class-name) (:assemblages schema-ir)))
-                  components (:components assemblage)]
-              (if (and assemblage components (< arg-index (count components)))
-                (:type-name (nth components arg-index))
-                (throw (ex-info "Could not determine expected class name for argument"
-                              {:arg-index arg-index
-                               :root-class-name root-class-name
-                               :schema-ir schema-ir})))))
-          
-          (extract-arg-item [arg-item arg-index]
-            (cond
-              ;; VariableRef - check if it's actually an enum value reference
-              (ast-utils/node-type? arg-item :VariableRef)
-              (let [var-name (second arg-item)
-                    ;; Check if this variable name matches any enum value in the schema
-                    enum-values (mapcat :values (:enums schema-ir))
-                    is-enum-value (some #(= var-name %) enum-values)]
-                (if is-enum-value
-                  {:type :enum-value
-                   :class-name "Enum"
-                   :value var-name
-                   :args []
-                   :index arg-index}
-                  {:type :variable
-                   :class-name "VariableRef"
-                   :value var-name
-                   :args []
-                   :index arg-index}))
-              
-                             ;; InnerObjectConstruction
-               (ast-utils/node-type? arg-item :InnerObjectConstruction)
-               (let [second-element (second arg-item)]
-                 (if (ast-utils/node-type? second-element :ClassName)
-                   ;; Class name is explicit: [:InnerObjectConstruction [:ClassName "X"] [:ArgList ...]]
-                   (let [class-name (second second-element)
-                         arg-list (nth arg-item 2)]
-                     {:type :object
-                      :class-name class-name
-                      :args (extract-arg-list arg-list)
-                      :index arg-index})
-                   ;; Class name is omitted: [:InnerObjectConstruction [:ArgList ...]]
-                   (let [expected-class-name (lookup-expected-class-name arg-index)
-                         arg-list (second arg-item)]
-                     {:type :object
-                      :class-name expected-class-name
-                      :args (extract-arg-list arg-list)
-                      :index arg-index})))
-              
-              ;; ArrayConstruction - treat as object (will be flattened later)
-              (ast-utils/node-type? arg-item :ArrayConstruction)
-              (let [arg-list (nth arg-item 2)]
-                {:type :array
-                 :class-name (second (second arg-item))
-                 :args (extract-arg-list arg-list)
-                 :index arg-index})
-
-              ;; MapConstruction
-              (ast-utils/node-type? arg-item :MapConstruction)
-              (assoc (process-map-construction-expression arg-item)
-                     :index arg-index)
-              
-              ;; IntLiteral
-              (ast-utils/node-type? arg-item :IntLiteral)
-              {:type :primitive
-               :class-name "Int"
-               :value (Integer/parseInt (second arg-item))
-               :args []
-               :index arg-index}
-              
-              ;; StringLiteral
-              (ast-utils/node-type? arg-item :StringLiteral)
-              {:type :primitive
-               :class-name "String"
-               :value (second arg-item)
-               :args []
-               :index arg-index}
-              
-              ;; Default to primitive
-              :else {:type :primitive
-                     :class-name "Unknown"
-                     :value arg-item
-                     :args []
-                     :index arg-index}))
-          
-          (extract-arg-list [arg-list]
-            (if (ast-utils/node-type? arg-list :ArgList)
-              (map-indexed (fn [arg-index arg-item]
-                            (extract-arg-item arg-item arg-index))
-                          (rest arg-list))
-              []))]
-    
-    (if (ast-utils/node-type? object-construction :ObjectConstruction)
-      (let [arg-list (nth object-construction 2)]
-        (extract-arg-list arg-list))
-      [])))
+  (ast-args/extract-args-from-object-construction object-construction schema-ir root-class-name))
 
 
 
@@ -323,79 +245,6 @@
 
 
 
-
-(defn extract-args-from-ast
-  "Extract arguments from parsed construction AST, processing assignments and final construction"
-  [construction-ast]
-  (letfn [(extract-arg-item [arg-item]
-            (cond
-              ;; InnerObjectConstruction
-              (ast-utils/node-type? arg-item :InnerObjectConstruction)
-              (let [class-name-node (second arg-item)
-                    class-name (if (ast-utils/node-type? class-name-node :ClassName)
-                                (second class-name-node)
-                                (if (string? class-name-node)
-                                  class-name-node
-                                  (str class-name-node)))
-                    arg-list (nth arg-item 2)
-                    nested-args (extract-arg-list arg-list)]
-                [:object class-name nested-args])
-              
-              ;; VariableRef
-              (ast-utils/node-type? arg-item :VariableRef)
-              [:variable (second arg-item)]
-              
-              ;; IntLiteral
-              (ast-utils/node-type? arg-item :IntLiteral)
-              [:primitive (Integer/parseInt (second arg-item))]
-              
-              ;; StringLiteral (if it exists)
-              (ast-utils/node-type? arg-item :StringLiteral)
-              [:primitive arg-item]
-              
-              ;; Default to primitive
-              :else [:primitive arg-item]))
-          
-          (extract-arg-list [arg-list]
-            (if (ast-utils/node-type? arg-list :ArgList)
-              (map (fn [arg-item]
-                     (extract-arg-item arg-item))
-                   (rest arg-list))
-              []))
-          
-          (process-assignment [assignment]
-            (let [[_ var-name-node expression] assignment
-                  var-name (second var-name-node)
-                  actual-object (second expression)  ;; Get the object inside [:Expression obj]
-                  ;; For now, just return the variable name and a placeholder
-                  ;; We'll need to process the actual object construction later
-                  ]
-              {:var-name var-name :object actual-object}))
-          
-          (process-final-construction [statements]
-            (let [final-statements (filter #(and (vector? %) (= (first %) :Expression)) statements)
-                  final-construction (if (seq final-statements)
-                                      (second (last final-statements))  ;; Get the expression from [:Expression expr]
-                                      nil)]
-              (if final-construction
-                (let [obj-construction (ast-utils/find-first-node-by-type final-construction :ObjectConstruction)
-          arg-list (nth obj-construction 2)]
-      (if arg-list
-        (extract-arg-list arg-list)
-                    []))
-                [])))]
-    
-    ;; Process the entire construction block
-    (let [statements (rest construction-ast)  ;; Skip :BlockStatements tag
-          ;; Step 1: Process assignments
-          assignments (filter #(and (vector? %) (= (first %) :Assignment)) statements)
-          assignment-results (map process-assignment assignments)
-          ;; Step 2: Process final construction
-          final-args (process-final-construction statements)]
-      
-      ;; For now, return the final construction args
-      ;; TODO: We need to integrate the assignment processing with the final construction
-      final-args)))
 
 (defn process-variable-ref-expression
   "Process a VariableRef expression - resolve to the actual nested object if available"
@@ -474,56 +323,7 @@
 (defn process-map-construction-expression
   "Process a MapConstruction expression"
   [inner-expression]
-  (let [key-type-node (second inner-expression)
-        key-type (if (ast-utils/node-type? key-type-node :KeyType)
-                  (second key-type-node)
-                  (throw (ex-info "Map construction missing key type node" 
-                                {:inner-expression inner-expression})))
-        val-type-node (nth inner-expression 2)
-        val-type (if (ast-utils/node-type? val-type-node :ValType)
-                  (second val-type-node)
-                  (throw (ex-info "Map construction missing value type node" 
-                                {:inner-expression inner-expression})))
-        key-value-list (nth inner-expression 3)
-        structured-args (if (ast-utils/node-type? key-value-list :KeyValueList)
-                        (map-indexed (fn [index key-value-pair]
-                                      (if (ast-utils/node-type? key-value-pair :KeyValuePair)
-                                        (let [key-expr (second key-value-pair)
-                                              val-expr (nth key-value-pair 2)]
-                                          ;; Convert key and value to structured ConstructionArg objects
-                                          (let [key-arg (cond
-                                                         (ast-utils/node-type? key-expr :StringLiteral)
-                                                         {:type :primitive :class-name "String" :value (second key-expr) :args [] :index (* index 2)}
-                                                         (ast-utils/node-type? key-expr :VariableRef)
-                                                         {:type :variable :class-name "VariableRef" :value (second key-expr) :args [] :index (* index 2)}
-                                                         (and (ast-utils/node-type? key-expr :Expression) (ast-utils/node-type? (second key-expr) :StringLiteral))
-                                                         {:type :primitive :class-name "String" :value (second (second key-expr)) :args [] :index (* index 2)}
-                                                         (and (ast-utils/node-type? key-expr :Expression) (ast-utils/node-type? (second key-expr) :VariableRef))
-                                                         {:type :variable :class-name "VariableRef" :value (second (second key-expr)) :args [] :index (* index 2)}
-                                                         :else
-                                                         (throw (ex-info "Unsupported key type in map construction" {:key-expr key-expr})))
-                                                val-arg (cond
-                                                         (ast-utils/node-type? val-expr :StringLiteral)
-                                                         {:type :primitive :class-name "String" :value (second val-expr) :args [] :index (+ (* index 2) 1)}
-                                                         (ast-utils/node-type? val-expr :IntLiteral)
-                                                         {:type :primitive :class-name "Int" :value (second val-expr) :args [] :index (+ (* index 2) 1)}
-                                                         (ast-utils/node-type? val-expr :VariableRef)
-                                                         {:type :variable :class-name "VariableRef" :value (second val-expr) :args [] :index (+ (* index 2) 1)}
-                                                         (and (ast-utils/node-type? val-expr :Expression) (ast-utils/node-type? (second val-expr) :StringLiteral))
-                                                         {:type :primitive :class-name "String" :value (second (second val-expr)) :args [] :index (+ (* index 2) 1)}
-                                                         (and (ast-utils/node-type? val-expr :Expression) (ast-utils/node-type? (second val-expr) :IntLiteral))
-                                                         {:type :primitive :class-name "Int" :value (second (second val-expr)) :args [] :index (+ (* index 2) 1)}
-                                                         (and (ast-utils/node-type? val-expr :Expression) (ast-utils/node-type? (second val-expr) :VariableRef))
-                                                         {:type :variable :class-name "VariableRef" :value (second (second val-expr)) :args [] :index (+ (* index 2) 1)}
-                                                         :else
-                                                         (throw (ex-info "Unsupported value type in map construction" {:val-expr val-expr})))]
-                                            [key-arg val-arg]))
-                                        (throw (ex-info "Invalid key-value pair in map construction" {:key-value-pair key-value-pair}))))
-                                    (rest key-value-list))
-                        [])]
-    {:type :map
-     :class-name (str "Map<" key-type ", " val-type ">")
-     :args (flatten structured-args)}))
+  (ast-args/process-map-construction-expression inner-expression))
 
 (defn process-assignment-expression
   "Process an assignment expression to extract object information"
@@ -909,75 +709,25 @@
   ;; Nested objects don't have variable names, so just return the original mappings
   variable-mappings)
 
-(defn debug-print-construction-state
-  "Print debug information about construction processing"
-  [root-class statements assignment-objects nested-objects all-assignment-objects 
-   final-construction final-objects all-objects]
-  )
-
 (defn construction-ast-to-ir
   "Transform construction AST to IR construction"
   [construction-ast schema-ir]
   (let [root-class (extract-root-class-from-construction construction-ast schema-ir)
         factory-name (str (str/lower-case (first root-class)) (subs root-class 1) "Factory")
-        statements (rest construction-ast)  ;; Skip :BlockStatements tag
-        
-        ;; Flatten nested object constructions
         {:keys [flattened-ast nested-objects]} (flatten-nested-constructions construction-ast schema-ir)
-        ;; Debug output for troubleshooting
-
-        
-        ;; Process assignments from flattened AST, starting counter from number of nested objects
         [assignment-objects variable-mappings] (process-assignments (rest flattened-ast) nested-objects (count nested-objects) schema-ir)
-        
-        ;; Combine all variable mappings and objects
         all-variable-mappings (merge-variable-mappings variable-mappings nested-objects)
         all-assignment-objects (merge assignment-objects nested-objects)
-        
-        ;; Process final construction from flattened AST
         final-construction (find-final-construction (rest flattened-ast))
         final-objects (process-final-construction final-construction all-assignment-objects all-variable-mappings schema-ir root-class)
-        
-        ;; Combine all objects
         all-objects (merge all-assignment-objects final-objects)
-        
-        ;; Determine the return object ID - it should be the final root object
         return-obj-id (if (empty? final-objects)
-                       "obj1"  ;; Fallback if no final objects created
-                       (first (keys final-objects)))]
-    
-    ;; Debug output for troubleshooting
-    (debug-print-construction-state root-class statements assignment-objects nested-objects 
-                                   all-assignment-objects final-construction final-objects all-objects)
-    
+                        "obj1"
+                        (first (keys final-objects)))]
     (ir/create-construction-ir root-class factory-name all-objects [] [] [] [] all-variable-mappings return-obj-id)))
 
-
-
 ;; =============================================================================
-;; Method AST to IR Transformation (Placeholder)
-;; =============================================================================
-
-(defn method-ast-to-ir
-  "Transform method AST to IR methods (placeholder for Phase 3)"
-  [method-ast schema-ir]
-  ;; This will be implemented in Phase 3
-  [])
-
-;; =============================================================================
-;; Main AST to IR Transformation
-;; =============================================================================
-
-(defn ast-to-ir
-  "Transform complete WCHNT AST to IR"
-  [schema-ast construction-ast method-ast]
-  (let [schema-ir (schema-ast-to-ir schema-ast)
-        construction-ir (construction-ast-to-ir construction-ast schema-ir)
-        methods-ir (method-ast-to-ir method-ast schema-ir)]
-    (ir/create-ir schema-ir construction-ir methods-ir))) 
-
-;; =============================================================================
-;; Refactored Flattening Functions (New Architecture)
+;; Construction flattening
 ;; =============================================================================
 
 ;; Forward declarations for functions that reference each other

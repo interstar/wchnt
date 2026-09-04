@@ -4,81 +4,8 @@
             [clojure.string :as str]
             [wchnt-lang.ast-utils :as ast-utils]
             [wchnt-lang.pipeline :as p]
-            [wchnt-lang.ast-to-ir :as ast-to-ir]))
-
-;; =============================================================================
-;; Haxe Helper Interface and Implementation
-;; =============================================================================
-
-(def iwchnt-helper-interface
-  "// Helper interface for complex type serialization
-interface IWCHNTHelper {
-    public function arrayToConstruction<T>(arr: Array<T>, depth: Int): String;
-    public function mapToConstruction<K,V>(map: Map<K,V>, depth: Int): String;
-    public function enumToConstruction(enumValue: Dynamic, depth: Int): String;
-}")
-
-(def iwchnt-helper-implementation
-  "// Implementation of the helper interface
-class WCHNTHelper implements IWCHNTHelper {
-    public function new() {}
-    
-    public function arrayToConstruction<T>(arr: Array<T>, depth: Int): String {
-        var ind = \"\";
-        for (i in 0...depth) ind += \"  \";
-        var nl = '\\n';
-        var result = ind + '[:Array';
-        for (item in arr) {
-            if (Std.isOfType(item, String)) {
-                result += nl + ind + '  ' + '\"' + item + '\"';
-            } else if (Reflect.hasField(item, 'toConstruction')) {
-                result += nl + ind + '  ' + Reflect.callMethod(item, Reflect.field(item, 'toConstruction'), [depth + 1, this]);
-            } else {
-                result += nl + ind + '  ' + Std.string(item);
-            }
-        }
-        result += nl + ind + ']';
-        return result;
-    }
-    
-    public function mapToConstruction<K,V>(map: Map<K,V>, depth: Int): String {
-        var ind = \"\";
-        for (i in 0...depth) ind += \"  \";
-        var nl = '\\n';
-        var result = ind + '[:Map';
-        for (key in map.keys()) {
-            var value = map.get(key);
-            result += nl + ind + '  ';
-            if (Std.isOfType(key, String)) {
-                result += '\"' + key + '\"';
-            } else {
-                result += Std.string(key);
-            }
-            result += ': ';
-            if (Std.isOfType(value, String)) {
-                result += '\"' + value + '\"';
-            } else if (Reflect.hasField(value, 'toConstruction')) {
-                result += Reflect.callMethod(value, Reflect.field(value, 'toConstruction'), [depth + 1, this]);
-            } else {
-                result += Std.string(value);
-            }
-        }
-        result += nl + ind + ']';
-        return result;
-    }
-    
-    public function enumToConstruction(enumValue: Dynamic, depth: Int): String {
-        var ind = \"\";
-        for (i in 0...depth) ind += \"  \";
-        return ind + Std.string(enumValue);
-    }
-}")
-
-(def iwchnt-object-interface
-  "// Interface that all WCHNT objects implement (updated to use helper)
-interface IWCHNTObject {
-    public function toConstruction(depth:Int = 0, helper:IWCHNTHelper):String;
-}")
+            [wchnt-lang.ast-to-ir :as ast-to-ir]
+            [wchnt-lang.haxe-helpers :as haxe-helpers]))
 
 ;; =============================================================================
 ;; IR to Haxe Transformation
@@ -95,7 +22,7 @@ interface IWCHNTObject {
 (defn generate-context-field
   "Generate a Haxe field for context-specific components"
   [parent-class-name]
-  (str "    public var the" parent-class-name ": " parent-class-name ";"))
+  (str "    public var " (ir/context-field-name parent-class-name) ": " parent-class-name ";"))
 
 (defn generate-constructor-params
   "Generate constructor parameters for an assemblage"
@@ -155,7 +82,7 @@ interface IWCHNTObject {
   "Generate setContext method for context-specific components"
   [parent-class-name]
   (str "\n    public function setContext(c: " parent-class-name ") {\n"
-       "        this.the" parent-class-name " = c;\n"
+       "        this." (ir/context-field-name parent-class-name) " = c;\n"
        "    }"))
 
 (defn generate-observable-infrastructure
@@ -174,67 +101,282 @@ interface IWCHNTObject {
        "\n"
        "    public function notifySubscribers(): Void {\n"
        "        for (subscriber in subscribers) {\n"
-       "            if (Reflect.hasField(subscriber, 'update')) {\n"
-       "                Reflect.callMethod(subscriber, Reflect.field(subscriber, 'update'), []);\n"
-       "            }\n"
+       "            Reflect.callMethod(subscriber, Reflect.field(subscriber, 'update'), []);\n"
        "        }\n"
        "    }"))
 
+(declare expr-ir-to-haxe)
+
+(defn- haxe-infix-part
+  [part]
+  (if (string? part)
+    part
+    (let [haxe (expr-ir-to-haxe part)]
+      (if (= :arith (:expr part))
+        (str "(" haxe ")")
+        haxe))))
+
+(defn- haxe-infix
+  [parts]
+  (str/join " " (map haxe-infix-part parts)))
+
+(defn- haxe-join-op
+  [op exprs]
+  (->> exprs
+       (map expr-ir-to-haxe)
+       (str/join (str " " op " "))))
+
+(defn- haxe-lets-then-value
+  [{:keys [lets body]} return?]
+  (let [let-lines (map (fn [{:keys [name value]}]
+                         (str "        var " name " = " (expr-ir-to-haxe value) ";"))
+                       (or lets []))
+        value-line (if return?
+                     (str "        return " (expr-ir-to-haxe body) ";")
+                     (str "        " (expr-ir-to-haxe body) ";"))]
+    (str/join "\n" (concat let-lines [value-line]))))
+
+(defn- haxe-if
+  [expr]
+  (str "if (" (expr-ir-to-haxe (:condition expr)) ") {\n"
+       (haxe-lets-then-value (:then expr) false) "\n"
+       "    } else {\n"
+       (haxe-lets-then-value (:else expr) false) "\n"
+       "    }"))
+
+(defn- haxe-lambda
+  ([expr]
+   (haxe-lambda expr (:params expr)))
+  ([expr params]
+   (let [params-str (str/join ", " (map #(str (:name %) ":" (:type %)) params))]
+     (str "function(" params-str "):" (:type expr) " {\n"
+          (haxe-lets-then-value expr true) "\n"
+          "        }"))))
+
+(defn- haxe-fold
+  [expr]
+  (let [[initial lam] (:args expr)
+        params (vec (:params lam))]
+    (when (not= 2 (count params))
+      (throw (ex-info "fold lambda must have two parameters"
+                      {:params params})))
+    (str "Lambda.fold(" (expr-ir-to-haxe (:receiver expr)) ", "
+         (haxe-lambda lam [(second params) (first params)]) ", "
+         (expr-ir-to-haxe initial) ")")))
+
+(defn- haxe-runtime-call
+  [fn-name expr]
+  (str "WCHNTRuntime." fn-name "("
+       (str/join ", " (map expr-ir-to-haxe (cons (:receiver expr) (:args expr))))
+       ")"))
+
+(defn- haxe-call
+  [expr]
+  (case (:method expr)
+    "fold" (haxe-fold expr)
+    "length" (str (expr-ir-to-haxe (:receiver expr)) ".length")
+    "concat" (str (expr-ir-to-haxe (:receiver expr)) " + "
+                  (expr-ir-to-haxe (first (:args expr))))
+    "cons" (str "[" (expr-ir-to-haxe (first (:args expr))) "].concat("
+                (expr-ir-to-haxe (:receiver expr)) ")")
+    "head" (haxe-runtime-call "arrayHead" expr)
+    "tail" (haxe-runtime-call "arrayTail" expr)
+    "get" (haxe-runtime-call "mapGet" expr)
+    "put" (haxe-runtime-call "mapPut" expr)
+    "remove" (haxe-runtime-call "mapRemove" expr)
+    "substring" (haxe-runtime-call "substring" expr)
+    "times" (haxe-runtime-call "times" expr)
+    (str (expr-ir-to-haxe (:receiver expr)) "." (:method expr) "("
+         (str/join ", " (map expr-ir-to-haxe (:args expr)))
+         ")")))
+
+(defn expr-ir-to-haxe
+  "Render a reaction expression IR node as a Haxe expression string."
+  [expr]
+  (case (:expr expr)
+    :int (str (:value expr))
+    :float (str (:value expr))
+    :bool (if (:value expr) "true" "false")
+    :string (str "\"" (:value expr) "\"")
+    :field (str "this." (:name expr))
+    :param (:name expr)
+    :local (:name expr)
+    :this "this"
+    :path (str (expr-ir-to-haxe (:root expr)) "."
+               (str/join "." (:fields expr)))
+    :call (haxe-call expr)
+    :target-call (str "Main." (:haxe-name expr) "("
+                      (str/join ", " (map expr-ir-to-haxe (:args expr)))
+                      ")")
+    :lambda (haxe-lambda expr)
+    :if (haxe-if expr)
+    :neg (let [inner (expr-ir-to-haxe (:arg expr))]
+           (if (re-matches #"[A-Za-z0-9_.]+" inner)
+             (str "-" inner)
+             (str "-(" inner ")")))
+    :arith (haxe-infix (:parts expr))
+    :and (haxe-join-op "&&" (:args expr))
+    :or (haxe-join-op "||" (:args expr))
+    :not (str "!(" (expr-ir-to-haxe (:arg expr)) ")")
+    :cmp (str (expr-ir-to-haxe (:left expr)) " " (:op expr) " "
+              (expr-ir-to-haxe (:right expr)))
+    :construct (str "new " (:class-name expr) "("
+                    (str/join ", " (map expr-ir-to-haxe (:args expr)))
+                    ")")
+    :array (if (empty? (:items expr))
+             (str "new Array<" (:elem-type expr) ">()")
+             (str "[" (str/join ", " (map expr-ir-to-haxe (:items expr))) "]"))
+    :map (if (empty? (:pairs expr))
+           (str "new Map<" (:key-type expr) ", " (:val-type expr) ">()")
+           (str "[" (str/join ", " (map (fn [pair]
+                                          (str (expr-ir-to-haxe (:key pair)) " => "
+                                               (expr-ir-to-haxe (:value pair))))
+                                        (:pairs expr)))
+                "]"))
+    (throw (ex-info "Unknown expression IR in method body" {:expr expr}))))
+
+(defn- method-let-lines
+  [lets]
+  (map (fn [{:keys [name value]}]
+         (str "        var " name " = " (expr-ir-to-haxe value) ";"))
+       (or lets [])))
+
+(defn- update-temp-lines
+  [args]
+  (map-indexed (fn [i arg]
+                 (str "        var __u" i " = " (expr-ir-to-haxe arg) ";"))
+               args))
+
+(defn- update-assign-lines
+  [components]
+  (map-indexed (fn [i component]
+                 (str "        this." (:component-name component) " = __u" i ";"))
+               components))
+
+(defn- update-context-lines
+  [components schema-ir class-name]
+  (keep (fn [component]
+          (let [type-name (:type-name component)]
+            (when (and schema-ir type-name
+                       (ir/needs-context? schema-ir type-name)
+                       (= class-name (ir/get-context-parent schema-ir type-name)))
+              (str "        this." (:component-name component)
+                   ".setContext(this);"))))
+        components))
+
+(defn- generate-ordinary-method
+  [{:keys [method-name parameters return-type body lets]}]
+  (let [params (str/join ", " (map #(str (:name %) ":" (:type %)) parameters))]
+    (str "\n    public function " method-name "(" params "): " return-type " {\n"
+         (str/join "\n" (concat (method-let-lines lets)
+                                [(str "        return " (expr-ir-to-haxe body) ";")]))
+         "\n    }")))
+
+(defn- generate-update-method
+  "Install the construction onto this, then notify if this class is observable."
+  [{:keys [class body lets]} {:keys [components observable? schema-ir class-name]}]
+  (let [class-name (or class-name class)
+        args (:args body)]
+    (when-not (= :construct (:expr body))
+      (throw (ex-info "update method body must be a construction"
+                      {:class-name class-name})))
+    (when (not= (count components) (count args))
+      (throw (ex-info (str class-name "::update construction does not match class fields")
+                      {:class-name class-name
+                       :expected (count components)
+                       :got (count args)})))
+    (str "\n    public function update(): " class-name " {\n"
+         (str/join "\n" (concat
+                         (method-let-lines lets)
+                         (update-temp-lines args)
+                         (update-assign-lines components)
+                         (update-context-lines components schema-ir class-name)
+                         (when observable? ["        this.notifySubscribers();"])
+                         ["        return this;"]))
+         "\n    }")))
+
+(defn generate-method
+  "Generate a Haxe method from methods IR. update rewrites this in place."
+  ([method]
+   (generate-method method {:components []
+                            :observable? false
+                            :schema-ir nil
+                            :class-name (:class method)}))
+  ([method ctx]
+   (when (:interface-signature? method)
+     (throw (ex-info "Interface signatures are not emitted on concrete classes"
+                     {:class (:class method) :method-name (:method-name method)})))
+   (if (= "update" (:method-name method))
+     (generate-update-method method ctx)
+     (generate-ordinary-method method))))
+
+(defn- methods-for-class
+  [methods-ir class-name]
+  (filterv #(= class-name (:class %)) methods-ir))
+
 (defn generate-haxe-class
   "Generate Haxe class from IR assemblage"
-  [assemblage schema-ir]
-  (let [class-name (:name assemblage)
-        components (:components assemblage)
-        needs-context (ir/needs-context? schema-ir class-name)
-        context-parent (ir/get-context-parent schema-ir class-name)
-        is-observable (ir/is-observable? schema-ir class-name)
+  ([assemblage schema-ir]
+   (generate-haxe-class assemblage schema-ir []))
+  ([assemblage schema-ir class-methods]
+   (let [class-name (:name assemblage)
+         components (:components assemblage)
+         needs-context (ir/needs-context? schema-ir class-name)
+         context-parent (ir/get-context-parent schema-ir class-name)
+         is-observable (ir/is-observable? schema-ir class-name)
+         interface-implementers (:interface-implementers schema-ir)
+         implemented-interfaces (filter #(contains? (set (second %)) class-name) interface-implementers)
+         interface-names (map first implemented-interfaces)
+         all-interfaces (conj (vec interface-names) "IWCHNTObject")
+         implements-clause (if (empty? all-interfaces)
+                             ""
+                             (str " implements " (str/join " implements " all-interfaces)))
+         component-fields (map generate-component-field components)
+         context-field (when (and needs-context context-parent) (generate-context-field context-parent))
+         all-fields (if context-field
+                      (conj component-fields context-field)
+                      component-fields)
+         constructor-params (generate-constructor-params components)
+         constructor-body (generate-constructor-body components)
+         to-construction-method (generate-to-construction-method class-name components schema-ir)
+         set-context-method (when (and needs-context context-parent) (generate-set-context-method context-parent))
+         observable-infrastructure (when is-observable (generate-observable-infrastructure class-name))
+         method-ctx {:components components
+                     :observable? is-observable
+                     :schema-ir schema-ir
+                     :class-name class-name}
+         user-methods (str/join "" (map #(generate-method % method-ctx) class-methods))]
+     (str "class " class-name implements-clause " {\n"
+          (str/join "\n" all-fields)
+          "\n\n"
+          "    public function new(" constructor-params ") {\n"
+          "        " constructor-body "\n"
+          "    }"
+          user-methods
+          (or set-context-method "")
+          to-construction-method
+          (or observable-infrastructure "")
+          "\n}"))))
 
-        ;; Find interfaces this class implements
-        interface-implementers (:interface-implementers schema-ir)
-        implemented-interfaces (filter #(contains? (set (second %)) class-name) interface-implementers)
-        interface-names (map first implemented-interfaces)
-        ;; Add IWCHNTObject to all classes
-        all-interfaces (conj (vec interface-names) "IWCHNTObject")
-        implements-clause (if (empty? all-interfaces)
-                            ""
-                            (str " implements " (str/join " implements " all-interfaces)))
-        
-        ;; Generate fields
-        component-fields (map generate-component-field components)
-        context-field (when (and needs-context context-parent) (generate-context-field context-parent))
-        all-fields (if context-field
-                     (conj component-fields context-field)
-                     component-fields)
-        
-        ;; Generate constructor
-        constructor-params (generate-constructor-params components)
-        constructor-body (generate-constructor-body components)
-        
-        ;; Generate methods
-        to-construction-method (generate-to-construction-method class-name components schema-ir)
-        set-context-method (when (and needs-context context-parent) (generate-set-context-method context-parent))
-        observable-infrastructure (when is-observable (generate-observable-infrastructure class-name))
-        
-        ;; Combine all parts
-        class-code (str "class " class-name implements-clause " {\n"
-                       (str/join "\n" all-fields)
-                       "\n\n"
-                       "    public function new(" constructor-params ") {\n"
-                       "        " constructor-body "\n"
-                       "    }"
-                       (or set-context-method "")
-                       to-construction-method
-                       (or observable-infrastructure "")
-                       "\n}")]
-    class-code))
+(defn- generate-interface-method-signature
+  [{:keys [method-name parameters return-type]}]
+  (let [params (str/join ", " (map #(str (:name %) ":" (:type %)) parameters))]
+    (str "    public function " method-name "(" params "): " return-type ";")))
 
 (defn generate-haxe-interface
-  "Generate Haxe interface from IR interface"
-  [interface]
-  (let [interface-name (:name interface)]
-    (str "interface " interface-name " {\n"
-         "    public function toConstruction(depth:Int = 0):String;\n"
-         "}")))
+  "Generate Haxe interface from IR interface and optional interface method signatures."
+  ([interface]
+   (generate-haxe-interface interface []))
+  ([interface methods-ir]
+   (let [interface-name (:name interface)
+         iface-methods (filterv :interface-signature?
+                                (methods-for-class methods-ir interface-name))
+         method-lines (map generate-interface-method-signature iface-methods)]
+     (str "interface " interface-name " {\n"
+          (when (seq method-lines)
+            (str (str/join "\n" method-lines) "\n"))
+          "    public function toConstruction(depth:Int = 0, helper:IWCHNTHelper):String;\n"
+          "}"))))
 
 (defn generate-haxe-enum
   "Generate Haxe enum from IR enum"
@@ -254,32 +396,96 @@ interface IWCHNTObject {
 ;; No longer needed - arrays are handled inline in each class
 
 (defn schema-ir-to-haxe
-  "Transform schema IR to Haxe code"
-  [schema-ir]
-  (let [assemblages (:assemblages schema-ir)
-        interfaces (:interfaces schema-ir)
-        enums (:enums schema-ir)
-        
-        ;; Generate interfaces first (so they can be implemented by classes)
-        interface-classes (map generate-haxe-interface interfaces)
-        
-        ;; Use the top-level helper definitions
-        iwchnt-helper (str iwchnt-helper-interface "\n\n" iwchnt-helper-implementation "\n\n" iwchnt-object-interface)
-        
-        ;; Generate classes
-        classes (map #(generate-haxe-class % schema-ir) assemblages)
-        
-        ;; Generate enums
-        enum-classes (map generate-haxe-enum enums)
-        
-        ;; Combine all parts (interfaces first, then classes, then enums)
-        all-classes (concat interface-classes [iwchnt-helper] classes enum-classes)
-        joined-classes (str/join "\n" all-classes)]
-    joined-classes)) 
+  "Transform schema IR to Haxe code, including any reaction methods."
+  ([schema-ir]
+   (schema-ir-to-haxe schema-ir []))
+  ([schema-ir methods-ir]
+   (let [assemblages (:assemblages schema-ir)
+         interfaces (:interfaces schema-ir)
+         enums (:enums schema-ir)
+         interface-classes (map #(generate-haxe-interface % methods-ir) interfaces)
+         iwchnt-helper (str haxe-helpers/iwchnt-object-interface
+                            "\n\n"
+                            haxe-helpers/iwchnt-helper-interface
+                            "\n\n"
+                            haxe-helpers/iwchnt-helper-implementation
+                            "\n\n"
+                            haxe-helpers/wchnt-runtime)
+         classes (map #(generate-haxe-class % schema-ir
+                                            (remove :interface-signature?
+                                                    (methods-for-class methods-ir (:name %))))
+                      assemblages)
+         enum-classes (map generate-haxe-enum enums)
+         all-classes (concat interface-classes [iwchnt-helper] classes enum-classes)]
+     (str/join "\n" all-classes)))) 
 
 ;; =============================================================================
 ;; Construction IR to Haxe Transformation
 ;; =============================================================================
+
+(declare process-inner-object-construction)
+(declare generate-array-element)
+(declare render-variable-ref)
+
+(defn- inner-object-class-and-arg-list
+  [element schema-ir expected-type]
+  (let [second-element (second element)]
+    (if (ast-utils/node-type? second-element :ClassName)
+      ;; Has explicit class name: [:InnerObjectConstruction [:ClassName "Name"] [:ArgList ...]]
+      [(second second-element) (nth element 2)]
+      ;; No explicit class name: [:InnerObjectConstruction [:ArgList ...]]
+      (if expected-type
+        [expected-type second-element]
+        (throw (ex-info "Cannot determine class name for InnerObjectConstruction - no explicit class name and no expected type"
+                        {:element element
+                         :schema-ir schema-ir
+                         :expected-type expected-type}))))))
+
+(defn- arg-list->constructor-args
+  [arg-list]
+  (if (ast-utils/node-type? arg-list :ArgList)
+    (rest arg-list)
+    []))
+
+(defn- render-inner-object-constructor-arg
+  [arg schema-ir class-name]
+  (cond
+    ;; Handle nested InnerObjectConstruction nodes recursively
+    (and (vector? arg) (ast-utils/node-type? arg :InnerObjectConstruction))
+    (if schema-ir
+      ;; Use schema to determine expected type for this position
+      (let [expected-arg-type (ast-to-ir/type-from-class-and-position class-name 0 schema-ir)]
+        (process-inner-object-construction arg schema-ir expected-arg-type))
+      (throw (ex-info "Schema IR is required to process nested InnerObjectConstruction nodes"
+                      {:element arg
+                       :class-name class-name
+                       :schema-ir schema-ir})))
+
+    ;; Handle ArrayConstruction nodes
+    (and (vector? arg) (ast-utils/node-type? arg :ArrayConstruction))
+    (str arg)
+
+    ;; Handle primitive AST nodes
+    (and (vector? arg) (ast-utils/node-type? arg :IntLiteral))
+    (second arg)
+    (and (vector? arg) (ast-utils/node-type? arg :StringLiteral))
+    (str "\"" (second arg) "\"")
+    (and (vector? arg) (ast-utils/node-type? arg :FloatLiteral))
+    (second arg)
+    (and (vector? arg) (ast-utils/node-type? arg :BooleanLiteral))
+    (second arg)
+
+    ;; Handle VariableRef nodes
+    (and (vector? arg) (ast-utils/node-type? arg :VariableRef))
+    (second arg)
+
+    ;; Handle IR objects
+    (and (map? arg) (= (:type arg) :primitive))
+    (:value arg)
+
+    ;; Default case
+    :else
+    (str arg)))
 
 (defn process-inner-object-construction
   "Process an InnerObjectConstruction node and return Haxe constructor code"
@@ -287,159 +493,82 @@ interface IWCHNTObject {
   (cond
     ;; InnerObjectConstruction: [:InnerObjectConstruction [:ClassName "Name"] [:ArgList ...]] or [:InnerObjectConstruction [:ArgList ...]]
     (ast-utils/node-type? element :InnerObjectConstruction)
-    (let [second-element (second element)
-          [class-name arg-list]
-          (if (ast-utils/node-type? second-element :ClassName)
-            ;; Has explicit class name: [:InnerObjectConstruction [:ClassName "Name"] [:ArgList ...]]
-            [(second second-element) (nth element 2)]
-            ;; No explicit class name: [:InnerObjectConstruction [:ArgList ...]]
-            (if expected-type
-              ;; Use the expected type from the array
-              [expected-type second-element]
-              ;; Cannot determine class name - fail fast
-              (throw (ex-info "Cannot determine class name for InnerObjectConstruction - no explicit class name and no expected type" 
-                            {:element element
-                             :schema-ir schema-ir
-                             :expected-type expected-type}))))
-          constructor-args
-          (if (ast-utils/node-type? arg-list :ArgList)
-            (rest arg-list)
-            [])]
+    (let [[class-name arg-list] (inner-object-class-and-arg-list element schema-ir expected-type)
+          constructor-args (arg-list->constructor-args arg-list)]
       (str "new " class-name "("
            (str/join
             ", "
-            (for [arg constructor-args]
-              (cond
-                ;; Handle nested InnerObjectConstruction nodes recursively
-                (and (vector? arg) (ast-utils/node-type? arg :InnerObjectConstruction))
-                (if schema-ir
-                  ;; Use schema to determine expected type for this position
-                  (let [expected-arg-type (ast-to-ir/type-from-class-and-position class-name 0 schema-ir)]
-                    (process-inner-object-construction arg schema-ir expected-arg-type))
-                  ;; Schema is required for nested InnerObjectConstruction processing
-                  (throw (ex-info "Schema IR is required to process nested InnerObjectConstruction nodes" 
-                                {:element arg
-                                 :class-name class-name
-                                 :schema-ir schema-ir})))
-                ;; Handle ArrayConstruction nodes
-                (and (vector? arg) (ast-utils/node-type? arg :ArrayConstruction))
-                (str arg)
-                ;; Handle primitive AST nodes
-                (and (vector? arg) (ast-utils/node-type? arg :IntLiteral))
-                (second arg)
-                (and (vector? arg) (ast-utils/node-type? arg :StringLiteral))
-                (str "\"" (second arg) "\"")
-                (and (vector? arg) (ast-utils/node-type? arg :FloatLiteral))
-                (second arg)
-                (and (vector? arg) (ast-utils/node-type? arg :BooleanLiteral))
-                (second arg)
-                ;; Handle VariableRef nodes
-                (and (vector? arg) (ast-utils/node-type? arg :VariableRef))
-                (second arg)
-                ;; Handle IR objects
-                (and (map? arg) (= (:type arg) :primitive))
-                (:value arg)
-                ;; Default case
-                :else
-                (str arg))))
+            (map #(render-inner-object-constructor-arg % schema-ir class-name)
+                 constructor-args))
            ")"))
     :else
     (str element)))
 
+(defn- render-array-object-element
+  [element schema-ir expected-type variable-mappings]
+  (let [arg-class-name (:class-name element)
+        arg-args (:args element)]
+    (str "new " arg-class-name "("
+         (str/join ", " (map #(generate-array-element % schema-ir expected-type variable-mappings) arg-args))
+         ")")))
+
+(defn- render-array-primitive-element
+  [element]
+  (let [primitive-value (:value element)
+        class-name (:class-name element)]
+    (if (or (= class-name "String") (= class-name 'String))
+      (str "\"" primitive-value "\"")
+      (str primitive-value))))
+
+(defn- render-array-nested-array-element
+  [element schema-ir variable-mappings]
+  (let [array-type (:class-name element)
+        array-elements (:args element)]
+    (str "["
+         (str/join ", " (map #(generate-array-element % schema-ir array-type variable-mappings) array-elements))
+         "]")))
+
 (defn generate-array-element
   "Generate Haxe code for a single array element"
-  [element schema-ir expected-type]
+  [element schema-ir expected-type variable-mappings]
   (cond
-    ;; Handle structured IR objects
     (and (map? element) (= (:type element) :object))
-    (let [arg-class-name (:class-name element)
-          arg-args (:args element)]
-      (str "new " arg-class-name "("
-           (str/join ", " (map #(generate-array-element % schema-ir expected-type) arg-args))
-           ")"))
-    
-    ;; Handle variable references
+    (render-array-object-element element schema-ir expected-type variable-mappings)
+
     (and (map? element) (= (:type element) :variable))
-    (:value element)  ;; Variable name
-    
-    ;; Handle primitive values
+    (render-variable-ref element variable-mappings)
+
     (and (map? element) (= (:type element) :primitive))
-    (let [primitive-value (:value element)
-          class-name (:class-name element)]
-      (if (or (= class-name "String") (= class-name 'String))
-        (str "\"" primitive-value "\"")  ;; String type - add quotes
-        (str primitive-value)))  ;; Other primitives - no quotes
-    
-    ;; Handle enum values
+    (render-array-primitive-element element)
+
     (and (map? element) (= (:type element) :enum-value))
-    (:value element)  ;; Enum value (not quoted)
-    
-    ;; Handle nested arrays
+    (:value element)
+
     (and (map? element) (= (:type element) :array))
-    (let [array-type (:class-name element)
-          array-elements (:args element)]
-      (str "["
-           (str/join ", " (map #(generate-array-element % schema-ir array-type) array-elements))
-           "]"))
-    
-    ;; Handle raw AST nodes (fallback for backward compatibility)
+    (render-array-nested-array-element element schema-ir variable-mappings)
+
     (ast-utils/node-type? element :InnerObjectConstruction)
     (process-inner-object-construction element schema-ir expected-type)
-    
-    ;; Primitive types (raw AST)
+
     (ast-utils/node-type? element :IntLiteral) (second element)
     (ast-utils/node-type? element :StringLiteral) (str "\"" (second element) "\"")
     (ast-utils/node-type? element :FloatLiteral) (second element)
     (ast-utils/node-type? element :BooleanLiteral) (second element)
-    
-    ;; Variable reference (raw AST)
-    (ast-utils/node-type? element :VariableRef) (second element)
-    
-    ;; Default to string conversion
+
+    (ast-utils/node-type? element :VariableRef)
+    (get variable-mappings (second element) (second element))
+
     :else (str element)))
 
 (defn generate-array-assignment
   "Generate Haxe code for an array assignment"
-  [obj-id args schema-ir class-name]
+  [obj-id args schema-ir class-name variable-mappings]
   (str "  var " obj-id " = ["
-       (str/join ", " (map #(generate-array-element % schema-ir class-name) args))
+       (str/join ", " (map #(generate-array-element % schema-ir class-name variable-mappings) args))
        "];"))
 
-(defn generate-ast-node-arg
-  "Generate Haxe code for a raw AST node (fallback for backward compatibility)"
-  [ast-node schema-ir parent-class-name arg-index]
-  (cond
-    ;; InnerObjectConstruction
-    (ast-utils/node-type? ast-node :InnerObjectConstruction)
-    (process-inner-object-construction ast-node schema-ir parent-class-name)
-    
-    ;; ArrayConstruction
-    (ast-utils/node-type? ast-node :ArrayConstruction)
-    (let [type-node (second ast-node)
-          array-type (if (ast-utils/node-type? type-node :Type)
-                      (second type-node)
-                      "Unknown")
-          arg-list (nth ast-node 2)
-          elements (if (ast-utils/node-type? arg-list :ArgList)
-                    (rest arg-list)
-                    [])]
-      (str "["
-           (str/join ", " (map #(generate-ast-node-arg % schema-ir array-type 0) elements))
-           "]"))
-    
-    ;; Primitive literals
-    (ast-utils/node-type? ast-node :IntLiteral) (second ast-node)
-    (ast-utils/node-type? ast-node :StringLiteral) (str "\"" (second ast-node) "\"")
-    (ast-utils/node-type? ast-node :FloatLiteral) (second ast-node)
-    (ast-utils/node-type? ast-node :BooleanLiteral) (second ast-node)
-    
-    ;; Variable references
-    (ast-utils/node-type? ast-node :VariableRef) (second ast-node)
-    
-    ;; Default case
-    :else (str ast-node)))
-
 (declare generate-object-assignment-arg)
+(declare generate-ast-node-arg)
 
 (defn render-variable-ref
   [arg variable-mappings]
@@ -607,7 +736,7 @@ interface IWCHNTObject {
         class-name (:class-name obj-data)
         args (:args obj-data)]
     (case obj-type
-      :array (generate-array-assignment obj-id args schema-ir class-name)
+      :array (generate-array-assignment obj-id args schema-ir class-name variable-mappings)
       :object (generate-object-assignment obj-id class-name args schema-ir variable-mappings)
       :variable (generate-variable-assignment obj-id (if (contains? obj-data :value) [(:value obj-data)] args))
       :enum-value (if (or (contains? obj-data :value) (seq args))
@@ -621,26 +750,83 @@ interface IWCHNTObject {
 
 
 
+(defn generate-subscribe-statements
+  "After objects exist, subscribe each parent to its $ components."
+  [objects schema-ir]
+  (for [[obj-id obj-data] objects
+        :when (= :object (:type obj-data))
+        component (ir/reactive-components schema-ir (:class-name obj-data))]
+    (str "  " obj-id "." (:component-name component) ".subscribe(" obj-id ");")))
+
+(defn- variable-arg-name
+  [arg]
+  (when (and (map? arg) (= (:type arg) :variable))
+    (or (:value arg) (first (:args arg)))))
+
+(defn- arg-ref-names
+  [arg]
+  (cond
+    (nil? arg) []
+    (variable-arg-name arg) [(variable-arg-name arg)]
+    (and (map? arg) (:args arg)) (mapcat arg-ref-names (:args arg))
+    (sequential? arg) (mapcat arg-ref-names arg)
+    :else []))
+
+(defn- resolve-object-id
+  [name variable-mappings object-ids]
+  (let [resolved (get variable-mappings name name)]
+    (when (contains? object-ids resolved)
+      resolved)))
+
+(defn- object-dependencies
+  [obj-data variable-mappings object-ids]
+  (->> (arg-ref-names obj-data)
+       (keep #(resolve-object-id % variable-mappings object-ids))
+       set))
+
+(defn- next-ready-object-id
+  [remaining deps objects]
+  (->> remaining
+       (filter #(empty? (get deps %)))
+       (sort-by #(or (:index (get objects %)) 0))
+       first))
+
+(defn- topo-sort-object-ids
+  [objects variable-mappings]
+  (let [object-ids (set (keys objects))
+        initial-deps (into {} (map (fn [[id data]]
+                                     [id (object-dependencies data variable-mappings object-ids)])
+                                   objects))]
+    (loop [remaining object-ids
+           deps initial-deps
+           ordered []]
+      (if (empty? remaining)
+        ordered
+        (if-let [id (next-ready-object-id remaining deps objects)]
+          (recur (disj remaining id)
+                 (into {} (map (fn [[k v]] [k (disj v id)]) deps))
+                 (conj ordered id))
+          (throw (ex-info "Circular object references in construction"
+                          {:remaining remaining :deps deps})))))))
+
+(defn- objects-in-construction-order
+  [objects variable-mappings]
+  (map (fn [id] [id (get objects id)])
+       (topo-sort-object-ids objects variable-mappings)))
+
 (defn generate-factory-body
   "Generate the body of a factory function from construction IR"
   [construction-ir schema-ir]
-  (let [root-class (:root-class construction-ir)
-        objects (:objects construction-ir)
+  (let [objects (objects-in-construction-order (:objects construction-ir)
+                                               (:variable-mappings construction-ir))
         variable-mappings (:variable-mappings construction-ir)
-        return-object (:return-object construction-ir)]
-    
-    ;; All objects now use simple objN naming
-    (let [all-objects objects
-          
-          ;; Generate assignment statements for all objects
-          assignment-statements
-          (for [[obj-id obj-data] all-objects]
-            (generate-assignment-statement obj-id obj-data schema-ir variable-mappings))
-
-          ;; Generate final return statement
-          final-statement (str "  return " return-object ";")]
-      
-      (str/join "\n" (concat assignment-statements [final-statement])))))
+        return-object (:return-object construction-ir)
+        assignment-statements
+        (for [[obj-id obj-data] objects]
+          (generate-assignment-statement obj-id obj-data schema-ir variable-mappings))
+        subscribe-statements (generate-subscribe-statements objects schema-ir)
+        final-statement (str "  return " return-object ";")]
+    (str/join "\n" (concat assignment-statements subscribe-statements [final-statement]))))
 
 (defn generate-construction-factory
   "Generate Haxe factory function from construction IR"

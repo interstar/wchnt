@@ -38,37 +38,66 @@ EmptyType = '_'
 
 (def construction-grammar
   "Code = (MethodDefinition | WS)*
-MethodDefinition = ClassName <'::'> MethodName <'='> BlockOrLambda
+MethodDefinition = ClassName <'::'> MethodName ReturnAnn? <'='> BlockOrLambda
+ReturnAnn = <':'> Type
 BlockOrLambda = Lambda | Block
 Lambda = <'{'> LambdaArgs? <'|'> BlockStatements <'}'>
-LambdaArgs = VariableName (<','> VariableName)*
+LambdaArgs = LambdaArg (<','> LambdaArg)*
+LambdaArg = Type <'/'> VariableName | VariableName
 Block = <'{'> BlockStatements <'}'>
-BlockStatements = (Assignment | TargetCommand | Expression) (<'.'> WS* (Assignment | TargetCommand | Expression))*
+<Stmt> = Assignment / Expression
+BlockStatements = (Stmt (StmtSep Stmt)*)?
+<StmtSep> = <#'\\.\\s+'>
 Assignment = VariableName <'='> Expression
 TargetCommand = <'%'> TargetMethodName <'('> MethodArgList <')'>
 TargetMethodName = Name
-Expression = BooleanExpr
-           | ObjectConstruction
-           | ArrayConstruction
-           | MapConstruction
-           | ArithmeticExpr
-           | MethodCall
-           | VariableRef
-           | Literal
-           | BlockOrLambda
+Expression = OrExpr
+<OrExpr> = OrOp | AndExpr
+OrOp = AndExpr (<'or'> AndExpr)+
+<AndExpr> = AndOp | NotExpr
+AndOp = NotExpr (<'and'> NotExpr)+
+<NotExpr> = NotOp | CmpExpr
+NotOp = <'not'> NotExpr
+<CmpExpr> = CmpOp | ArithExpr
+CmpOp = ArithExpr CompOp ArithExpr
+<CompOp> = '==' | '!=' | '<=' | '>=' | '<' | '>'
+<ArithExpr> = AddOp | Term
+AddOp = Term (('+' | '-') Term)+
+<Term> = MulOp | Factor
+MulOp = Factor (('*' | '/' | '%') Factor)+
+<Factor> = IfExpr
+         / TargetCommand
+         / MethodCall
+         / NegOp
+         / <'('> OrExpr <')'>
+         / ObjectConstruction
+         / ArrayConstruction
+         / MapConstruction
+         / FieldPath
+         / Literal
+         / VariableRef
+         / BlockOrLambda
+IfExpr = <'if'> <'('> OrExpr <')'> Block <'else'> Block
+NegOp = <'-'> Factor
 ObjectConstruction = <'['> <':'> ClassName ArgList <']'> 
 InnerObjectConstruction = <'['> (<':'> ClassName)? ArgList <']'>
 ArrayConstruction = <'['> <':'> <'Array'> <'/'> Type ArgList <']'>
-MapConstruction = <'['> <':'> <'Map'> <'/'> <'{'> KeyType <':'> ValType <'}'> KeyValueList <']'>
-MethodCall = VariableRef <'.'> MethodName <'('> MethodArgList <')'> (<'.'> MethodName <'('> MethodArgList <')'>)*
+MapConstruction = <'['> <':'> <'Map'> <'/'> <'{'> KeyType <':'> ValType <'}'> KeyValueList? <']'>
+MethodCall = (StringLiteral | IntLiteral | VariableRef) (<#'\\.'> Name)+ <'('> MethodArgList <')'> (<#'\\.'> Name <'('> MethodArgList <')'>)*
+FieldPath = #'[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)+'
 VariableRef = Name | SelfName
 SelfName = <'self.'> Name
-BooleanExpr = 'not' BooleanExpr | BooleanFactor 'and' BooleanFactor | BooleanFactor 'or' BooleanFactor | BooleanFactor
-BooleanFactor = <'('> Expression <')'> | VariableRef | BoolLiteral | BlockOrLambda
-ArithmeticExpr = Term (('+' | '-') Term)*
-Term = Factor (('*' | '/') Factor)*
-Factor = <'('> Expression <')'> | VariableRef | Literal | BlockOrLambda
-ArgList = (Literal | VariableRef | InnerObjectConstruction | ArrayConstruction | MapConstruction | BlockOrLambda)*
+<ArgItem> = MethodCall
+          / ArrayConstruction
+          / MapConstruction
+          / InnerObjectConstruction
+          / Literal
+          / FieldPath
+          / VariableRef
+          / BlockOrLambda
+          / ParenArg
+ArgList = ArgItem*
+<ParenArg> = <'('> OrExpr <')'>
 MethodArgList = (MethodArgItem (<','> MethodArgItem)*)?
 MethodArgItem = Expression | BlockOrLambda
 KeyValueList = KeyValuePair (<','>? WS* KeyValuePair)*
@@ -85,7 +114,7 @@ Type = Name
 KeyType = Name
 ValType = Name
 <Name> = #'[A-Za-z_][A-Za-z0-9_]*'
-WS = <#'\\s+'>")
+<WS> = <#'\\s+'>")
 
 ;; =============================================================================
 ;; Parser Instances
@@ -103,21 +132,45 @@ WS = <#'\\s+'>")
 ;; Convenience Functions
 ;; =============================================================================
 
+(defn- expand-field-path
+  "Turn a tight dotted token into [:FieldPath \"ball\" \"x\"]."
+  [s]
+  (into [:FieldPath] (str/split s #"\.")))
+
+(defn- transform-construction-ast
+  [ast]
+  (if (insta/failure? ast)
+    ast
+    (insta/transform {:FieldPath expand-field-path} ast)))
+
 (defn parse-schema [schema-text]
   "Parse schema text using the schema parser"
   (insta/parse schema-parser schema-text))
 
 (defn parse-construction [construction-text]
   "Parse construction text using the construction parser"
-  (insta/parse construction-parser construction-text :start :BlockStatements))
+  (transform-construction-ast
+   (insta/parse construction-parser construction-text :start :BlockStatements)))
 
-(defn parse-construction-with-failure-handling [construction-text]
-  "Parse construction text with proper error handling"
-  (let [trimmed-text (clojure.string/trim construction-text)]
+(defn parse-reaction [reaction-text]
+  "Parse reaction methods using the same grammar, starting at Code"
+  (transform-construction-ast
+   (insta/parse construction-parser reaction-text :start :Code)))
+
+(defn- parse-with-failure-handling [parse-fn text]
+  (let [trimmed-text (clojure.string/trim text)]
     (try
-      (let [result (parse-construction trimmed-text)]
+      (let [result (parse-fn trimmed-text)]
         (if (insta/failure? result)
           {:success false :error (insta/get-failure result)}
           {:success true :ast result}))
       (catch Exception e
         {:success false :error (.getMessage e)}))))
+
+(defn parse-construction-with-failure-handling [construction-text]
+  "Parse construction text with proper error handling"
+  (parse-with-failure-handling parse-construction construction-text))
+
+(defn parse-reaction-with-failure-handling [reaction-text]
+  "Parse reaction text with proper error handling"
+  (parse-with-failure-handling parse-reaction reaction-text))
