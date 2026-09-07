@@ -1,0 +1,87 @@
+# Steer a square (OpenFL)
+
+`>Keys` is a mailbox: Target may `inject` the held-arrow snapshot, then `Keys::update` notifies Game. Arrows move the square; it stays inside the play area.
+
+## Schema
+
+```
+>Keys = Bool/left Bool/right Bool/up Bool/down
+Game = PlayArea Square $Keys
+PlayArea = Rect
+Rect = Int/x Int/y Int/width Int/height
+Square = Int/x Int/y Int/size
+```
+
+## Construction
+
+```
+[:Game
+  [:PlayArea [0 0 800 600]]
+  [:Square 380 280 40]
+  [:Keys false false false false]
+]
+```
+
+## Methods
+
+```
+Keys::update = { [:Keys left right up down] }
+
+Square::nudge = {
+  Int/dx, Int/dy, Int/minX, Int/minY, Int/maxX, Int/maxY |
+  nx = x + dx.
+  ny = y + dy.
+  [:Square
+    (if ((nx < minX) or (nx > maxX)) { x } else { nx })
+    (if ((ny < minY) or (ny > maxY)) { y } else { ny })
+    size]
+}
+
+Game::update = {
+  r = playArea.rect.
+  rightN = if (keys.right) { 6 } else { 0 }.
+  leftN = if (keys.left) { -6 } else { 0 }.
+  downN = if (keys.down) { 6 } else { 0 }.
+  upN = if (keys.up) { -6 } else { 0 }.
+  moved = square.nudge((rightN + leftN), (downN + upN), r.x, r.y, ((r.x + r.width) - square.size), ((r.y + r.height) - square.size)).
+  [:Game playArea moved keys]
+}
+```
+
+## Target
+
+```
+%openfl
+
+%init
+var assemblage:Game;
+var down:Map<Int, Bool> = new Map();
+
+function init():Void {
+    assemblage = gameFactory();
+    stage.addEventListener(KeyboardEvent.KEY_DOWN, function(e:KeyboardEvent) {
+        down.set(e.keyCode, true);
+    });
+    stage.addEventListener(KeyboardEvent.KEY_UP, function(e:KeyboardEvent) {
+        down.set(e.keyCode, false);
+    });
+}
+
+function held(code:Int):Bool {
+    return down.exists(code) && down.get(code);
+}
+
+%step
+function step():Void {
+    assemblage.keys.inject(held(Keyboard.LEFT), held(Keyboard.RIGHT), held(Keyboard.UP), held(Keyboard.DOWN));
+    var r = assemblage.playArea.rect;
+    var s = assemblage.square;
+    wchntGraphics.clear();
+    wchntGraphics.beginFill(0x2a2a2a);
+    wchntGraphics.drawRect(r.x, r.y, r.width, r.height);
+    wchntGraphics.endFill();
+    wchntGraphics.beginFill(0xf2f2f2);
+    wchntGraphics.drawRect(s.x, s.y, s.size, s.size);
+    wchntGraphics.endFill();
+}
+```
