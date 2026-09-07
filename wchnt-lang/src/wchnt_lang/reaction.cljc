@@ -33,12 +33,13 @@
   (contains? (interface-names schema-ir) class-name))
 
 (defn- valid-type-name?
-  "True when type-name is a primitive, schema class, interface, enum, or collection type."
+  "True when type-name is a primitive, schema class, interface, enum, external, or collection type."
   [schema-ir type-name]
-  (or (contains? #{"Int" "Float" "String" "Bool"} type-name)
+  (or (contains? #{"Int" "Float" "String" "Bool" "Void"} type-name)
       (contains? (assemblage-names schema-ir) type-name)
       (contains? (interface-names schema-ir) type-name)
       (contains? (enum-names schema-ir) type-name)
+      (ir/external-type? schema-ir type-name)
       (and (string? type-name)
            (or (str/starts-with? type-name "Array<")
                (str/starts-with? type-name "Map<"))
@@ -276,13 +277,46 @@
   [branch ctx]
   (value-type (:body branch) ctx))
 
+(defn- branch-or-if-type
+  [node ctx]
+  (if (= (:expr node) :if)
+    (:type node)
+    (branch-type node ctx)))
+
+(defn- process-else-part
+  [else-part-node ctx class-name method-name]
+  (let [items (rest else-part-node)
+        final-block (last items)
+        else-if-nodes (butlast items)
+        final-else (process-block final-block ctx class-name "if-else")
+        chain         (reduce (fn [acc else-if-node]
+                      (let [cond-expr (ast->expr (nth else-if-node 1) ctx)
+                            then-branch (process-block (nth else-if-node 2)
+                                                       ctx class-name "if-then")
+                            then-type (branch-type then-branch ctx)
+                            else-type (branch-or-if-type acc ctx)]
+                        (when (not= then-type else-type)
+                          (throw (ex-info (str "if branches must have the same type, got "
+                                               then-type " and " else-type)
+                                          {:then then-type :else else-type})))
+                        {:expr :if
+                         :condition cond-expr
+                         :then then-branch
+                         :else acc
+                         :type then-type}))
+                    final-else
+                    (reverse else-if-nodes))]
+    chain))
+
 (defn- ast->if
   [node ctx]
-  (let [condition (ast->expr (second node) ctx)
-        then (process-block (nth node 2) ctx (:class-name ctx) "if-then")
-        else (process-block (nth node 3) ctx (:class-name ctx) "if-else")
+  (let [class-name (:class-name ctx)
+        method-name "if"
+        condition (ast->expr (second node) ctx)
+        then (process-block (nth node 2) ctx class-name "if-then")
+        else (process-else-part (nth node 3) ctx class-name method-name)
         then-type (branch-type then ctx)
-        else-type (branch-type else ctx)]
+        else-type (branch-or-if-type else ctx)]
     (when (not= then-type else-type)
       (throw (ex-info (str "if branches must have the same type, got "
                            then-type " and " else-type)
@@ -585,11 +619,24 @@
                        :got arg-count})))
     callee))
 
+(defn- external-call
+  "Passthrough call on an @ type — no WCHNT method table; Haxe uses the host type."
+  [receiver class-name method arg-nodes ctx]
+  (when (ir/external-type? (:schema-ir ctx) class-name)
+    (let [args (mapv #(convert-call-arg % ctx) arg-nodes)]
+      {:expr :call
+       :receiver receiver
+       :method method
+       :args args
+       :arg-types (vec (repeat (count args) nil))
+       :type class-name})))
+
 (defn- make-call
   [receiver method arg-list ctx]
   (let [arg-nodes (method-arg-items arg-list)
         class-name (receiver-class receiver ctx)]
     (or (builtin-call receiver class-name method arg-nodes ctx)
+        (external-call receiver class-name method arg-nodes ctx)
         (let [args (mapv #(convert-call-arg % ctx) arg-nodes)
               callee (lookup-callee class-name method (count args) ctx)]
           {:expr :call
@@ -710,10 +757,10 @@
       node
 
       (ast-utils/node-type? node :IntLiteral)
-      {:expr :int :value (Integer/parseInt (second node))}
+      {:expr :int :value (ast-utils/parse-int (second node))}
 
       (ast-utils/node-type? node :FloatLiteral)
-      {:expr :float :value (Double/parseDouble (second node))}
+      {:expr :float :value (ast-utils/parse-float (second node))}
 
       (ast-utils/node-type? node :BoolLiteral)
       {:expr :bool :value (= "true" (second node))}
@@ -938,14 +985,71 @@
 (defn- lambda-arg-info
   "Parse one :LambdaArg node into {:name string :type string-or-nil}."
   [node]
-  (let [items (rest node)
-        typed? (and (= 2 (count items))
-                    (ast-utils/node-type? (first items) :Type))]
-    (if typed?
-      (let [type-name (second (first items))
-            var-name (second (second items))]
-        {:name var-name :type type-name})
-      {:name (second (first items)) :type nil})))
+  (let [inner (second node)]
+    (cond
+      (= (first inner) :ExternalLambdaArg)
+      {:name (second (nth inner 2))
+       :type (second (nth inner 1))}
+
+      (= (first inner) :TypedLambdaArg)
+      {:name (second (nth inner 2))
+       :type (second (nth inner 1))}
+
+      (= (first inner) :VariableName)
+      {:name (second inner) :type nil}
+
+      :else
+      (throw (ex-info "Expected ExternalLambdaArg, TypedLambdaArg, or VariableName"
+                      {:node node})))))
+
+(defn- external-types-from-lambda-args
+  [lambda-args-node]
+  (when (ast-utils/node-type? lambda-args-node :LambdaArgs)
+    (into #{}
+          (keep (fn [arg-node]
+                  (let [inner (second arg-node)]
+                    (when (= (first inner) :ExternalLambdaArg)
+                      (second (nth inner 1)))))
+                (rest lambda-args-node)))))
+
+(defn- external-types-from-method-def
+  [method-node]
+  (let [body-node (first (filter #(= (first %) :BlockOrLambda) (rest method-node)))
+        inner (second body-node)]
+    (when (ast-utils/node-type? inner :Lambda)
+      (external-types-from-lambda-args (second inner)))))
+
+(defn collect-external-types-from-reaction-ast
+  "Collect @Type names from Methods lambda parameters."
+  [reaction-ast]
+  (when (ast-utils/node-type? reaction-ast :Code)
+    (into #{} (mapcat external-types-from-method-def)
+          (filter #(ast-utils/node-type? % :MethodDefinition) (rest reaction-ast)))))
+
+(defn merge-external-types
+  "Merge extra @ type names into schema IR (schema @ fields + Methods @ params)."
+  [schema-ir extra-types]
+  (update schema-ir :external-types #(into (or % #{}) extra-types)))
+
+(defn- method-has-external-param?
+  [schema-ir method]
+  (some #(ir/external-type? schema-ir (:type %)) (:parameters method)))
+
+(defn assert-methods-section-placement!
+  "Methods with @ params belong in ## Target Methods only."
+  [methods schema-ir section]
+  (doseq [{:keys [class method-name parameters] :as method} methods]
+    (let [has-external? (method-has-external-param? schema-ir method)]
+      (cond
+        (and (= section :methods) has-external?)
+        (throw (ex-info (str class "::" method-name
+                             " uses @ parameters and must be in ## Target Methods")
+                        {:class class :method method-name :section section}))
+
+        (and (= section :target-methods) (not has-external?))
+        (throw (ex-info (str class "::" method-name
+                             " has no @ parameters and must be in ## Methods")
+                        {:class class :method method-name :section section}))))))
 
 (defn- lambda-args-info
   [lambda-args-node]
@@ -1107,6 +1211,12 @@
      :return-type return-type
      :body-node body-node}))
 
+(defn- assert-not-reserved-method!
+  [class-name method-name]
+  (when (= "inject" method-name)
+    (throw (ex-info (str class-name "::inject is reserved for the Target harness")
+                    {:class-name class-name :method-name method-name}))))
+
 (defn- validate-method-owner!
   [schema-ir class-name method-name]
   (when-not (or (contains? (assemblage-names schema-ir) class-name)
@@ -1121,9 +1231,19 @@
     (validate-method-owner! schema-ir class-name method-name)
     [class-name method-name]))
 
+(defn- return-types-match?
+  "Implementation may return a concrete class when the signature returns the interface."
+  [schema-ir interface-name signature-return impl-return impl-class]
+  (or (= signature-return impl-return)
+      (and (= signature-return interface-name)
+           (contains? (set (interface-implementers schema-ir interface-name)) impl-class))))
+
 (defn- signatures-match?
-  [signature implementation]
-  (and (= (:return-type signature) (:return-type implementation))
+  [schema-ir signature implementation]
+  (and (return-types-match? schema-ir (:class signature)
+                            (:return-type signature)
+                            (:return-type implementation)
+                            (:class implementation))
        (= (mapv :name (:parameters signature))
           (mapv :name (:parameters implementation)))
        (= (mapv :type (:parameters signature))
@@ -1153,7 +1273,7 @@
                             {:class-name impl-name
                              :method-name (:method-name signature)}))
 
-            (not (signatures-match? signature impl))
+            (not (signatures-match? schema-ir signature impl))
             (throw (ex-info (str impl-name "::" (:method-name signature)
                                  " does not match " iface-name " signature")
                             {:interface-signature signature
@@ -1194,6 +1314,13 @@
      :lets []
      :body nil}))
 
+(defn- return-types-compatible?
+  [annotated inferred schema-ir]
+  (or (= annotated inferred)
+      (and (= annotated "Void")
+           (or (nil? inferred)
+               (ir/external-type? schema-ir inferred)))))
+
 (defn- concrete-method-def->ir
   [method-node schema-ir lookup-method target-fns]
   (let [{:keys [class-name method-name return-type body-node]}
@@ -1216,7 +1343,8 @@
         param-type-by-name (into {} (map (juxt :name :type) parameters))
         let-types (let-type-map lets schema-ir class-name param-type-by-name)
         inferred-return (expr-return-type body schema-ir class-name param-type-by-name let-types)]
-    (when (and return-type inferred-return (not= return-type inferred-return))
+    (when (and return-type inferred-return
+               (not (return-types-compatible? return-type inferred-return schema-ir)))
       (throw (ex-info (str class-name "::" method-name " return type annotation "
                            return-type " does not match inferred " inferred-return)
                       {:class-name class-name
@@ -1268,12 +1396,16 @@
                       {:class-name class-name})))
     (doseq [class-name (missing-update (ir/get-observable-classes schema-ir))]
       (throw (ex-info (str "Observable " class-name " must define update")
+                      {:class-name class-name})))
+    (doseq [class-name (missing-update (ir/get-mailbox-classes schema-ir))]
+      (throw (ex-info (str "Mailbox " class-name " must define update")
                       {:class-name class-name})))))
 
 (defn- method-def->ir
   [method-node schema-ir lookup-method target-fns]
   (let [{:keys [class-name method-name]} (method-def-parts method-node)]
     (validate-method-owner! schema-ir class-name method-name)
+    (assert-not-reserved-method! class-name method-name)
     (let [ir (if (interface? schema-ir class-name)
                (interface-method-def->ir method-node schema-ir)
                (concrete-method-def->ir method-node schema-ir lookup-method target-fns))]
@@ -1321,9 +1453,13 @@
   ([reaction-ast schema-ir]
    (reaction-ast-to-ir reaction-ast schema-ir {:bindings {} :main nil}))
   ([reaction-ast schema-ir target-ir]
+   (reaction-ast-to-ir reaction-ast schema-ir target-ir {}))
+  ([reaction-ast schema-ir target-ir {:keys [skip-checks?]}]
    (when-not (ast-utils/node-type? reaction-ast :Code)
      (throw (ex-info "Reaction AST must start with :Code" {:ast reaction-ast})))
-   (let [defs (filterv #(ast-utils/node-type? % :MethodDefinition) (rest reaction-ast))
+   (let [schema-ir (merge-external-types schema-ir
+                                         (collect-external-types-from-reaction-ast reaction-ast))
+         defs (filterv #(ast-utils/node-type? % :MethodDefinition) (rest reaction-ast))
          keys (mapv method-node-key defs)]
      (when (not= (count keys) (count (set keys)))
        (throw (ex-info "Duplicate method definition in Methods section"
@@ -1333,6 +1469,13 @@
            state (atom {:memo {} :visiting #{}})
            methods (mapv #(ensure-method! state defs-by-key schema-ir target-fns %)
                          keys)]
-       (assert-update-wiring! methods schema-ir)
-       (validate-interface-implementations! methods schema-ir)
+       (when-not skip-checks?
+         (assert-update-wiring! methods schema-ir)
+         (validate-interface-implementations! methods schema-ir))
        methods))))
+
+(defn assert-methods-complete!
+  "Run subscriber wiring and interface checks on the full Methods IR."
+  [methods schema-ir]
+  (assert-update-wiring! methods schema-ir)
+  (validate-interface-implementations! methods schema-ir))

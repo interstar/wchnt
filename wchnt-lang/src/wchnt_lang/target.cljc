@@ -3,7 +3,11 @@
   (:require [clojure.string :as str]))
 
 (def known-hosts
-  #{"terminal" "openfl"})
+  #{"terminal" "openfl" "canvas"})
+
+(def frame-hosts
+  "Hosts that use %init / %step instead of %main."
+  #{"openfl" "canvas"})
 
 (def lifecycle-names
   #{"main" "init" "step"})
@@ -32,6 +36,10 @@
   (when-let [match (re-find #"function\s+(\w+)" haxe)]
     (second match)))
 
+(defn- haxe-has-fn?
+  [haxe name]
+  (boolean (re-find (re-pattern (str "function\\s+" name "\\b")) haxe)))
+
 (defn- assert-unique-names
   [blocks]
   (let [names (mapv :name blocks)]
@@ -47,7 +55,7 @@
   [blocks]
   (let [hosts (filterv host-block? blocks)]
     (when (> (count hosts) 1)
-      (throw (ex-info "Target may name only one host (%terminal or %openfl)"
+      (throw (ex-info "Target may name only one host (%terminal, %openfl, or %canvas)"
                       {:names (mapv :name hosts)})))
     (if-let [host (first hosts)]
       (do
@@ -64,30 +72,30 @@
 (defn- assert-terminal-lifecycle
   [names]
   (when (or (contains? names "init") (contains? names "step"))
-    (throw (ex-info "%init and %step are for %openfl, not %terminal"
+    (throw (ex-info "%init and %step are for %openfl and %canvas, not %terminal"
                     {:names names})))
   (when-not (contains? names "main")
     (throw (ex-info "Target must define %main"
                     {:names names}))))
 
-(defn- assert-openfl-lifecycle
-  [names]
+(defn- assert-frame-lifecycle
+  [host names]
   (when-not (contains? names "init")
-    (throw (ex-info "%openfl requires %init"
-                    {:names names})))
+    (throw (ex-info (str "%" host " requires %init")
+                    {:host host :names names})))
   (when-not (contains? names "step")
-    (throw (ex-info "%openfl requires %step"
-                    {:names names})))
+    (throw (ex-info (str "%" host " requires %step")
+                    {:host host :names names})))
   (when (contains? names "main")
-    (throw (ex-info "%openfl uses %init and %step, not %main"
-                    {:names names}))))
+    (throw (ex-info (str "%" host " uses %init and %step, not %main")
+                    {:host host :names names}))))
 
 (defn- assert-lifecycle
   [host blocks]
   (let [names (names-of blocks)]
-    (case host
-      "terminal" (assert-terminal-lifecycle names)
-      "openfl" (assert-openfl-lifecycle names))))
+    (cond
+      (= host "terminal") (assert-terminal-lifecycle names)
+      (contains? frame-hosts host) (assert-frame-lifecycle host names))))
 
 (defn- block-named
   [blocks name]
@@ -96,16 +104,18 @@
 (defn- assert-function-named
   [block expected]
   (when block
-    (let [found (haxe-fn-name (:haxe block))]
-      (when (not= found expected)
-        (throw (ex-info (str "%" expected " must contain a Haxe function " expected)
-                        {:expected expected :found found}))))))
+    (when-not (haxe-has-fn? (:haxe block) expected)
+      (throw (ex-info (str "%" expected " must contain a function " expected)
+                      {:expected expected
+                       :found (haxe-fn-name (:haxe block))})))))
 
 (defn- binding-from-block
   [{:keys [name haxe]}]
-  (let [fn-name (haxe-fn-name haxe)]
+  (let [fn-name (if (haxe-has-fn? haxe name)
+                  name
+                  (haxe-fn-name haxe))]
     (when-not fn-name
-      (throw (ex-info (str "%" name " must contain a Haxe function")
+      (throw (ex-info (str "%" name " must contain a function")
                       {:name name :haxe haxe})))
     [name {:haxe haxe :fn-name fn-name}]))
 
@@ -115,10 +125,10 @@
     {:haxe (:haxe block)}))
 
 (defn parse-target
-  "Turn Target section text into a host, lifecycle Haxe, and % bindings.
+  "Turn Target section text into a host, lifecycle bodies, and % bindings.
    Blank input is empty. Non-empty input must start with %name.
-   Terminal requires %main. OpenFL requires %init and %step, not %main.
-   %terminal and %openfl name the host and take no Haxe body. Omitted host is terminal."
+   Terminal requires %main. OpenFL and canvas require %init and %step, not %main.
+   Host % names take no body. Omitted host is terminal."
   [text]
   (if (str/blank? (or text ""))
     {:bindings {} :main nil :host nil :init nil :step nil}

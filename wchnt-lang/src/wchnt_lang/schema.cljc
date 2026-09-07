@@ -24,10 +24,13 @@
 ;; Mainfile parsing result schema
 (def MainfileParseResult
   [:map
+   [:page-kind [:enum :documentation :library :program]]
+   [:import string?]
    [:schema string?]
    [:construction string?]
    [:methods string?]
    [:imperative string?]
+   [:target-methods string?]
    [:target string?]])
 
 
@@ -179,7 +182,9 @@
    [:interface-implementers [:map-of string? [:or string? set?]]]
    [:observable-classes [:sequential string?]]
    [:subscriber-classes [:sequential string?]]
-   [:debug-methods [:sequential DebugMethod]]])
+   [:mailbox-classes {:optional true} [:sequential string?]]
+   [:debug-methods [:sequential DebugMethod]]
+   [:external-types {:optional true} [:set string?]]])
 
 ;; Construction IR Schemas (for object instances being constructed)
 ;; Argument structure for construction objects

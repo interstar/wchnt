@@ -117,8 +117,20 @@
         haxe))))
 
 (defn- haxe-infix
+  "Render infix arith. WCHNT Int division uses Std.int (Haxe / promotes to Float)."
   [parts]
-  (str/join " " (map haxe-infix-part parts)))
+  (if (some #(= "/" %) parts)
+    (loop [acc (haxe-infix-part (first parts))
+           rest (rest parts)]
+      (if (empty? rest)
+        acc
+        (let [op (first rest)
+              rhs (haxe-infix-part (second rest))
+              combined (if (= op "/")
+                         (str "Std.int((" acc ") / (" rhs "))")
+                         (str acc " " op " " rhs))]
+          (recur combined (drop 2 rest)))))
+    (str/join " " (map haxe-infix-part parts))))
 
 (defn- haxe-join-op
   [op exprs]
@@ -136,13 +148,65 @@
                      (str "        " (expr-ir-to-haxe body) ";"))]
     (str/join "\n" (concat let-lines [value-line]))))
 
-(defn- haxe-if
+(declare haxe-if)
+
+(defn- branch-lets
+  [branch]
+  (concat (or (:lets branch) [])
+          (when (= (:expr branch) :if)
+            (concat (branch-lets (:then branch))
+                    (branch-lets (:else branch))))))
+
+(defn- strip-branch-lets
+  [branch]
+  (cond
+    (= (:expr branch) :if)
+    (assoc branch
+           :lets []
+           :then (strip-branch-lets (:then branch))
+           :else (strip-branch-lets (:else branch)))
+
+    :else
+    (assoc branch :lets [])))
+
+(defn- collect-if-branch-lets
   [expr]
-  (str "if (" (expr-ir-to-haxe (:condition expr)) ") {\n"
-       (haxe-lets-then-value (:then expr) false) "\n"
-       "    } else {\n"
-       (haxe-lets-then-value (:else expr) false) "\n"
-       "    }"))
+  (when (= (:expr expr) :if)
+    (concat (branch-lets (:then expr))
+            (branch-lets (:else expr)))))
+
+(defn- strip-if-branch-lets
+  [expr]
+  (if (= (:expr expr) :if)
+    (assoc expr
+           :then (strip-branch-lets (:then expr))
+           :else (strip-branch-lets (:else expr)))
+    expr))
+
+(defn- haxe-if-branch-value
+  "Render one if branch as a Haxe expression (nested if or body)."
+  [branch]
+  (when (seq (:lets branch []))
+    (throw (ex-info "if branch lets must be hoisted before Haxe emission"
+                    {:lets (:lets branch)})))
+  (if (= (:expr branch) :if)
+    (haxe-if branch)
+    (expr-ir-to-haxe (:body branch))))
+
+(defn- haxe-if-else-tail
+  [else-branch]
+  (if (= (:expr else-branch) :if)
+    (str "else if (" (expr-ir-to-haxe (:condition else-branch)) ") "
+         (haxe-if-branch-value (:then else-branch)) " "
+         (haxe-if-else-tail (:else else-branch)))
+    (str "else " (haxe-if-branch-value else-branch))))
+
+(defn- haxe-if
+  "Haxe if expression, parenthesised for use in arith and assignments."
+  [expr]
+  (str "(if (" (expr-ir-to-haxe (:condition expr)) ") "
+       (haxe-if-branch-value (:then expr)) " "
+       (haxe-if-else-tail (:else expr)) ")"))
 
 (defn- haxe-lambda
   ([expr]
@@ -241,17 +305,61 @@
          (str "        var " name " = " (expr-ir-to-haxe value) ";"))
        (or lets [])))
 
-(defn- update-temp-lines
-  [args]
-  (map-indexed (fn [i arg]
-                 (str "        var __u" i " = " (expr-ir-to-haxe arg) ";"))
-               args))
+(defn- identity-slot-type?
+  "Mailbox and observable ($) objects keep their identity across update()."
+  [schema-ir type-name]
+  (or (ir/is-observable? schema-ir type-name)
+      (ir/mailbox-class? schema-ir type-name)))
 
-(defn- update-assign-lines
-  [components]
-  (map-indexed (fn [i component]
-                 (str "        this." (:component-name component) " = __u" i ";"))
-               components))
+(defn- self-field-ref?
+  "Construction arg names the same field on this (listing every schema field)."
+  [field-name arg-expr]
+  (and (= (:expr arg-expr) :field)
+       (= (:name arg-expr) field-name)))
+
+(defn- no-op-passthrough-field?
+  "Skip assignment when update names an unchanged field (avoids Haxe self-assign).
+   In-place mutation semantics apply only to $ and > slots; see identity branches."
+  [schema-ir type-name field arg-expr]
+  (or (self-field-ref? field arg-expr)
+      (and (identity-slot-type? schema-ir type-name)
+           (= (:expr arg-expr) :field)
+           (= (:name arg-expr) field))))
+
+(defn- update-field-lines
+  "Install update construction fields. Identity slots mutate in place; values replace."
+  [schema-ir components args]
+  (mapcat (fn [component arg-expr]
+            (let [field (:component-name component)
+                  type-name (:type-name component)]
+              (cond
+                (and (identity-slot-type? schema-ir type-name)
+                     (= (:expr arg-expr) :construct)
+                     (not= (:class-name arg-expr) type-name))
+                (throw (ex-info
+                        (str "update must not replace identity slot '" field
+                             "' with a " (:class-name arg-expr)
+                             "; name the existing " type-name " slot or construct "
+                             type-name " fields in place")
+                        {:field field :expected type-name :got (:class-name arg-expr)}))
+
+                (and (identity-slot-type? schema-ir type-name)
+                     (= (:expr arg-expr) :construct)
+                     (= (:class-name arg-expr) type-name))
+                (keep (fn [[sub-comp sub-arg]]
+                        (when-not (self-field-ref? (:component-name sub-comp) sub-arg)
+                          (str "        this." field "." (:component-name sub-comp)
+                               " = " (expr-ir-to-haxe sub-arg) ";")))
+                      (map vector
+                           (ir/get-assemblage-components schema-ir type-name)
+                           (:args arg-expr)))
+
+                (no-op-passthrough-field? schema-ir type-name field arg-expr)
+                []
+
+                :else
+                [(str "        this." field " = " (expr-ir-to-haxe arg-expr) ";")])))
+          components args))
 
 (defn- update-context-lines
   [components schema-ir class-name]
@@ -264,12 +372,48 @@
                    ".setContext(this);"))))
         components))
 
+(defn- call-chain-steps
+  "Split nested :call IR (a.f().g().h()) into root receiver and method steps in call order."
+  [expr]
+  (when (= (:expr expr) :call)
+    (loop [steps [] current expr]
+      (let [step {:method (:method current) :args (:args current)}
+            recv (:receiver current)]
+        (if (= (:expr recv) :call)
+          (recur (conj steps step) recv)
+          {:root recv
+           :steps (vec (reverse (conj steps step)))})))))
+
+(defn- void-call-chain?
+  "Host APIs such as OpenFL Graphics type many methods as Void, so Haxe rejects . chaining."
+  [return-type body]
+  (and (= return-type "Void")
+       (= (:expr body) :call)
+       (= (:expr (:receiver body)) :call)))
+
+(defn- unroll-call-chain-lines
+  "Emit g.f(); g.g(); on the chain root — WCHNT source stays one chained expression."
+  [expr]
+  (let [{:keys [root steps]} (call-chain-steps expr)
+        root-haxe (expr-ir-to-haxe root)]
+    (mapv (fn [{:keys [method args]}]
+            (str "        " root-haxe "." method "("
+                 (str/join ", " (map expr-ir-to-haxe args))
+                 ");"))
+          steps)))
+
 (defn- generate-ordinary-method
   [{:keys [method-name parameters return-type body lets]}]
-  (let [params (str/join ", " (map #(str (:name %) ":" (:type %)) parameters))]
+  (let [branch-lets (when (= :if (:expr body)) (collect-if-branch-lets body))
+        body (if (seq branch-lets) (strip-if-branch-lets body) body)
+        params (str/join ", " (map #(str (:name %) ":" (:type %)) parameters))
+        body-lines (if (void-call-chain? return-type body)
+                     (unroll-call-chain-lines body)
+                     [(str "        return " (expr-ir-to-haxe body) ";")])]
     (str "\n    public function " method-name "(" params "): " return-type " {\n"
          (str/join "\n" (concat (method-let-lines lets)
-                                [(str "        return " (expr-ir-to-haxe body) ";")]))
+                                (method-let-lines branch-lets)
+                                body-lines))
          "\n    }")))
 
 (defn- generate-update-method
@@ -288,12 +432,24 @@
     (str "\n    public function update(): " class-name " {\n"
          (str/join "\n" (concat
                          (method-let-lines lets)
-                         (update-temp-lines args)
-                         (update-assign-lines components)
+                         (update-field-lines schema-ir components args)
                          (update-context-lines components schema-ir class-name)
                          (when observable? ["        this.notifySubscribers();"])
                          ["        return this;"]))
          "\n    }")))
+
+(defn- generate-inject-method
+  "Host-only: write schema fields, then update(). Not callable from Methods."
+  [class-name components]
+  (let [params (str/join ", " (map #(str (:component-name %) ":" (:type-name %))
+                                  components))
+        assigns (map #(str "        this." (:component-name %) " = "
+                           (:component-name %) ";")
+                     components)]
+    (str "\n    public function inject(" params "): " class-name " {\n"
+         (str/join "\n" assigns)
+         "\n        return this.update();\n"
+         "    }")))
 
 (defn generate-method
   "Generate a Haxe method from methods IR. update rewrites this in place."
@@ -341,6 +497,8 @@
          to-construction-method (generate-to-construction-method class-name components schema-ir)
          set-context-method (when (and needs-context context-parent) (generate-set-context-method context-parent))
          observable-infrastructure (when is-observable (generate-observable-infrastructure class-name))
+         inject-method (when (ir/mailbox-class? schema-ir class-name)
+                         (generate-inject-method class-name components))
          method-ctx {:components components
                      :observable? is-observable
                      :schema-ir schema-ir
@@ -353,6 +511,7 @@
           "        " constructor-body "\n"
           "    }"
           user-methods
+          (or inject-method "")
           (or set-context-method "")
           to-construction-method
           (or observable-infrastructure "")
@@ -575,10 +734,20 @@
   (let [var-name (or (:value arg) (first (:args arg)))]
     (get variable-mappings var-name var-name)))
 
+(defn- ir-stored-value
+  "Read :value even when it is false. `or` drops Bool false and emits empty Haxe."
+  [arg]
+  (if (contains? arg :value)
+    (:value arg)
+    (first (:args arg))))
+
 (defn render-primitive-value
   [arg]
-  (let [primitive-value (or (:value arg) (first (:args arg)))
+  (let [primitive-value (ir-stored-value arg)
         class-name (:class-name arg)]
+    (when (nil? primitive-value)
+      (throw (ex-info "Primitive constructor argument has no value"
+                      {:arg arg})))
     (if (or (= class-name "String") (= class-name 'String))
       (if (and (vector? primitive-value) (= (first primitive-value) :StringLiteral))
         (str "\"" (second primitive-value) "\"")

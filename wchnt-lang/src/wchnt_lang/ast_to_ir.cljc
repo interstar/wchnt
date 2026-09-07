@@ -45,7 +45,7 @@
 
         :CompositionLine
         (let [definee-node (first (filter #(= (first %) :Definee) children))
-              class-name (second definee-node)
+              class-name (ast-utils/definee-name definee-node)
               element-nodes (filter #(= (first %) :Element) children)
               processed-elements (map parser/process-element element-nodes)
               context-elements (filter #(= (:sigil %) ":") processed-elements)]
@@ -66,6 +66,14 @@
         (doseq [child (filter vector? children)]
           (walk-for-contexts! child parent-class context-map))))))
 
+(defn- collect-external-types-from-assemblages
+  [assemblages]
+  (into #{}
+        (comp (mapcat :components)
+              (filter #(= :external (:relationship %)))
+              (map :type-name))
+        assemblages))
+
 (defn build-context-relationships
   "Build context relationship mappings from schema AST"
   [schema-ast]
@@ -80,7 +88,7 @@
     (reduce (fn [acc disjunction-node]
               (let [[_ & children] disjunction-node
                     definee-node (first (filter #(= (first %) :Definee) children))
-                    interface-name (second definee-node)
+                    interface-name (ast-utils/definee-name definee-node)
                     element-nodes (filter #(= (first %) :Element) children)
                     type-names (for [element element-nodes
                                      :let [type-marker (first (filter #(and (vector? %) (= (first %) :TypeMarker)) element))]
@@ -103,7 +111,7 @@
   [composition-line]
   (let [[_ & children] composition-line
         definee-node (first (filter #(= (first %) :Definee) children))
-        class-name (second definee-node)
+        class-name (ast-utils/definee-name definee-node)
         elements (map parser/process-element
                       (filter #(= (first %) :Element) children))]
     (for [element elements
@@ -154,7 +162,7 @@
   [composition-line]
   (let [[_ & children] composition-line
         definee-node (first (filter #(= (first %) :Definee) children))
-        class-name (second definee-node)
+        class-name (ast-utils/definee-name definee-node)
         element-nodes (filter #(= (first %) :Element) children)
         processed-elements (map parser/process-element element-nodes)
         components (map process-element-to-component processed-elements)]
@@ -169,7 +177,7 @@
   [disjunction-line]
   (let [[_ & children] disjunction-line
         definee-node (first (filter #(= (first %) :Definee) children))
-        interface-name (second definee-node)
+        interface-name (ast-utils/definee-name definee-node)
         element-nodes (filter #(= (first %) :Element) children)
         type-names (for [element element-nodes
                          :let [type-marker (first (filter #(and (vector? %) (= (first %) :TypeMarker)) element))]
@@ -183,7 +191,7 @@
   [enum-line]
   (let [[_ & children] enum-line
         definee-node (first (filter #(= (first %) :Definee) children))
-        enum-name (second definee-node)
+        enum-name (ast-utils/definee-name definee-node)
         enum-value-nodes (filter #(= (first %) :EnumValue) children)
         enum-values (map second enum-value-nodes)]
     {:name enum-name
@@ -197,6 +205,23 @@
      :method "toConstruction"
      :depth-parameter true
      :format :hiccup}))
+
+(defn- composition-inlet-names
+  [schema-ast]
+  (for [line (parser/find-all-nodes :CompositionLine schema-ast)
+        :let [definee (first (filter #(= (first %) :Definee) (rest line)))]
+        :when (ast-utils/definee-inlet? definee)]
+    (ast-utils/definee-name definee)))
+
+(defn- assert-inlet-only-on-classes!
+  [schema-ast]
+  (doseq [line (concat (parser/find-all-nodes :DisjunctionLine schema-ast)
+                       (parser/find-all-nodes :EnumLine schema-ast))
+          :let [definee (first (filter #(= (first %) :Definee) (rest line)))]
+          :when (and definee (ast-utils/definee-inlet? definee))]
+    (throw (ex-info (str ">" (ast-utils/definee-name definee)
+                         " is only allowed on a composition class, not a sum type or enum")
+                    {:name (ast-utils/definee-name definee)}))))
 
 (defn- assert-no-reserved-class-names!
   [assemblages]
@@ -214,14 +239,19 @@
         assemblages (validate-reactive-components!
                      (map transform-composition-line composition-lines))]
     (assert-no-reserved-class-names! assemblages)
+    (assert-inlet-only-on-classes! schema-ast)
     (let [interfaces (map transform-disjunction-line disjunction-lines)
           enums (map transform-enum-line enum-lines)
           context-relationships (build-context-relationships schema-ast)
           interface-implementers (build-interface-implementers schema-ast)
           {:keys [observable-classes subscriber-classes]} (build-observable-and-subscriber-classes schema-ast)
+          mailbox-classes (vec (distinct (composition-inlet-names schema-ast)))
           debug-methods (create-debug-methods assemblages)]
-      (ir/create-schema-ir assemblages interfaces enums context-relationships
-                           interface-implementers observable-classes subscriber-classes debug-methods))))
+      (assoc (ir/create-schema-ir assemblages interfaces enums context-relationships
+                                  interface-implementers observable-classes subscriber-classes
+                                  debug-methods
+                                  (collect-external-types-from-assemblages assemblages))
+             :mailbox-classes mailbox-classes))))
 
 ;; =============================================================================
 ;; Construction AST to IR

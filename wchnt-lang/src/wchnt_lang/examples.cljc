@@ -32,4 +32,4 @@ Ball = Football | Rugbyball
 Football = Int/x Int/y Int/radius
 Rugbyball = Int/x Int/y Int/xrad Int/yrad
 Player = Int/x Int/y String/name
-Team = [Player]") 
+Team = [Player]")

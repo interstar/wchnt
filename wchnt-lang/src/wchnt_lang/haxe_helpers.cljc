@@ -110,16 +110,53 @@ class WCHNTRuntime {
 
 (def openfl-imports
   "import openfl.display.Sprite;
-import openfl.events.Event;")
+import openfl.display.Graphics;
+import openfl.events.Event;
+import openfl.events.KeyboardEvent;
+import openfl.text.TextField;
+import openfl.text.TextFormat;
+import openfl.ui.Keyboard;")
+
+(def openfl-graphics-wrapper
+  "// Portable draw surface for Target: same API on OpenFL and canvas (see WCHNTHarness).
+class WCHNTGraphics {
+    var g:Graphics;
+    var hud:TextField;
+
+    public function new(sprite:Sprite) {
+        g = sprite.graphics;
+        hud = new TextField();
+        hud.selectable = false;
+        hud.mouseEnabled = false;
+        hud.defaultTextFormat = new TextFormat(\"_sans\", 16, 0xFFFFFF);
+        sprite.addChild(hud);
+    }
+
+    public inline function clear():Void g.clear();
+    public inline function beginFill(color:Int, ?alpha:Float):Void g.beginFill(color, alpha);
+    public inline function endFill():Void g.endFill();
+    public inline function lineStyle(thickness:Float, color:Int, ?alpha:Float):Void g.lineStyle(thickness, color, alpha);
+    public inline function drawRect(x:Float, y:Float, w:Float, h:Float):Void g.drawRect(x, y, w, h);
+    public inline function drawCircle(x:Float, y:Float, r:Float):Void g.drawCircle(x, y, r);
+
+    public function fillText(text:String, x:Float, y:Float):Void {
+        hud.text = text;
+        hud.x = x;
+        hud.y = y;
+    }
+}")
 
 (def openfl-lifecycle
-  "public function new() {
+  "public var wchntGraphics:WCHNTGraphics;
+
+    public function new() {
         super();
         addEventListener(Event.ADDED_TO_STAGE, __wchntAdded);
     }
 
     private function __wchntAdded(_e:Event):Void {
         removeEventListener(Event.ADDED_TO_STAGE, __wchntAdded);
+        wchntGraphics = new WCHNTGraphics(this);
         init();
         addEventListener(Event.ENTER_FRAME, __wchntFrame);
     }

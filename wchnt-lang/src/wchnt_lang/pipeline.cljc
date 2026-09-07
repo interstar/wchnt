@@ -11,8 +11,7 @@
 
 The pipeline short-circuits on failure: if :success is false, later stages are skipped."
   (:require [malli.core :as m]
-            [clojure.pprint :as pp])
-  )
+            [clojure.pprint :as pp]))
 
 (def Cargo
   [:map
@@ -21,10 +20,11 @@ The pipeline short-circuits on failure: if :success is false, later stages are s
    [:errors [:sequential string?]]
    [:warnings [:sequential string?]]
    [:stash [:map]]
-   [:log [:sequential string?]]
-   ]
-  )
+   [:log [:sequential string?]]])
 
+(defn- error-message
+  [e]
+  (or (ex-message e) (str e)))
 
 (defn success-cargo [v]
   {:success true
@@ -46,11 +46,12 @@ The pipeline short-circuits on failure: if :success is false, later stages are s
 (defn failed? [c] (not (:success c)))
 (defn cargo-value [c msg]
   (if-not (is-cargo? c)
-    (throw (Exception. (str "Not Cargo " msg "\n" (with-out-str (pp/pprint c))) ))
+    (throw (ex-info (str "Not Cargo " msg "\n" (with-out-str (pp/pprint c)))
+                    {:ctx c}))
     (if (:success c)
       (:value c)
-      (throw (Exception. (str "Cargo failure " msg " for " c )))
-      )))
+      (throw (ex-info (str "Cargo failure " msg " for " c)
+                      {:cargo c})))))
 
 (defn init
   "Initialize the pipeline context with an initial value.
@@ -70,18 +71,15 @@ The pipeline short-circuits on failure: if :success is false, later stages are s
    :stash     {}
    :log       []})
 
-
 (defn throw-pass [ctx type label f]
-  "Throw if not Cargo. Pass through if error. 
+  "Throw if not Cargo. Pass through if error.
    Otherwise run f on the ctx"
   (if-not (is-cargo? ctx)
-    (throw (Exception.
-               (str type " Error. Not Cargo " label "\n"
-                    (with-out-str (pp/pprint ctx))))))
+    (throw (ex-info (str type " Error. Not Cargo " label "\n"
+                         (with-out-str (pp/pprint ctx)))
+                    {:ctx ctx :type type :label label})))
   (if-not (:success ctx) ctx
-          (f ctx label)
-          ))
-
+          (f ctx label)))
 
 (defn- merge-cargo-into-context [ctx result]
   (-> ctx
@@ -105,10 +103,10 @@ The pipeline short-circuits on failure: if :success is false, later stages are s
               (if (is-cargo? result)
                 (merge-cargo-into-context ctx result)
                 (assoc ctx :value result :success true)))
-           (catch Exception e
-             (-> ctx
-                 (assoc :success false :value nil)
-                 (update :errors conj (.getMessage e)))))))))))
+            (catch #?(:clj Exception :cljs :default) e
+              (-> ctx
+                  (assoc :success false :value nil)
+                  (update :errors conj (error-message e)))))))))))
 
 (def processor (make-processor :value))
 (def cargo-processor (make-processor identity))
@@ -123,7 +121,6 @@ The pipeline short-circuits on failure: if :success is false, later stages are s
 
   If :success is already false, the validator is skipped."
   [pred err-msg]
-  
   (fn [ctx]
     (throw-pass
      ctx "Validator" err-msg
@@ -132,8 +129,7 @@ The pipeline short-circuits on failure: if :success is false, later stages are s
          ctx
          (-> ctx
              (assoc :success false :value nil)
-             (update :errors conj err-msg)))
-       ))))
+             (update :errors conj err-msg)))))))
 
 (defn stash
   "Captures the current value under a given name in :stash.
@@ -141,7 +137,7 @@ The pipeline short-circuits on failure: if :success is false, later stages are s
   - Adds {:stash {name value}} to ctx.
   - Leaves :success and other fields unchanged.
   - If :success is already false, the stash is skipped."
-  [name]  
+  [name]
   (fn [ctx]
     (throw-pass
      ctx "Stash" ""
@@ -149,7 +145,7 @@ The pipeline short-circuits on failure: if :success is false, later stages are s
        (assoc-in ctx [:stash name] (:value ctx))))))
 
 (defn retrieve
-  "Pulls back one of the stashped previous values to make 
+  "Pulls back one of the stashped previous values to make
   the current value"
   [name]
   (fn [ctx]
@@ -188,26 +184,20 @@ The pipeline short-circuits on failure: if :success is false, later stages are s
     (throw-pass
      ctx "When-Do" ""
      (fn [ctx label]
-       (if-not
-           (p? (:value ctx))
-           (do
-     
-             ctx)
-           (let [args (cons ctx stages)]
-
-             (apply continue args))
-           )))))
+       (if-not (p? (:value ctx))
+         ctx
+         (let [args (cons ctx stages)]
+           (apply continue args)))))))
 
 (defn run
   "Run a sequence of pipeline stages on an initial value.
-  
+
   Returns the final context map with :success, :value, :errors, :warnings, and :stash."
   [initial-value & stages]
-  (reduce (fn [ctx stage] (stage ctx)) (init initial-value) stages)) 
+  (reduce (fn [ctx stage] (stage ctx)) (init initial-value) stages))
 
 (defn continue
-  "Continue running a sequence of pipeline stages based 
+  "Continue running a sequence of pipeline stages based
   on existing cargo"
   [cargo & stages]
   (reduce (fn [ctx stage] (stage ctx)) cargo stages))
-

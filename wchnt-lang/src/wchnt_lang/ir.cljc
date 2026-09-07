@@ -4,7 +4,7 @@
 (defn create-schema-ir
   "Create a schema IR structure"
   [assemblages interfaces enums context-relationships interface-implementers
-   observable-classes subscriber-classes debug-methods]
+   observable-classes subscriber-classes debug-methods external-types]
   {:assemblages assemblages
    :interfaces interfaces
    :enums enums
@@ -12,7 +12,17 @@
    :interface-implementers interface-implementers
    :observable-classes observable-classes
    :subscriber-classes subscriber-classes
-   :debug-methods debug-methods})
+   :debug-methods debug-methods
+   :external-types (or external-types #{})})
+
+(defn get-external-types
+  "Type names referenced with @ (schema field or Methods param) but not defined here."
+  [schema-ir]
+  (or (:external-types schema-ir) #{}))
+
+(defn external-type?
+  [schema-ir type-name]
+  (contains? (get-external-types schema-ir) type-name))
 
 (defn create-construction-ir
   "Create a construction IR structure"
@@ -27,6 +37,15 @@
    :dependencies dependencies
    :variable-mappings variable-mappings
    :return-object return-object})
+
+(defn get-mailbox-classes
+  "Classes marked `>Name` in Schema. Target may inject field values, then update."
+  [schema-ir]
+  (or (:mailbox-classes schema-ir) []))
+
+(defn mailbox-class?
+  [schema-ir class-name]
+  (contains? (set (get-mailbox-classes schema-ir)) class-name))
 
 (defn get-observable-classes
   "Get list of classes that need observable infrastructure"

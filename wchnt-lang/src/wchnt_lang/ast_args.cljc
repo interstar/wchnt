@@ -150,7 +150,7 @@
   [arg-item arg-index]
   {:type :primitive
    :class-name "Int"
-   :value (Integer/parseInt (second arg-item))
+   :value (ast-utils/parse-int (second arg-item))
    :args []
    :index arg-index})
 
@@ -159,6 +159,14 @@
   {:type :primitive
    :class-name "String"
    :value (second arg-item)
+   :args []
+   :index arg-index})
+
+(defn- bool-literal->arg
+  [arg-item arg-index]
+  {:type :primitive
+   :class-name "Bool"
+   :value (= "true" (second arg-item))
    :args []
    :index arg-index})
 
@@ -182,6 +190,9 @@
 
     (ast-utils/node-type? arg-item :StringLiteral)
     (string-literal->arg arg-item arg-index)
+
+    (ast-utils/node-type? arg-item :BoolLiteral)
+    (bool-literal->arg arg-item arg-index)
 
     :else
     {:type :primitive

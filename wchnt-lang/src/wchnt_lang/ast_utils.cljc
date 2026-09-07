@@ -51,3 +51,34 @@
   "Walk an AST and apply a function to each node"
   [ast visitor-fn]
   (walk-ast* ast visitor-fn))
+
+(defn definee-name
+  "Class name from a :Definee node. Optional leading :Inlet (`>`)."
+  [node]
+  (let [xs (rest node)]
+    (if (node-type? (first xs) :Inlet)
+      (second xs)
+      (first xs))))
+
+(defn definee-inlet?
+  "True when the class is marked `>Name` (harness mailbox)."
+  [node]
+  (node-type? (second node) :Inlet))
+
+(defn parse-int
+  "Parse a decimal integer. Fail fast on junk (no silent NaN)."
+  [s]
+  #?(:clj (Integer/parseInt s)
+     :cljs (let [n (js/parseInt s 10)]
+             (if (js/isNaN n)
+               (throw (ex-info (str "Not an integer: " s) {:s s}))
+               n))))
+
+(defn parse-float
+  "Parse a floating-point number. Fail fast on junk (no silent NaN)."
+  [s]
+  #?(:clj (Double/parseDouble s)
+     :cljs (let [n (js/parseFloat s)]
+             (if (js/isNaN n)
+               (throw (ex-info (str "Not a float: " s) {:s s}))
+               n))))

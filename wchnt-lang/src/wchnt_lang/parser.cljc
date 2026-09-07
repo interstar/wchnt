@@ -167,7 +167,8 @@
 (defn schema-wchnt->schema-ast [input]
   (let [parse-result ((get-schema-parser) input)]
     (if (insta/failure? parse-result)
-      (P/fail-cargo (str "Schema parsing failed: " (insta/get-failure parse-result)))
+      (P/fail-cargo (str "In Schema, "
+                         (grammars/failure-in-text->string parse-result input)))
       (P/success-cargo parse-result))))
 
 (defn find-all-nodes [tag tree]
@@ -191,7 +192,7 @@
   (let [result (grammars/parse-construction-with-failure-handling construction-text)]
     (if (:success result)
       (P/success-cargo (:ast result))
-      (P/fail-cargo ["Construction parsing failed: " (:error result)]))))
+      (P/fail-cargo (str "In Construction, " (:error result))))))
 
 (defn parse-reaction-unified [reaction-text]
   "Parse the Reactive section using the construction/reaction grammar.
@@ -200,4 +201,4 @@
   (let [result (grammars/parse-reaction-with-failure-handling reaction-text)]
     (if (:success result)
       (P/success-cargo (:ast result))
-      (P/fail-cargo (str "Reaction parsing failed: " (:error result))))))
+      (P/fail-cargo (str "In Methods, " (:error result))))))
