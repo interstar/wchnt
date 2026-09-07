@@ -125,6 +125,23 @@
           (done))
         (fn [e] (is (nil? e) (str e)) (done))))))
 
+#?(:clj
+   (deftest factory-wires-context
+     (testing ":context children get theParent on construction"
+       (let [{:keys [schema-ir methods-ir root]}
+             (interpret/load-program (slurp "examples/test_reaction_context_path.wcn"))
+             engine (interpret/get-field root "engine")]
+         (is (= "Toyota" (interpret/call schema-ir methods-ir engine "carModel" []))))))
+
+#?(:clj
+   (deftest pong-ball-reads-play-area-via-context
+     (testing ":Ball uses theGame.playArea without bounds parameters"
+       (let [{:keys [schema-ir methods-ir root]} (load-example "pong_canvas")
+             time (interpret/get-field root "time")]
+         (is (= "Game" (:wchnt/class (:theGame (interpret/get-field root "ball")))))
+         (interpret/call schema-ir methods-ir time "update" [])
+         (is (number? (:y (interpret/get-field root "ball")))))))))
+
 (deftest else-if-expression
   (testing "else if chains evaluate the matching branch"
     (let [schema "Rect = Int/x Int/y Int/width Int/height

@@ -23,6 +23,8 @@ Rect::area = { %trace(width * height) }
 ## Target
 
 ```
+%terminal
+
 %trace
 public static function wchnt_trace<T>(x:T):T {
     haxe.Log.trace(x);

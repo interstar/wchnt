@@ -6,7 +6,7 @@ See also: `plan.md` (compiler pipeline), `live.md` (canvas host + live interpret
 
 ## Hosts
 
-The first line of `## Target` names the host (or defaults to `%terminal`):
+The first line of `## Target` must name a host (required — there is no default):
 
 | Host | Target bodies | Entry | Examples |
 |------|---------------|-------|----------|

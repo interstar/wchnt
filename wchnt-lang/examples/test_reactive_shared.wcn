@@ -24,6 +24,8 @@ Game::update = { [:Game time] }
 ## Target
 
 ```
+%terminal
+
 %main
 public static function main():Void {
     var assemblage = gameFactory();

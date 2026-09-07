@@ -19,6 +19,8 @@ Engine = Int/cylinders
 ## Target
 
 ```
+%terminal
+
 %main
 public static function main():Void {
     var assemblage = carFactory();

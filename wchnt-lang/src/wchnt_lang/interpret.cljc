@@ -5,7 +5,7 @@
             [wchnt-lang.ir :as ir]
             [wchnt-lang.pipeline :as p]))
 
-(declare eval-expr instantiate wire-subscriptions apply-update)
+(declare eval-expr instantiate wire-subscriptions wire-context apply-update)
 
 (defn- class-of
   [obj]
@@ -79,7 +79,7 @@
                  (throw (ex-info "Construction has no return object"
                                  {:return-object root-id})))]
     (wire-subscriptions schema-ir root)
-    root))
+    (wire-context schema-ir root)))
 
 (defn load-program
   "Parse markdown to IR and construct the initial heap."
@@ -274,12 +274,38 @@
     (throw (ex-info (str "Unknown array method '" method "'")
                     {:method method}))))
 
+(defn- eval-external-call
+  [recv method args]
+  #?(:cljs
+     (cond
+       (and (map? recv) (= :graphics (:wchnt/host recv)))
+       (do (apply (get (:methods recv) method) args) recv)
+
+       (some? recv)
+       (let [f (aget recv method)]
+         (when f (.apply f recv (clj->js args)))
+         recv)
+
+       :else recv)
+     :clj
+     (if (and (map? recv) (= :graphics (:wchnt/host recv)))
+       (do (apply (get (:methods recv) method) args) recv)
+       (throw (ex-info (str "External call on unsupported receiver for '" method "'")
+                       {:method method :receiver recv})))))
+
 (defn- eval-call
   [expr ctx]
   (let [recv (eval-expr (:receiver expr) ctx)
-        method (:method expr)]
-    (if (vector? recv)
+        method (:method expr)
+        ext-type (:type expr)]
+    (cond
+      (and ext-type (ir/external-type? (:schema-ir ctx) ext-type))
+      (eval-external-call recv method (mapv #(eval-expr % ctx) (:args expr)))
+
+      (vector? recv)
       (eval-array-call method recv (:args expr) ctx)
+
+      :else
       (let [class-name (class-of recv)
             m (lookup-method (:methods-ir ctx) class-name method)
             args (mapv #(eval-expr % ctx) (:args expr))]
@@ -337,6 +363,49 @@
     (throw (ex-info "Cannot subscribe to a non-identity object"
                     {:class (class-of observable)})))
   (swap! (:wchnt/subscribers observable) conj subscriber))
+
+(defn- replace-field!
+  "Install value on parent. Identity parents mutate :wchnt/cell; ordinary maps return updated."
+  [obj field-name value]
+  (let [k (keyword field-name)]
+    (if-let [cell (:wchnt/cell obj)]
+      (do (swap! cell assoc k value) obj)
+      (assoc obj k value))))
+
+(defn- wire-context-on-object!
+  [schema-ir parent-obj]
+  (if-not (and (map? parent-obj) (:wchnt/class parent-obj))
+    parent-obj
+    (let [parent-class (class-of parent-obj)
+          parent-obj
+          (reduce
+           (fn [parent component]
+             (if (not= :context-specific (:relationship component))
+               parent
+               (let [field (:component-name component)
+                     child-type (:type-name component)]
+                 (if (and (ir/needs-context? schema-ir child-type)
+                          (= parent-class (ir/get-context-parent schema-ir child-type)))
+                   (let [child (get-field parent field)
+                         ctx-key (keyword (ir/context-field-name parent-class))
+                         wired (assoc child ctx-key parent)]
+                     (replace-field! parent field wired))
+                   parent))))
+           parent-obj
+           (ir/get-assemblage-components schema-ir parent-class))]
+      (reduce
+       (fn [parent fname]
+         (let [child (get-field parent fname)
+               wired (wire-context-on-object! schema-ir child)]
+           (if (identical? child wired)
+             parent
+             (replace-field! parent fname wired))))
+       parent-obj
+       (field-names schema-ir parent-class)))))
+
+(defn- wire-context
+  [schema-ir obj]
+  (wire-context-on-object! schema-ir obj))
 
 (defn- wire-subscriptions
   [schema-ir obj]
@@ -402,6 +471,7 @@
              :locals {}}
         inner (eval-lets (:lets method) (assoc ctx :locals {}))]
     (install-update! schema-ir obj (:body method) inner)
+    (wire-context-on-object! schema-ir obj)
     (when (ir/is-observable? schema-ir (class-of obj))
       (doseq [sub @(:wchnt/subscribers obj)]
         (apply-update schema-ir methods-ir sub)))

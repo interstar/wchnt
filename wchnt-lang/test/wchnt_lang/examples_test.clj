@@ -132,7 +132,7 @@
       (is (str/includes? f "new Config(Local)")))))
 
 (deftest context-sigil-generates-setContext
-  (testing "test_context emits Engine.setContext but factory does not call it"
+  (testing "test_context emits Engine.setContext and factory wires it on first build"
     (let [cargo (assert-compiles "test_context.wcn")
           f (factory cargo)
           cls (classes cargo)]
@@ -140,7 +140,7 @@
       (is (str/includes? cls "public function setContext(c: Car)"))
       (is (str/includes? f "new Engine(4)"))
       (is (str/includes? f "new Car(obj1, \"Toyota\")"))
-      (is (not (str/includes? f "setContext"))))))
+      (is (str/includes? f ".setContext(")))))
 
 (deftest context-sigil-example-duplicate
   (testing "test_sigil is the same :Engine construction as test_context"

@@ -20,7 +20,9 @@
                "lineStyle" (fn [width color]
                              (swap! log conj [:line-style width color]))
                "fillText" (fn [text x y]
-                            (swap! log conj [:fill-text text x y]))}}))
+                            (swap! log conj [:fill-text text x y]))
+               "moveTo" (fn [x y] (swap! log conj [:move-to x y]))
+               "lineTo" (fn [x y] (swap! log conj [:line-to x y]))}}))
 
 (defn graphics-log
   [graphics]
@@ -29,6 +31,7 @@
 (defn- make-env
   [program graphics]
   (atom {"wchntGraphics" graphics
+         "graphics" graphics
          "gameFactory" (fn []
                          (js-view/wrap program
                                        (interpret/construct

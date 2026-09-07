@@ -58,6 +58,8 @@ Team::zeros = { 13.times({ i | i*1 }) }
 ## Target
 
 ```
+%terminal
+
 %main
 public static function main():Void {
     var assemblage = teamFactory();

@@ -138,6 +138,8 @@ class WCHNTGraphics {
     public inline function lineStyle(thickness:Float, color:Int, ?alpha:Float):Void g.lineStyle(thickness, color, alpha);
     public inline function drawRect(x:Float, y:Float, w:Float, h:Float):Void g.drawRect(x, y, w, h);
     public inline function drawCircle(x:Float, y:Float, r:Float):Void g.drawCircle(x, y, r);
+    public inline function moveTo(x:Float, y:Float):Void g.moveTo(x, y);
+    public inline function lineTo(x:Float, y:Float):Void g.lineTo(x, y);
 
     public function fillText(text:String, x:Float, y:Float):Void {
         hud.text = text;

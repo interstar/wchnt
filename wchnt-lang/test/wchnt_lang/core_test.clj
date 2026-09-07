@@ -62,6 +62,8 @@ Ball = Int/x Int/y Int/rad
 ## Target
 
 ```
+%terminal
+
 %main
 public static function main():Void {
     var assemblage = gameFactory();
@@ -105,6 +107,8 @@ players = [:Array/Player [:Player \"Alice\" 100] [:Player \"Bob\" 85]] .
 ## Target
 
 ```
+%terminal
+
 %main
 public static function main():Void {
     var assemblage = gameFactory();
@@ -211,6 +215,8 @@ Book = String/title
 ## Target
 
 ```
+%terminal
+
 %main
 public static function main():Void {
     var assemblage = dBFactory();

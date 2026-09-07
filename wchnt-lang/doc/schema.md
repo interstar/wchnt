@@ -209,7 +209,7 @@ class Engine {
 
 - Child: `theParent` field + `setContext`.
 - **Construction wires the owned graph:** the factory builds parent and child and passes the child into the parent’s constructor (e.g. `new Car(engine, …)`). That is ordinary parent→child ownership.
-- **The reverse link is not wired on first build:** the factory does **not** call `engine.setContext(car)`, so `theCar` stays unset until something calls `setContext` (today: `update()` paths that rewrite context children in place). Methods that read `theCar` on a freshly constructed assemblage will see null until then.
+- **The reverse link is wired on first build:** the factory (and interpreter) call `child.setContext(parent)` after construction. `update()` also re-wires context children.
 - **Working** for field generation, update-time wiring, and Methods paths once context is set (`test_reaction_context_path.wcn`).
 
 **Examples:** `test_sigil.wcn`, `test_context.wcn`.
@@ -424,7 +424,7 @@ Key IR (`ast_to_ir.cljc`, `schema.cljc`):
 |---------|--------|
 | Composition, primitives, arrays, maps, enums, sum types | **Working** |
 | Ordinary components | **Working** |
-| `:context` — `theParent`, `setContext` | **Working** (factory `setContext` on first build: **gap**) |
+| `:context` — `theParent`, `setContext` | **Working** (factory calls `setContext` on first build) |
 | `$` — subscribe / notify / `update` contract | **Working** |
 | `$` / `>` — identity slots patch in place in `update` | **Working** (Haxe + interpreter) |
 | `>` — mailbox class; Target `inject` then `update` | **Working** (`square_openfl.wcn`, `square_canvas.wcn`) |

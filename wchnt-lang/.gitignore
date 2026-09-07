@@ -11,3 +11,10 @@ pom.xml.asc
 /.prepl-port
 .hgignore
 .hg/
+Export/
+generated/
+project.xml
+node_modules/
+.shadow-cljs/
+live/public/js/
+live/public/live-examples/

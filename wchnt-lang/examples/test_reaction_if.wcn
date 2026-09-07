@@ -25,6 +25,8 @@ Ball::absDx = {
 ## Target
 
 ```
+%terminal
+
 %main
 public static function main():Void {
     var assemblage = ballFactory();

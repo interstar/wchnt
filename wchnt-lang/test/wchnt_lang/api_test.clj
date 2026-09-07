@@ -24,6 +24,8 @@ Ball = Int/x Int/y Int/rad
 ## Target
 
 ```
+%terminal
+
 %main
 public static function main():Void {
     var assemblage = gameFactory();

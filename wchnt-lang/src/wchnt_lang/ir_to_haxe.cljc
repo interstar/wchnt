@@ -2,9 +2,6 @@
   "Transform WCHNT IR to Haxe code"
   (:require [wchnt-lang.ir :as ir]
             [clojure.string :as str]
-            [wchnt-lang.ast-utils :as ast-utils]
-            [wchnt-lang.pipeline :as p]
-            [wchnt-lang.ast-to-ir :as ast-to-ir]
             [wchnt-lang.haxe-helpers :as haxe-helpers]))
 
 ;; =============================================================================
@@ -582,86 +579,8 @@
 ;; Construction IR to Haxe Transformation
 ;; =============================================================================
 
-(declare process-inner-object-construction)
 (declare generate-array-element)
 (declare render-variable-ref)
-
-(defn- inner-object-class-and-arg-list
-  [element schema-ir expected-type]
-  (let [second-element (second element)]
-    (if (ast-utils/node-type? second-element :ClassName)
-      ;; Has explicit class name: [:InnerObjectConstruction [:ClassName "Name"] [:ArgList ...]]
-      [(second second-element) (nth element 2)]
-      ;; No explicit class name: [:InnerObjectConstruction [:ArgList ...]]
-      (if expected-type
-        [expected-type second-element]
-        (throw (ex-info "Cannot determine class name for InnerObjectConstruction - no explicit class name and no expected type"
-                        {:element element
-                         :schema-ir schema-ir
-                         :expected-type expected-type}))))))
-
-(defn- arg-list->constructor-args
-  [arg-list]
-  (if (ast-utils/node-type? arg-list :ArgList)
-    (rest arg-list)
-    []))
-
-(defn- render-inner-object-constructor-arg
-  [arg schema-ir class-name]
-  (cond
-    ;; Handle nested InnerObjectConstruction nodes recursively
-    (and (vector? arg) (ast-utils/node-type? arg :InnerObjectConstruction))
-    (if schema-ir
-      ;; Use schema to determine expected type for this position
-      (let [expected-arg-type (ast-to-ir/type-from-class-and-position class-name 0 schema-ir)]
-        (process-inner-object-construction arg schema-ir expected-arg-type))
-      (throw (ex-info "Schema IR is required to process nested InnerObjectConstruction nodes"
-                      {:element arg
-                       :class-name class-name
-                       :schema-ir schema-ir})))
-
-    ;; Handle ArrayConstruction nodes
-    (and (vector? arg) (ast-utils/node-type? arg :ArrayConstruction))
-    (str arg)
-
-    ;; Handle primitive AST nodes
-    (and (vector? arg) (ast-utils/node-type? arg :IntLiteral))
-    (second arg)
-    (and (vector? arg) (ast-utils/node-type? arg :StringLiteral))
-    (str "\"" (second arg) "\"")
-    (and (vector? arg) (ast-utils/node-type? arg :FloatLiteral))
-    (second arg)
-    (and (vector? arg) (ast-utils/node-type? arg :BooleanLiteral))
-    (second arg)
-
-    ;; Handle VariableRef nodes
-    (and (vector? arg) (ast-utils/node-type? arg :VariableRef))
-    (second arg)
-
-    ;; Handle IR objects
-    (and (map? arg) (= (:type arg) :primitive))
-    (:value arg)
-
-    ;; Default case
-    :else
-    (str arg)))
-
-(defn process-inner-object-construction
-  "Process an InnerObjectConstruction node and return Haxe constructor code"
-  [element schema-ir expected-type]
-  (cond
-    ;; InnerObjectConstruction: [:InnerObjectConstruction [:ClassName "Name"] [:ArgList ...]] or [:InnerObjectConstruction [:ArgList ...]]
-    (ast-utils/node-type? element :InnerObjectConstruction)
-    (let [[class-name arg-list] (inner-object-class-and-arg-list element schema-ir expected-type)
-          constructor-args (arg-list->constructor-args arg-list)]
-      (str "new " class-name "("
-           (str/join
-            ", "
-            (map #(render-inner-object-constructor-arg % schema-ir class-name)
-                 constructor-args))
-           ")"))
-    :else
-    (str element)))
 
 (defn- render-array-object-element
   [element schema-ir expected-type variable-mappings]
@@ -706,18 +625,9 @@
     (and (map? element) (= (:type element) :array))
     (render-array-nested-array-element element schema-ir variable-mappings)
 
-    (ast-utils/node-type? element :InnerObjectConstruction)
-    (process-inner-object-construction element schema-ir expected-type)
-
-    (ast-utils/node-type? element :IntLiteral) (second element)
-    (ast-utils/node-type? element :StringLiteral) (str "\"" (second element) "\"")
-    (ast-utils/node-type? element :FloatLiteral) (second element)
-    (ast-utils/node-type? element :BooleanLiteral) (second element)
-
-    (ast-utils/node-type? element :VariableRef)
-    (get variable-mappings (second element) (second element))
-
-    :else (str element)))
+    :else
+    (throw (ex-info "Unexpected array element in construction IR"
+                    {:element element}))))
 
 (defn generate-array-assignment
   "Generate Haxe code for an array assignment"
@@ -727,7 +637,6 @@
        "];"))
 
 (declare generate-object-assignment-arg)
-(declare generate-ast-node-arg)
 
 (defn render-variable-ref
   [arg variable-mappings]
@@ -816,11 +725,9 @@
     (and (map? arg) (= (:type arg) :map))
     (render-map-arg arg)
 
-    (vector? arg)
-    (generate-ast-node-arg arg schema-ir nil 0)
-
     :else
-    (str arg)))
+    (throw (ex-info "Unexpected object constructor argument in construction IR"
+                    {:arg arg}))))
 
 (defn generate-object-assignment
   "Generate Haxe code for an object assignment using structured IR data"
@@ -837,42 +744,6 @@
                          (str "  var " obj-id " = new " class-name "("
                               (str/join ", " processed-args) ");"))]
     assignment-code))
-
-
-
-(defn generate-ast-node-arg
-  "Generate Haxe code for a raw AST node (fallback for backward compatibility)"
-  [ast-node schema-ir parent-class-name arg-index]
-  (cond
-    ;; InnerObjectConstruction
-    (ast-utils/node-type? ast-node :InnerObjectConstruction)
-    (process-inner-object-construction ast-node schema-ir parent-class-name)
-    
-    ;; ArrayConstruction
-    (ast-utils/node-type? ast-node :ArrayConstruction)
-    (let [type-node (second ast-node)
-          array-type (if (ast-utils/node-type? type-node :Type)
-                      (second type-node)
-                      "Unknown")
-          arg-list (nth ast-node 2)
-          elements (if (ast-utils/node-type? arg-list :ArgList)
-                    (rest arg-list)
-                    [])]
-      (str "["
-           (str/join ", " (map #(generate-ast-node-arg % schema-ir array-type 0) elements))
-           "]"))
-    
-    ;; Primitive literals
-    (ast-utils/node-type? ast-node :IntLiteral) (second ast-node)
-    (ast-utils/node-type? ast-node :StringLiteral) (str "\"" (second ast-node) "\"")
-    (ast-utils/node-type? ast-node :FloatLiteral) (second ast-node)
-    (ast-utils/node-type? ast-node :BooleanLiteral) (second ast-node)
-    
-    ;; Variable references
-    (ast-utils/node-type? ast-node :VariableRef) (second ast-node)
-    
-    ;; Default case
-    :else (str ast-node)))
 
 (defn generate-variable-assignment
   "Generate Haxe code for a variable assignment"
@@ -926,6 +797,19 @@
         :when (= :object (:type obj-data))
         component (ir/reactive-components schema-ir (:class-name obj-data))]
     (str "  " obj-id "." (:component-name component) ".subscribe(" obj-id ");")))
+
+(defn generate-context-statements
+  "After objects exist, wire :context children to their parent."
+  [objects schema-ir]
+  (for [[obj-id obj-data] objects
+        :when (= :object (:type obj-data))
+        :let [parent-class (:class-name obj-data)]
+        component (ir/get-assemblage-components schema-ir parent-class)
+        :when (= :context-specific (:relationship component))
+        :let [child-type (:type-name component)]
+        :when (and (ir/needs-context? schema-ir child-type)
+                   (= parent-class (ir/get-context-parent schema-ir child-type)))]
+    (str "  " obj-id "." (:component-name component) ".setContext(" obj-id ");")))
 
 (defn- variable-arg-name
   [arg]
@@ -994,8 +878,12 @@
         (for [[obj-id obj-data] objects]
           (generate-assignment-statement obj-id obj-data schema-ir variable-mappings))
         subscribe-statements (generate-subscribe-statements objects schema-ir)
+        context-statements (generate-context-statements objects schema-ir)
         final-statement (str "  return " return-object ";")]
-    (str/join "\n" (concat assignment-statements subscribe-statements [final-statement]))))
+    (str/join "\n" (concat assignment-statements
+                           context-statements
+                           subscribe-statements
+                           [final-statement]))))
 
 (defn generate-construction-factory
   "Generate Haxe factory function from construction IR"

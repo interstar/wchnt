@@ -38,6 +38,8 @@ Rect::area = {
 ## Target
 
 ```
+%terminal
+
 %main
 public static function main():Void {
     var assemblage = gameFactory();

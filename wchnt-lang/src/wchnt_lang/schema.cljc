@@ -29,7 +29,6 @@
    [:schema string?]
    [:construction string?]
    [:methods string?]
-   [:imperative string?]
    [:target-methods string?]
    [:target string?]])
 

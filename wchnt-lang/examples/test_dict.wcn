@@ -21,6 +21,8 @@ Config2 = {BuildType : String}/environments
 ## Target
 
 ```
+%terminal
+
 %main
 public static function main():Void {
     var assemblage = appFactory();

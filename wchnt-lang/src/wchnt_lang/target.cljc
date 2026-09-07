@@ -63,7 +63,8 @@
           (throw (ex-info (str "%" (:name host) " names the host and must be empty")
                           {:name (:name host)})))
         (:name host))
-      "terminal")))
+      (throw (ex-info "Target must name a host (%terminal, %openfl, or %canvas)"
+                      {:hint "Add an empty host line before lifecycle blocks, e.g. %terminal then %main"})))))
 
 (defn- names-of
   [blocks]
@@ -128,7 +129,7 @@
   "Turn Target section text into a host, lifecycle bodies, and % bindings.
    Blank input is empty. Non-empty input must start with %name.
    Terminal requires %main. OpenFL and canvas require %init and %step, not %main.
-   Host % names take no body. Omitted host is terminal."
+   Host % names take no body. A host line is required for every non-empty Target."
   [text]
   (if (str/blank? (or text ""))
     {:bindings {} :main nil :host nil :init nil :step nil}

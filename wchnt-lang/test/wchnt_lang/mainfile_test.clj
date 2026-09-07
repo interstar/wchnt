@@ -45,7 +45,6 @@ Person = String String
         (is (= "Person = String String\nGroup = [Person]" (:schema value)))
         (is (= "$people = [:Group [:Person \"John\" \"Smith\"]]\n[:Town [:School $people] [:Team $people]]" (:construction value)))
         (is (= "" (:methods value)))
-        (is (= "" (:imperative value)))
         (is (= "" (:target-methods value)))
         (is (= "" (:target value))))
 
@@ -82,10 +81,6 @@ $people = [:Group [:Person \"John\" \"Smith\"]]
 
 Methods will go here.
 
-## Imperative
-
-Imperative code will go here.
-
 ## Target
 
 Target configuration will go here."
@@ -95,7 +90,6 @@ Target configuration will go here."
         (is (= "Person = String String\nGroup = [Person]" (:schema value)))
         (is (= "$people = [:Group [:Person \"John\" \"Smith\"]]\n[:Town [:School $people] [:Team $people]]" (:construction value)))
         (is (= "" (:methods value)))
-        (is (= "" (:imperative value)))
         (is (= "" (:target value)))))))
 
 
@@ -228,8 +222,6 @@ Person = String String
 ## Construction
 
 ## Methods
-
-## Imperative
 
 ## Target"
           result (parse-mainfile content)]

@@ -27,6 +27,8 @@ Engine::carModel = { theCar.model }
 ## Target
 
 ```
+%terminal
+
 %main
 public static function main():Void {
     var assemblage = carFactory();

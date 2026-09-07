@@ -183,7 +183,9 @@ Each slice: tests on the JVM interpreter first; browser only when that slice nee
 7. **Instaparse highlighting.** Done. Debounced 250ms. Schema / Construction / Methods from the existing grammars; Target is left alone. Failed section keeps last good marks and underlines the error span.
 8. **Stop / restart.** Done with the page. Tear down rAF; next Run rebuilds the heap from Construction (no hot patch of methods mid-frame in v1).
 
-Then, not v1: `$Time` canvas port (`bounce_openfl_time`), `@Graphics` / `shapes_openfl` on canvas, target-specific Methods section, maps → deftype if profiling says so.
+Then, not v1: maps → deftype if profiling says so; debugger / REPL.
+
+**Done after v1 slices:** `$Time` canvas (`pollution_canvas`, `pong_canvas`), `@Graphics` on canvas (`shapes_canvas`), wiki save/load, factory `setContext`.
 
 ---
 

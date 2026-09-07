@@ -33,6 +33,8 @@ scores = [:Scores 0 0].
 ## Target
 
 ```
+%terminal
+
 %main
 public static function main():Void {
     var assemblage = gameFactory();

@@ -20,6 +20,8 @@ Book = String/title String/author
 ## Target
 
 ```
+%terminal
+
 %main
 public static function main():Void {
     var assemblage = dBFactory();

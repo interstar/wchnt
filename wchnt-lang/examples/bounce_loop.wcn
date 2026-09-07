@@ -50,6 +50,8 @@ Game::update = {
 Haxe entry. Drive the clock; Game moves because Time notifies.
 
 ```
+%terminal
+
 %main
 public static function main():Void {
     var assemblage = gameFactory();

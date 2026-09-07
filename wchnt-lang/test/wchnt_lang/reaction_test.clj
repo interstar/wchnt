@@ -709,19 +709,19 @@ Game::update = { [:Game playArea ball] }")))))
 Game::update = { [:Game playArea ball time] }")))))
 
 (deftest construction-without-target-fails
-  (testing "a construction program without %main fails rather than inventing Main"
+  (testing "a construction program without Target host fails rather than inventing Main"
     (let [cargo (compiler/compile
                  (str "# x\n\n## Schema\n\n```\nRect = Int/x Int/y Int/width Int/height\n```\n\n"
                       "## Construction\n\n```\n[:Rect 0 0 1 1]\n```\n"))]
       (is (not (:success cargo)))
-      (is (re-find #"%main" (or (first (:errors cargo)) ""))))))
+      (is (re-find #"host" (or (first (:errors cargo)) ""))))))
 
 (deftest schema-class-named-main-fails
   (testing "a schema class called Main fails rather than colliding with the generated entry"
     (let [cargo (compiler/compile
                  (str "# x\n\n## Schema\n\n```\nMain = Int/x\n```\n\n"
                       "## Construction\n\n```\n[:Main 1]\n```\n\n"
-                      "## Target\n\n```\n%main\npublic static function main():Void {}\n```\n"))]
+                      "## Target\n\n```\n%terminal\n\n%main\npublic static function main():Void {}\n```\n"))]
       (is (not (:success cargo)))
       (is (re-find #"Main" (or (first (:errors cargo)) ""))))))
 

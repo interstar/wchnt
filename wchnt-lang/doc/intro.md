@@ -6,13 +6,12 @@ WCHNT (We CAN Have Nice Things) is a new object-oriented language for making cod
 
 WCHNT is based on the idea that we can express an entire assemblage of multiple interconnected classes at once in a single data-schema, using a Backus-Naur Format inspired grammar. Instead of defining classes one by one, we define the entire structure of our system in a declarative way. This gives us declarative rather than imperative data descriptions and construction. A single point where we can read and edit the shape of the assemblage of objects. 
 
-In fact "assemblage programming" turns the whole shape and ordering of an OO program inside-out. A WCHNT program is a literate markdown file with 5 sections. Each of which defines one codeblock demarcated with backtick fences.
+In fact "assemblage programming" turns the whole shape and ordering of an OO program inside-out. A WCHNT program is a literate markdown file with four core sections (plus optional **Import** and **Target Methods**). Each compile section is one code block demarcated with backtick fences.
 
-The 5 sections are :
+The four core sections are:
 - Schema
 - Construction
-- Reactive
-- Imperative
+- Methods
 - Target
 
 ### Class relationships in the Schema
@@ -70,7 +69,7 @@ class Car {
 
 class Engine {
    var cc:Int;
-   var theEngine:Engine;
+   var theCar:Car;
    ...
    public function setContext(c: Car) {
       this.theCar = c;
@@ -249,7 +248,7 @@ A single expression can get quite complex - it can include sub-expressions which
 
 WCHNT is an OO language so behaviour is in the form of methods of classes which are invoked by sending messages to objects of those classes in a traditional way.
 
-The official section heading is **Methods**. (Informally we still say “reaction” for this expression language.) We are not committed to a separate Imperative section; splitting mutating and non-mutating methods may not be how mutation is managed.
+The official section heading is **Methods**. (Informally we still say “reaction” for this expression language.) Mutation is handled through `update` constructions and identity slots, not a separate program phase.
 
 In this section there is (almost) no mutation of objects. Methods are (almost) pure functions which return new data.
 

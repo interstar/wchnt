@@ -20,7 +20,7 @@ Success for the *idea* is other OO languages adopting assemblage programming. WC
 
 **OpenFL drawing.** Bounce still draws in Target Haxe (`bounce_openfl.wcn`). Shapes draw from Methods: `@Graphics/g` on `Shape::draw`, Target only supplies the host `Graphics` (`shapes_openfl.wcn`). See **`doc/method.md`**.
 
-**Does not work as a language yet.** `imperative` is parsed and ignored. Schema `@` fields are stored as `:external` but still codegen like ordinary components. Factory does not call `setContext` on first build.
+**Does not work as a language yet.** Schema `@` fields are stored as `:external` but still codegen like ordinary components.
 
 **The compiler is still messy.** Live code and abandoned attempts share namespaces, especially `parser.cljc`, `ast_to_ir.cljc`, `ir_to_haxe.cljc`, `schema.cljc`, `ir.cljc`. Do not extend dead helpers. The live compile path in `compiler.cljc` is the source of truth (`compile-to-ir` then optional Haxe emission).
 
@@ -28,7 +28,7 @@ Success for the *idea* is other OO languages adopting assemblage programming. WC
 
 - **Cargo pipeline** (`pipeline.cljc`). Compiler bugs throw. Bad user input fails the cargo. Stash intermediate results.
 - **Two grammars** (`grammars.cljc`): one schema grammar, one unified construction/expression grammar. Construction is *not* a grammar generated from the schema.
-- **Markdown mainfile** with ordered sections. Prose around the fences is optional. Reserved sections: `Import`, `Schema`, `Construction`, `Methods`, `Imperative`, `Target Methods`, `Target`. Pages without compile sections are **documentation** (ignored by the compiler). Schema-only pages are **libraries** (Haxe classes, no `Main`). **`## Import`** merges sibling libraries; **`[[links]]`** in prose are wiki navigation (live only).
+- **Markdown mainfile** with ordered sections. Prose around the fences is optional. Reserved sections: `Import`, `Schema`, `Construction`, `Methods`, `Target Methods`, `Target`. Pages without compile sections are **documentation** (ignored by the compiler). Schema-only pages are **libraries** (Haxe classes, no `Main`). **`## Import`** merges sibling libraries; **`[[links]]`** in prose are wiki navigation (live only).
 - **One IR.** Schema IR is maps of assemblages, components, and relationship sigils. Construction IR is objects to allocate, assignments, and wiring. Haxe is a backend. We are not inserting extra IR layers between flatten and codegen.
 - **Flattening as a construction problem**, not a second architecture: nested literals become an ordered list of object creations. Finish that so codegen sees values and variable names, not leftover AST — or stop pretending and call it a decorated AST. Prefer finishing flatten.
 - **Examples in `examples/`** are the language spec. Unit tests of abandoned APIs are not.
@@ -42,11 +42,13 @@ Success for the *idea* is other OO languages adopting assemblage programming. WC
 
 Do this as we touch the files, or in a dedicated cleanup pass. Do not revive any of it.
 
-- Per-schema construction grammars: `extract-class-info`, `generate-strict-arg-rules`, atom walks in `parser.cljc`.
-- Forward declarations of functions that do not exist (`walk-with-context`, `flatten-with-context`, `establish-context!`, …).
-- Empty placeholders: `method-ast-to-ir`, `debug-print-construction-state`.
-- clojure.spec IR in `ir.cljc`. Keep the *constructors* if they are convenient; drop spec validation. Malli in `schema.cljc` is the checker. Delete `valid-flattened-ast?`, `valid-new-construction-ir?`, `valid-new-complete-ir?` unless they still match the live IR.
-- Tests whose only job is the abandoned flatten API (`clean_flatten_test` and similar).
+Most of the list below is **already removed** (unified construction grammar, no `haxegen`, Malli-only validation). Remaining debt: Instaparse node matches in codegen if any resurface; see `doc/development_guideline.md` § IR flattening.
+
+- Per-schema construction grammars: `extract-class-info`, `generate-strict-arg-rules`, atom walks in `parser.cljc`. **Removed.**
+- Forward declarations of functions that do not exist (`walk-with-context`, `flatten-with-context`, `establish-context!`, …). **Removed.**
+- Empty placeholders: `method-ast-to-ir`, `debug-print-construction-state`. **Removed.**
+- clojure.spec IR in `ir.cljc`. **Removed** — Malli in `schema.cljc` is the checker.
+- Tests whose only job is the abandoned flatten API (`clean_flatten_test` and similar). **Removed.**
 - The old `plan.md` three-stage namespace plan. Already gone; do not follow leftover comments that still mention it.
 - Hidden debug `Main` in `compiler.clj`. Gone. `%main` is the entry. Do not put a default loop back into the compiler.
 
@@ -64,8 +66,6 @@ Ignore the `neo4j/` tree. It is a side experiment, not part of this compiler.
   → wrap class Main from factory, Target helpers, and %main
 ```
 
-`imperative` is a key on the section map with no stages.
-
 Construction flattening lives inside `construction-ast-to-ir` today. That is fine. Do not split it into new namespaces unless the file becomes unreadable after cleanup.
 
 Codegen must not grow new knowledge of Instaparse node shapes. If it still does (`InnerObjectConstruction` in `ir_to_haxe.cljc`), that is debt to pay down, not a pattern to copy.
@@ -77,10 +77,9 @@ Codegen must not grow new knowledge of Instaparse node shapes. If it still does 
 | Schema | Working | See **`doc/schema.md`**. Ordinary, `:`, `$` codegen. Schema `@` fields parsed (`:external`) but not distinct yet. Class name `Main` is reserved. |
 | Construction | Working | Same expression grammar as Methods. |
 | Methods | Working for v1 | Official heading `## Methods`. Arithmetic, logic, lets, paths, calls, `if`, collections, strings, typed params, interface signatures, `@Type/name` extern params, in-place `update`. Informal name: reaction. |
-| Target | Working | Terminal: `%main`. OpenFL: `%init` / `%step` on a Sprite. `%name` Haxe is callable from Methods. Host is `%terminal` or `%openfl`. |
-| Imperative | Parsed, unused | May never be a separate language. Mutation strategy is unsettled. |
+| Target | Working | Terminal: `%terminal` + `%main`. OpenFL/canvas: `%init` / `%step`. `%name` Haxe is callable from Methods. |
 
-Schema, Construction, Methods, and Target are the phases we are using. Whether Imperative stays is an experiment, not an architecture decision.
+Schema, Construction, Methods, and Target are the program phases.
 
 ## How Target names the environment
 
@@ -122,7 +121,7 @@ function step():Void {
 }
 ```
 
-Known hosts today: `terminal`, `openfl`. Planned: `canvas` (live interpreter, `doc/live.md`). Host names are not callable from Methods. If you omit the host, it is `terminal`. Two hosts, a host with a body, or an unknown empty `%` used as a helper without a function, fail.
+Known hosts today: `terminal`, `openfl`, `canvas`. Host names are not callable from Methods. **A host line is required** — there is no default. Two hosts, a host with a body, or an unknown empty `%` used as a helper without a function, fail.
 
 What the host is for:
 
@@ -152,8 +151,8 @@ Compile / eyeball / examples / docs / header are the plugin surface. Do not brea
 2. **`$` stubs actually wired.** Done. `update` exists; notify is live.
 3. **Target as a real section.** Done. `%main` (terminal) or `%init`/`%step` (OpenFL). Host `%terminal` / `%openfl`.
 4. **Methods in the expression grammar.** Done for the v1 surface in **`doc/method.md`**.
-5. **OpenFL Main.** Done. `bounce_openfl.wcn` draws in Target Haxe. `shapes_openfl.wcn` draws from Methods with `@Graphics/g`. Next on the Haxe path: Pong, then Gbloink!.
-6. **Live interpreter + browser.** Planned in **`doc/live.md`**. First demo: bounce Methods + `%canvas` Target. Not a JS JIT.
+5. **OpenFL Main.** Done. `bounce_openfl.wcn`, `shapes_openfl.wcn`, `pong_openfl.wcn`. Next on the Haxe path: Gbloink!.
+6. **Live interpreter + browser.** Done for v1 (`doc/live.md`). Canvas: bounce, square, pollution, pong, shapes.
 
 Do not start a second IR layer. Do not generate construction grammars from schemas. Do not edit `neo4j/` as part of this plan. Do not put the game loop back into `compiler.clj`.
 

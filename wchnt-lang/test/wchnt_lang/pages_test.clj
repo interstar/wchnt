@@ -34,6 +34,8 @@ Game = Rect
 ## Target
 
 ```
+%terminal
+
 %main
 var g = gameFactory();
 ```")

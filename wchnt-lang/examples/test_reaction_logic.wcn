@@ -28,6 +28,8 @@ Rect::contains = {px, py | (px >= x) and (px <= (x + width)) and (py >= y) and (
 ## Target
 
 ```
+%terminal
+
 %main
 public static function main():Void {
     var assemblage = gameFactory();

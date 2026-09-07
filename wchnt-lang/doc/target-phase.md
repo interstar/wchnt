@@ -18,7 +18,7 @@ HOWEVER, it will only be in the Target phase of that WCHNT program that we will 
 
 These datails will given in Target. And may actually be written in target language. Eg. in Haxe.
 
-This means that when, in future, we have other targets for wchnt. Either a different language. Or a different platform. Or running within a differen framework. The first four phases of the WCHNT will stay the same. And the platform specific stuff will be in the Target section.
+This means that when, in future, we have other targets for wchnt. Either a different language. Or a different platform. Or running within a differen framework. The first three phases of the WCHNT will stay the same. And the platform specific stuff will be in the Target section.
 
 Does all this make sense?
 
@@ -30,9 +30,8 @@ WCHNT reorganizes traditional OO programming into Stewart Brand's "Shearing Laye
 
 1. **Schema** - Object definitions and relationships (most stable)
 2. **Construction** - Initial object creation (relatively stable)  
-3. **Reaction** - How objects respond to changes (more dynamic)
-4. **Imperative** - Object behavior over time (very dynamic)
-5. **Target** - Platform-specific implementation details (most ephemeral)
+3. **Methods** - How objects respond to changes and express behaviour (more dynamic)
+4. **Target** - Platform-specific implementation details (most ephemeral)
 
 ### The "trace" Example
 

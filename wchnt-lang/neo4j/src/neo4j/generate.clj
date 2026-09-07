@@ -1,5 +1,6 @@
 (ns neo4j.generate
-  (:require [clojure.string :as str]
+  (:require [clojure.data.json :as json]
+            [clojure.string :as str]
             [instaparse.core :as insta]
             [neo4j.explorer :as explorer])
   (:gen-class))
@@ -24,7 +25,7 @@ KeyType = Name
 ValType = Name | ArrayType
 AltName = Name
 EnumValue =  #'[^\"]+'
-Sigil = ':'  | '@' | '$'
+Sigil = ':'  | '@' | '$' | '!'
 EmptyType = '_'
 ")
 
@@ -55,38 +56,41 @@ EmptyType = '_'
       (throw (ex-info "Schema parse failed" {:error (insta/get-failure result)})))
     result))
 
+(defn transform-element [& parts]
+  (let [parts (remove #(= "/" %) parts)
+        [a b c] parts
+        sigil? (and (string? a) (#{":" "@" "$" "!"} a))
+        type (if sigil? b a)
+        alt (if sigil? c b)]
+    {:sigil (when sigil? a)
+     :type type
+     :alt alt}))
+
+(def schema-transform-rules
+  {:Schema (fn [& defs] (vec defs))
+   :DefLine identity
+   :CompositionLine (fn [name & elements]
+                      {:kind :composition :name name :elements (vec elements)})
+   :DisjunctionLine (fn [name & elements]
+                      {:kind :disjunction :name name :elements (vec elements)})
+   :EnumLine (fn [name & values]
+               {:kind :enum :name name :values (vec values)})
+   :Definee identity
+   :Element transform-element
+   :TypeMarker identity
+   :Type identity
+   :ArrayType (fn [inner] {:kind :array :of inner})
+   :MapType (fn [k v] {:kind :map :key k :val v})
+   :EmptyType (constantly {:kind :empty})
+   :KeyType identity
+   :ValType identity
+   :AltName identity
+   :Name identity
+   :EnumValue identity
+   :Sigil identity})
+
 (defn transform-schema [ast]
-  (insta/transform
-    {:Schema (fn [& defs] (vec defs))
-     :DefLine identity
-     :CompositionLine (fn [name & elements]
-                        {:kind :composition :name name :elements (vec elements)})
-     :DisjunctionLine (fn [name & elements]
-                        {:kind :disjunction :name name :elements (vec elements)})
-     :EnumLine (fn [name & values]
-                 {:kind :enum :name name :values (vec values)})
-     :Definee identity
-     :Element (fn [& parts]
-                (let [parts (remove #(= "/" %) parts)
-                      [a b c] parts
-                      sigil? (and (string? a) (#{":" "@" "$"} a))
-                      type (if sigil? b a)
-                      alt (if sigil? c b)]
-                  {:sigil (when sigil? a)
-                   :type type
-                   :alt alt}))
-     :TypeMarker identity
-     :Type identity
-     :ArrayType (fn [inner] {:kind :array :of inner})
-     :MapType (fn [k v] {:kind :map :key k :val v})
-     :EmptyType (constantly {:kind :empty})
-     :KeyType identity
-     :ValType identity
-     :AltName identity
-     :Name identity
-     :EnumValue identity
-     :Sigil identity}
-    ast))
+  (insta/transform schema-transform-rules ast))
 
 (defn validate-typemarker! [element class-name]
   (when (map? (:type element))
@@ -121,10 +125,10 @@ EmptyType = '_'
 (declare flatten-fields)
 (declare relation-field)
 
-(defn primitive-field [type alt prefix]
+(defn primitive-field [type alt prefix required]
   (let [base (field-name type alt)
         name (if prefix (str prefix "_" base) base)]
-    {:kind :property :name name :type type}))
+    {:kind :property :name name :type type :required required}))
 
 (defn flatten-element [schema element class-name prefix visited]
   (validate-typemarker! element class-name)
@@ -132,13 +136,13 @@ EmptyType = '_'
         sigil (:sigil element)]
     (cond
       (primitive-types type)
-      [(primitive-field type (:alt element) prefix)]
+      [(primitive-field type (:alt element) prefix (= "!" sigil))]
 
       (= ":" sigil)
       (flatten-fields schema type (merge-prefix prefix (:alt element)) visited)
 
       :else
-      [(relation-field type (:alt element) prefix)])))
+      [(relation-field type (:alt element) prefix (= "!" sigil))])))
 
 (defn flatten-fields [schema class-name prefix visited]
   (when (visited class-name)
@@ -154,7 +158,7 @@ EmptyType = '_'
                          (:elements definition))]
       fields)))
 
-(defn relation-field [type alt prefix]
+(defn relation-field [type alt prefix required]
   (let [base (field-name type alt)
         name-base (merge-prefix prefix base)
         rel-base (or name-base base)]
@@ -163,7 +167,8 @@ EmptyType = '_'
      :hint-name (str name-base "_hint")
      :target type
      :rel-type (str/upper-case rel-base)
-     :base rel-base}))
+     :base rel-base
+     :required required}))
 
 (defn class-fields [schema class-name]
   (let [definition (get schema class-name)]
@@ -174,14 +179,14 @@ EmptyType = '_'
                              (let [type (:type el)
                                    sigil (:sigil el)]
                                (cond
-                                 (primitive-types type)
-                                 [(primitive-field type (:alt el) nil)]
+                               (primitive-types type)
+                               [(primitive-field type (:alt el) nil (= "!" sigil))]
 
                                  (= ":" sigil)
                                  (flatten-fields schema type (:alt el) #{class-name})
 
-                                 :else
-                                 [(relation-field type (:alt el) nil)])))
+                               :else
+                               [(relation-field type (:alt el) nil (= "!" sigil))])))
                            (:elements definition))]
         (ensure-unique! fields class-name)
         fields))))
@@ -261,6 +266,61 @@ EmptyType = '_'
        "    _uid_counter += 1\n"
        "    return _uid_counter\n\n"))
 
+(defn sql-type [type]
+  (case type
+    "String" "TEXT"
+    "Int" "INTEGER"
+    "Float" "REAL"
+    "Bool" "BOOLEAN"
+    "Boolean" "BOOLEAN"
+    "TEXT"))
+
+(defn sql-column-definition [field]
+  (if (= :relation (:kind field))
+    (format "%s INTEGER%s"
+            (:name field)
+            (if (:required field) " NOT NULL" ""))
+    (format "%s %s%s"
+            (:name field)
+            (sql-type (:type field))
+            (if (:required field) " NOT NULL" ""))))
+
+(defn sql-hint-column [field]
+  (when (= :relation (:kind field))
+    (format "%s TEXT" (:hint-name field))))
+
+(defn sql-foreign-key [field]
+  (when (= :relation (:kind field))
+    (format "FOREIGN KEY(%s) REFERENCES %s(uid)"
+            (:name field)
+            (:target field))))
+
+(defn sql-table-statement [class-name fields]
+  (let [columns (concat
+                  [(format "uid INTEGER PRIMARY KEY")]
+                  (map sql-column-definition fields)
+                  (map sql-hint-column fields)
+                  (map sql-foreign-key fields))
+        column-lines (->> columns
+                          (remove nil?)
+                          (str/join ",\n    "))]
+    (format "CREATE TABLE IF NOT EXISTS %s (\n    %s\n);"
+            class-name
+            column-lines)))
+
+(defn sql-create-tables [schema]
+  (let [classes (->> (vals schema)
+                     (filter #(= :composition (:kind %)))
+                     (map :name)
+                     sort)
+        table-sql (for [class-name classes
+                        :let [fields (class-fields schema class-name)]]
+                    (sql-table-statement class-name fields))]
+    (str "def sql_create_tables():\n"
+         "    return \"\"\"\n"
+         (str/join "\n\n" table-sql)
+         "\n\"\"\"\n\n")))
+
 (defn schema-meta [schema]
   (let [classes (->> (vals schema)
                      (filter #(= :composition (:kind %)))
@@ -293,10 +353,39 @@ EmptyType = '_'
         functions (map (fn [class-name]
                          (python-function class-name (class-fields schema class-name)))
                        class-list)
+        sql-fn (sql-create-tables schema)
         web (explorer/python-webserver class-list schema-map)]
     {:upserts (str (python-upsert-header)
-                   (str/join "\n" functions))
+                   (str/join "\n" functions)
+                   "\n"
+                   sql-fn)
      :explorer web}))
+
+(defn schema-json-data [schema]
+  (let [classes (->> (vals schema)
+                     (filter #(= :composition (:kind %)))
+                     (map :name)
+                     sort)]
+    (into {}
+          (map (fn [class-name]
+                 (let [fields (class-fields schema class-name)
+                       field-map (into {}
+                                       (map (fn [field]
+                                              (let [base {:kind (if (= :relation (:kind field))
+                                                                  "foreignkey"
+                                                                  "primitive")}]
+                                               [(:name field)
+                                                (cond
+                                                   (= :relation (:kind field))
+                                                   (merge base {:type (:target field)
+                                                                :hint (:hint-name field)
+                                                                :required (boolean (:required field))})
+                                                   :else
+                                                   (merge base {:type (:type field)
+                                                                :required (boolean (:required field))}))]))
+                                            fields))]
+                   [class-name field-map])))
+          classes)))
 
 (defn -main [& args]
   (let [[schema-path] args]
@@ -312,9 +401,11 @@ EmptyType = '_'
           out-file (java.io.File. "schema.py")
           out-dir (.getParentFile out-file)
           base-dir (if out-dir (.getPath out-dir) ".")
-          explorer-path (str base-dir "/explorer.py")]
+          explorer-path (str base-dir "/explorer.py")
+          schema-path (str base-dir "/schema.json")]
       (spit (.getPath out-file) upserts)
-      (spit explorer-path explorer))))
+      (spit explorer-path explorer)
+      (spit schema-path (json/write-str (schema-json-data schema) :escape-slash false)))))
 
 (when (= *file* (System/getProperty "babashka.file"))
   (apply -main *command-line-args*))

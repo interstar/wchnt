@@ -488,6 +488,8 @@ controls = [:Map/{Direction:String} Up:\"jump\", Down:\"crouch\", Left:\"left\" 
 ## Target
 
 ```
+%terminal
+
 %main
 public static function main():Void {
     var assemblage = appFactory();

@@ -3,7 +3,7 @@
             [wchnt-lang.pipeline :as p]))
 
 (def section-order
-  ["import" "schema" "construction" "methods" "imperative" "target-methods" "target"])
+  ["import" "schema" "construction" "methods" "target-methods" "target"])
 
 (def compile-sections
   #{"schema" "construction" "methods" "target-methods" "target"})
@@ -212,7 +212,6 @@
                             :schema (get section-map "schema" "")
                             :construction (get section-map "construction" "")
                             :methods (get section-map "methods" "")
-                            :imperative (get section-map "imperative" "")
                             :target-methods (get section-map "target-methods" "")
                             :target (get section-map "target" "")}))))
     (catch #?(:clj Exception :cljs :default) e

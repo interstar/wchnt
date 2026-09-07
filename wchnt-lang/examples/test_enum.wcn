@@ -16,6 +16,8 @@ Config = BuildType/environment
 ## Target
 
 ```
+%terminal
+
 %main
 public static function main():Void {
     var assemblage = configFactory();

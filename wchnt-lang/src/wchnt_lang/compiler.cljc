@@ -236,17 +236,20 @@
   [factory target-ir]
   (if (str/blank? factory)
     ""
-    (let [host (or (:host target-ir) "terminal")
-          helpers (str/join "\n" (map :haxe (vals (:bindings (or target-ir {:bindings {}})))))
-          main (get-in target-ir [:main :haxe])
-          init (get-in target-ir [:init :haxe])
-          step (get-in target-ir [:step :haxe])]
-      (case host
-        "terminal" (emit-terminal-main factory helpers main)
-        "openfl" (emit-openfl-main factory helpers init step)
-        "canvas" (throw (ex-info "%canvas is for the live interpreter, not the Haxe backend"
-                                 {:host host}))
-        (throw (ex-info (str "Unknown Target host '" host "'") {:host host}))))))
+    (let [host (:host target-ir)]
+      (when-not host
+        (throw (ex-info "Target must name a host (%terminal, %openfl, or %canvas)"
+                        {:target-ir target-ir})))
+      (let [helpers (str/join "\n" (map :haxe (vals (:bindings (or target-ir {:bindings {}})))))
+            main (get-in target-ir [:main :haxe])
+            init (get-in target-ir [:init :haxe])
+            step (get-in target-ir [:step :haxe])]
+        (case host
+          "terminal" (emit-terminal-main factory helpers main)
+          "openfl" (emit-openfl-main factory helpers init step)
+          "canvas" (throw (ex-info "%canvas is for the live interpreter, not the Haxe backend"
+                                   {:host host}))
+          (throw (ex-info (str "Unknown Target host '" host "'") {:host host})))))))
 
 (defn- cargo->full-program
   [cargo]

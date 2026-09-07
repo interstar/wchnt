@@ -23,6 +23,8 @@ people =
 ## Target
 
 ```
+%terminal
+
 %main
 public static function main():Void {
     var assemblage = townFactory();

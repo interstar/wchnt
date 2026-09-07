@@ -4,7 +4,7 @@ The official heading in a `.wcn` file is **`## Methods`**.
 
 Platform-coupled methods (parameters using **`@Type/name`**, e.g. `@Graphics/g`) belong in **`## Target Methods`**, not in Methods. The compiler enforces this split. Example: `examples/shapes_openfl.wcn`.
 
-We still say “reaction” informally for this part of the language (immutable-ish methods, constructions, expressions). The file section is Methods. We are not committed to a second **Imperative** section; splitting mutating and non-mutating methods may not be how mutation gets managed. Imperative remains in the mainfile order but is unused.
+We still say “reaction” informally for this part of the language (immutable-ish methods, constructions, expressions). The file section is **Methods**. Mutation is handled through `update` constructions and identity slots, not a separate program phase.
 
 `doc/reaction_phase.md` is an archived early sketch (superseded by this file). Language philosophy lives in `intro.md`. Schema rules for `$` and `>` slots live in `schema.md`. Target tick/inject patterns live in `target.md`.
 
@@ -380,7 +380,7 @@ Do not add a second grammar. Do not add `for` unless combinators on collections 
 
 ## Explicitly later
 
-- Whether we ever need a separate Imperative heading.
+- Whether Methods ever needs **`do { … }`** for sequential statements (see `doc/development_guideline.md`).
 - Bare `move()` as shorthand for `this.move()`.
 - A full WCHNT type checker.
 - Automatic `update` of `:context` children (explicitly not this).

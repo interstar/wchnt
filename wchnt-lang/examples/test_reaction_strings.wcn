@@ -27,6 +27,8 @@ Player::initial = { name.substring(0, 1) }
 ## Target
 
 ```
+%terminal
+
 %main
 public static function main():Void {
     var assemblage = playerFactory();

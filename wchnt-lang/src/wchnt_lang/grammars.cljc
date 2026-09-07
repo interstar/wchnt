@@ -89,8 +89,7 @@ ArrayConstruction = <'['> <':'> <'Array'> <'/'> Type ArgList <']'>
 MapConstruction = <'['> <':'> <'Map'> <'/'> <'{'> KeyType <':'> ValType <'}'> KeyValueList? <']'>
 MethodCall = (StringLiteral | IntLiteral | VariableRef) (<#'\\.'> Name)+ <'('> MethodArgList <')'> (<#'\\.'> Name <'('> MethodArgList <')'>)*
 FieldPath = #'[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)+'
-VariableRef = Name | SelfName
-SelfName = <'self.'> Name
+VariableRef = Name
 <ArgItem> = MethodCall
           / ArrayConstruction
           / MapConstruction

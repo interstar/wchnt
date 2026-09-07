@@ -3,7 +3,9 @@
             [wchnt-lang.target :as target]))
 
 (def sample-target
-  "%trace
+  "%terminal
+
+%trace
     public static function wchnt_trace<T>(x:T):T {
         haxe.Log.trace(x);
         return x;
@@ -45,19 +47,25 @@
   (testing "a non-empty Target must define %main"
     (is (thrown-with-msg? Exception #"%main"
                           (target/parse-target
-                           "%trace\npublic static function wchnt_trace<T>(x:T):T { return x; }\n")))))
+                           "%terminal\n\n%trace\npublic static function wchnt_trace<T>(x:T):T { return x; }\n")))))
+
+(deftest parse-target-requires-host
+  (testing "non-empty Target must name a host"
+    (is (thrown-with-msg? Exception #"host"
+                          (target/parse-target
+                           "%main\npublic static function main():Void {}\n")))))
 
 (deftest parse-target-rejects-duplicates
   (testing "duplicate %name fails"
     (is (thrown-with-msg? Exception #"Duplicate"
                           (target/parse-target
-                           "%main\nfunction main():Void {}\n%main\nfunction main():Void {}\n")))))
+                           "%terminal\n\n%main\nfunction main():Void {}\n%main\nfunction main():Void {}\n")))))
 
 (deftest parse-target-trace-needs-a-function
   (testing "%trace Haxe must declare a function to call from Methods"
     (is (thrown-with-msg? Exception #"function"
                           (target/parse-target
-                           "%trace\ntrace(x);\n%main\nfunction main():Void {}\n")))))
+                           "%terminal\n\n%trace\ntrace(x);\n%main\nfunction main():Void {}\n")))))
 
 (deftest parse-target-host-terminal
   (testing "%terminal names the host and is not a Haxe binding"
