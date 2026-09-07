@@ -8,25 +8,27 @@ Language philosophy lives in `intro.md` and `podcast_ramble.md`. This file is ab
 
 Near term: a preprocessor. One assemblage file compiles to a Haxe package. Schema + Construction already do this. The program must eventually be complete enough to write small games and music (Pong, Gbloink!, string processing) without hand-editing generated classes. Libraries are allowed. Stub generation that needs a round-trip into Haxe is a failure.
 
-V1 Target: the evolving world is written in WCHNT; the outer environment (terminal loop, OpenFL frame, later a P5-like `init`/`step`) is named in Target. That is enough to play. It is not the success criterion.
+V1 Target: the evolving world is written in WCHNT; the outer environment (terminal loop, OpenFL frame, browser canvas) is named in Target. That is enough to play. It is not the success criterion.
 
-Far term: a live Smalltalk-like system. Same language, other end of the spectrum.
+Far term: a live Smalltalk-like system. Same language, other end of the spectrum. Near-term live work is `doc/live.md` (Clojure interpreter + `live/` browser page).
 
 Success for the *idea* is other OO languages adopting assemblage programming. WCHNT-the-compiler is the proof.
 
 ## Current state (honest)
 
-**Works.** Markdown mainfile → schema grammar → schema IR → Haxe classes. Construction → unified grammar → construction IR → factory. Methods (lets, paths, calls, `if`, collections, `update` + `$` notify). Target is a real section: `%name` Haxe helpers callable from Methods, `%main` spliced into generated `class Main`. Construction programs without `%main` fail. Schema class `Main` is reserved. Examples are the spec; `go.sh` / `go_all_examples.sh` compile Haxe to JS and run Node.
+**Works.** Markdown mainfile → schema grammar → schema IR → Haxe classes. Construction → unified grammar → construction IR → factory. Methods (lets, paths, calls, `if`, collections, typed params, interface signatures, `update` + `$` notify). Target is a real section: `%name` Haxe helpers callable from Methods, `%main` or OpenFL `%init`/`%step`. Construction programs without a host entry fail. Schema class `Main` is reserved. Examples are the spec; `go.sh` compiles terminal examples to JS/Node and OpenFL examples via lime.
 
-**Does not work as a language yet.** `imperative` is parsed and ignored. `@external` is recorded, not generated. OpenFL drawing is still Haxe in `%init` / `%step`; the assemblage does not know about pixels. See `doc/reaction.md`.
+**OpenFL drawing.** Bounce still draws in Target Haxe (`bounce_openfl.wcn`). Shapes draw from Methods: `@Graphics/g` on `Shape::draw`, Target only supplies the host `Graphics` (`shapes_openfl.wcn`). See **`doc/method.md`**.
 
-**The compiler is still messy.** Live code and abandoned attempts share namespaces, especially `parser.cljc`, `ast_to_ir.cljc`, `ir_to_haxe.cljc`, `schema.cljc`, `ir.cljc`. Do not extend dead helpers. The live compile path in `compiler.clj` is the source of truth.
+**Does not work as a language yet.** `imperative` is parsed and ignored. Schema `@` fields are stored as `:external` but still codegen like ordinary components. Factory does not call `setContext` on first build.
+
+**The compiler is still messy.** Live code and abandoned attempts share namespaces, especially `parser.cljc`, `ast_to_ir.cljc`, `ir_to_haxe.cljc`, `schema.cljc`, `ir.cljc`. Do not extend dead helpers. The live compile path in `compiler.cljc` is the source of truth (`compile-to-ir` then optional Haxe emission).
 
 ## Architecture we keep
 
-- **Cargo pipeline** (`pipeline.clj`). Compiler bugs throw. Bad user input fails the cargo. Stash intermediate results.
+- **Cargo pipeline** (`pipeline.cljc`). Compiler bugs throw. Bad user input fails the cargo. Stash intermediate results.
 - **Two grammars** (`grammars.cljc`): one schema grammar, one unified construction/expression grammar. Construction is *not* a grammar generated from the schema.
-- **Markdown mainfile** with ordered sections. Prose around the fences is optional.
+- **Markdown mainfile** with ordered sections. Prose around the fences is optional. Reserved sections: `Import`, `Schema`, `Construction`, `Methods`, `Imperative`, `Target Methods`, `Target`. Pages without compile sections are **documentation** (ignored by the compiler). Schema-only pages are **libraries** (Haxe classes, no `Main`). **`## Import`** merges sibling libraries; **`[[links]]`** in prose are wiki navigation (live only).
 - **One IR.** Schema IR is maps of assemblages, components, and relationship sigils. Construction IR is objects to allocate, assignments, and wiring. Haxe is a backend. We are not inserting extra IR layers between flatten and codegen.
 - **Flattening as a construction problem**, not a second architecture: nested literals become an ordered list of object creations. Finish that so codegen sees values and variable names, not leftover AST — or stop pretending and call it a decorated AST. Prefer finishing flatten.
 - **Examples in `examples/`** are the language spec. Unit tests of abandoned APIs are not.
@@ -72,15 +74,17 @@ Codegen must not grow new knowledge of Instaparse node shapes. If it still does 
 
 | Section | Status | Notes |
 |---|---|---|
-| Schema | Working | Ordinary, `:`, `@`, `$` parsed. `:` emits `setContext`. `$` emits subscribe/notify. Class name `Main` is reserved. |
+| Schema | Working | See **`doc/schema.md`**. Ordinary, `:`, `$` codegen. Schema `@` fields parsed (`:external`) but not distinct yet. Class name `Main` is reserved. |
 | Construction | Working | Same expression grammar as Methods. |
-| Methods | Working for v1 | Official heading `## Methods`. Arithmetic, logic, lets, paths, calls, `if`, collections, strings, in-place `update`. Informal name: reaction. |
+| Methods | Working for v1 | Official heading `## Methods`. Arithmetic, logic, lets, paths, calls, `if`, collections, strings, typed params, interface signatures, `@Type/name` extern params, in-place `update`. Informal name: reaction. |
 | Target | Working | Terminal: `%main`. OpenFL: `%init` / `%step` on a Sprite. `%name` Haxe is callable from Methods. Host is `%terminal` or `%openfl`. |
 | Imperative | Parsed, unused | May never be a separate language. Mutation strategy is unsettled. |
 
 Schema, Construction, Methods, and Target are the phases we are using. Whether Imperative stays is an experiment, not an architecture decision.
 
 ## How Target names the environment
+
+Full Target reference (hosts, inject-then-tick, drawing): **`doc/target.md`**.
 
 The host is **not** a CLI flag and **not** a markdown heading. Schema, Construction, and Methods stay the same file. Target names the outer environment, because that is the shearing layer that changes when you move from a Node dump to a windowed frame.
 
@@ -112,21 +116,23 @@ function init():Void {
 
 %step
 function step():Void {
-    assemblage = assemblage.step();
-    // draw with OpenFL Graphics
+    assemblage.time.update();
+    // bounce_openfl: draw in this Haxe
+    // shapes_openfl: assemblage.shapes[i].draw(graphics)
 }
 ```
 
-Known hosts: `terminal`, `openfl`. `%terminal` / `%openfl` are not callable from Methods. If you omit the host, it is `terminal` (what every current example is). Two hosts, a host with a Haxe body, or an unknown empty `%` used as a helper without a function, fail.
+Known hosts today: `terminal`, `openfl`. Planned: `canvas` (live interpreter, `doc/live.md`). Host names are not callable from Methods. If you omit the host, it is `terminal`. Two hosts, a host with a body, or an unknown empty `%` used as a helper without a function, fail.
 
 What the host is for:
 
 - **terminal** — compiler emits `class Main` with static `main()`. `go.sh` runs `haxe -js … -main Main` then Node. `%main` is required. `%init` / `%step` are not allowed.
-- **openfl** — compiler emits `class Main extends Sprite`. It calls the user's `%init` once and `%step` every frame (`ENTER_FRAME`). `%main` is not allowed. `go.sh` writes a lime `project.xml` and runs `lime test neko`. Drawing stays in the Haxe of `%init` / `%step` for now; the assemblage (schema, construction, methods) does not change.
+- **openfl** — compiler emits `class Main extends Sprite`. `%init` once, `%step` every frame. `go.sh` / lime. Target bodies are Haxe.
+- **canvas** — planned. Live interpreter only (`doc/live.md`). Same `%init` / `%step` roles; bodies are JavaScript. JS harness owns the canvas and a `graphics` object. The Haxe backend does not emit this host.
 
-Do not invent a second grammar for this. Do not put `openfl` in the Schema. The first windowed example is `examples/bounce_openfl.wcn`.
+Do not invent a second grammar for this. Windowed examples: `examples/bounce_openfl.wcn`, `bounce_openfl_time.wcn`, `shapes_openfl.wcn`, `square_openfl.wcn` (`>` mailbox / arrow keys). Canvas ports: `examples/bounce_canvas.wcn`, `square_canvas.wcn`.
 
-`class Main` in the schema is reserved because every host still generates a Haxe `Main` as the entry.
+`class Main` in the schema is reserved because the Haxe hosts still generate a Haxe `Main` as the entry.
 
 ## Neh-Thalggu
 
@@ -144,9 +150,10 @@ Compile / eyeball / examples / docs / header are the plugin surface. Do not brea
 
 1. **Cleanup pass on the live path.** Done.
 2. **`$` stubs actually wired.** Done. `update` exists; notify is live.
-3. **Target as a real section.** Done for terminal: `%main` is required, no hidden debug Main, examples name their own loop. Host `%terminal` / `%openfl` parsed; OpenFL emission is next.
-4. **Methods in the expression grammar.** Done for the v1 surface in `doc/reaction.md`.
-5. **OpenFL Main.** Done for a first window: `%openfl` emits `Main extends Sprite`, `%init` / `%step` are Haxe, `go.sh` runs lime. `examples/bounce_openfl.wcn` is the bouncing ball. Next: pull more of the Haxe draw loop back into WCHNT, then Pong, then Gbloink!.
+3. **Target as a real section.** Done. `%main` (terminal) or `%init`/`%step` (OpenFL). Host `%terminal` / `%openfl`.
+4. **Methods in the expression grammar.** Done for the v1 surface in **`doc/method.md`**.
+5. **OpenFL Main.** Done. `bounce_openfl.wcn` draws in Target Haxe. `shapes_openfl.wcn` draws from Methods with `@Graphics/g`. Next on the Haxe path: Pong, then Gbloink!.
+6. **Live interpreter + browser.** Planned in **`doc/live.md`**. First demo: bounce Methods + `%canvas` Target. Not a JS JIT.
 
 Do not start a second IR layer. Do not generate construction grammars from schemas. Do not edit `neo4j/` as part of this plan. Do not put the game loop back into `compiler.clj`.
 

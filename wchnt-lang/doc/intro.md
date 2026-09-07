@@ -100,7 +100,9 @@ In this context, while PlayArea and Ball are components of the Game, the Time is
 
 When a class is marked with the $ sigil, it becomes an "observable" class that maintains a list of subscribers. Like other classes in WCHNT, it only changes its value through its `update()` method. When the observable class updates itself, it automatically sends messages to all subscribers to call their own `update()` methods.
 
-This creates a reactive chain where changes in one object automatically propagate to dependent objects. The exact implementation details are still being worked out, but the goal is to provide a clean way to express reactive dependencies without manual event handling.
+This creates a reactive chain where changes in one object automatically propagate to dependent objects. `$` is live: factory subscribe, `update` rewrites `this` and notifies subscribers. Identity slots mutate in place — see **`doc/method.md` §5** and **`doc/schema.md`**. Examples: `examples/bounce_openfl_time.wcn`.
+
+A leading `>` on the **class name** (`>Keys = Bool/left …`) marks a **mailbox**. The class is still in the assemblage (Construction births it; `$Keys` still notifies). Target may `inject` the next field picture, then `update` runs. `Time` with only `$Time` cannot be injected — it computes `t + 1` itself. See `doc/schema.md` and `examples/square_openfl.wcn`.
 
 See more about methods, particularly the update method, below.
 

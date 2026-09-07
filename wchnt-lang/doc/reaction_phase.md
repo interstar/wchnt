@@ -1,5 +1,7 @@
 ## The Reaction phase in the WCHNT program
 
+> **Archived sketch (superseded).** The working Methods spec is **`method.md`**. This file is kept for archaeology only.
+
 The reaction phase is a set of methods or functions whose job is to transform and construct data. 
 
 In this phase all data is immutable.
