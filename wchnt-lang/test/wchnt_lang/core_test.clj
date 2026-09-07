@@ -12,10 +12,7 @@
                                          example-shape-schema]]
             [wchnt-lang.schema :as schema]
             [wchnt-lang.parser :as parser]
-            [wchnt-lang.pipeline :as P]
-            
-
-            [wchnt-lang.newparser :as newparser]))
+            [wchnt-lang.pipeline :as P]))
 
 (deftest test-get-parser
   (testing "Parser retrieval"
@@ -60,6 +57,17 @@ Ball = Int/x Int/y Int/rad
 
 ```
 [:Game [:PlayArea [:Rect 0 0 800 600]] [:Ball 100 100 5]]
+```
+
+## Target
+
+```
+%main
+public static function main():Void {
+    var assemblage = gameFactory();
+    var helper = new WCHNTHelper();
+    trace(assemblage.toConstruction(0, helper));
+}
 ```"
               cargo-result (compiler/compile wchnt-content)
               result (:value cargo-result)]
@@ -92,6 +100,17 @@ Player = String/name Int/score
 shapes = [:Array/Shape [:Triangle 10 20] [:Circle 15]] .
 players = [:Array/Player [:Player \"Alice\" 100] [:Player \"Bob\" 85]] .
 [:Game shapes players]
+```
+
+## Target
+
+```
+%main
+public static function main():Void {
+    var assemblage = gameFactory();
+    var helper = new WCHNTHelper();
+    trace(assemblage.toConstruction(0, helper));
+}
 ```"
           cargo-result (compiler/compile wchnt-content)
           result  (:value cargo-result)]
@@ -187,6 +206,17 @@ Book = String/title
      [:Book \"Northanger Abbey\"]
   ]
 ]
+```
+
+## Target
+
+```
+%main
+public static function main():Void {
+    var assemblage = dBFactory();
+    var helper = new WCHNTHelper();
+    trace(assemblage.toConstruction(0, helper));
+}
 ```"
           cargo-result (compiler/compile wchnt-content)
           result (:value cargo-result)]

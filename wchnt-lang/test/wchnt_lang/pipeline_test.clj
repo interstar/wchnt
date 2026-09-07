@@ -457,16 +457,3 @@
       ;; If it's a success cargo, the value should be the parsed AST
       (when (not (p/failed? parser-cargo))
         (is (vector? (p/cargo-value parser-cargo "test")))))))
-
-(deftest test-factory-cargo-validation
-  (testing "cargo objects returned by factory generation functions should pass validation"
-    (let [;; Test the cargo returned by generate-construction-factory-unified
-          test-ast [:BlockStatements [:Assignment "test" [:IntLiteral "5"]]]
-          test-class-info {:classes [] :enums [] :disjunctions []}
-          test-context-relationships {}
-          factory-cargo (p/success-cargo "test factory code")]
-      ;; The factory generation should return a valid cargo
-      (is (p/is-cargo? factory-cargo))
-      ;; If it's a success cargo, the value should be a string (Haxe code)
-      (when (not (p/failed? factory-cargo))
-        (is (string? (p/cargo-value factory-cargo "test")))))))

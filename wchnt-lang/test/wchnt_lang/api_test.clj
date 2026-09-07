@@ -19,6 +19,17 @@ Ball = Int/x Int/y Int/rad
 
 ```
 [:Game [:PlayArea [:Rect 0 0 800 600]] [:Ball 100 100 5]]
+```
+
+## Target
+
+```
+%main
+public static function main():Void {
+    var assemblage = gameFactory();
+    var helper = new WCHNTHelper();
+    trace(assemblage.toConstruction(0, helper));
+}
 ```"
           result (.compileToHaxe api wchnt-content)]
       (is (instance? java.util.List result))

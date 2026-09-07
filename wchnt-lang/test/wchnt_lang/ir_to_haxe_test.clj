@@ -170,7 +170,9 @@
       (is (str/includes? result "private var subscribers: Array<Dynamic> = []"))
       (is (str/includes? result "public function subscribe(subscriber: Dynamic): Void"))
       (is (str/includes? result "public function unsubscribe(subscriber: Dynamic): Void"))
-      (is (str/includes? result "public function notifySubscribers(): Void")))))
+      (is (str/includes? result "public function notifySubscribers(): Void"))
+      (is (str/includes? result "Reflect.callMethod(subscriber"))
+      (is (not (str/includes? result "hasField"))))))
 
 (deftest test-generate-haxe-interface
   (testing "generates Haxe interface"
@@ -225,7 +227,7 @@
       (is (str/includes? result "public function notifySubscribers(): Void"))))))
 
 ;; =============================================================================
-;; Integration Tests - Compare with existing haxegen output
+;; Integration Tests - Generated Haxe structure
 ;; =============================================================================
 
 (deftest test-context-dependent-variables-working
@@ -263,8 +265,8 @@
       ;; Should NOT generate setContext method for Game
       (is (not (str/includes? result "class Game {public function setContext(c: Game)"))))))
 
-(deftest test-ir-to-haxe-matches-haxegen-pattern
-  (testing "IR to Haxe generates similar structure to existing haxegen"
+(deftest test-ir-to-haxe-generates-basic-class-pattern
+  (testing "IR to Haxe generates basic class structure"
     (let [simple-ir {:assemblages
                      [{:name "Rect"
                        :components
@@ -281,7 +283,7 @@
                      :debug-methods []}
           result (ir-to-haxe/schema-ir-to-haxe simple-ir)]
       
-      ;; Should generate the same structure as haxegen
+      ;; Should generate a complete class from schema IR
       (is (str/includes? result "class Rect"))
       (is (str/includes? result "public var x: Int;"))
       (is (str/includes? result "public var y: Int;"))
@@ -441,6 +443,26 @@
       (is (str/includes? result "var obj3 = new Game(obj1, obj2);"))
       (is (str/includes? result "return obj3;")))))
 
+(deftest test-generate-construction-factory-subscribes-reactive-fields
+  (testing "factory calls subscribe on each $ component after objects exist"
+    (let [construction-ir {:root-class "Game"
+                           :factory-name "gameFactory"
+                           :return-object "obj2"
+                           :objects {"obj1" {:type :object
+                                            :class-name "Time"
+                                            :args [{:type :primitive :class-name "Int" :args [0] :index 0}]
+                                            :index 0}
+                                     "obj2" {:type :object
+                                            :class-name "Game"
+                                            :args [{:type :variable :class-name "Time" :args ["obj1"] :index 0}]
+                                            :index 1}}}
+          result (ir-to-haxe/generate-construction-factory construction-ir sample-schema-ir-with-observable)]
+      (is (str/includes? result "var obj1 = new Time(0);"))
+      (is (str/includes? result "var obj2 = new Game(obj1);"))
+      (is (str/includes? result "obj2.time.subscribe(obj2);"))
+      (is (re-find #"(?s)var obj2 = new Game\(obj1\);.*obj2\.time\.subscribe\(obj2\);.*return obj2;"
+                   result)))))
+
 ;; =============================================================================
 ;; Integration Tests - Map Construction
 ;; =============================================================================
@@ -451,7 +473,7 @@
     (let [wchnt-content "## Schema
 
 ```
-Main = String/hello Config
+App = String/hello Config
 Direction = \"Up\" | \"Down\" | \"Left\" | \"Right\"
 Config = {Direction : String}/moves
 ```
@@ -460,7 +482,18 @@ Config = {Direction : String}/moves
 
 ```
 controls = [:Map/{Direction:String} Up:\"jump\", Down:\"crouch\", Left:\"left\" Right:\"right\"].
-[:Main \"Hello\" [:Config controls]]
+[:App \"Hello\" [:Config controls]]
+```
+
+## Target
+
+```
+%main
+public static function main():Void {
+    var assemblage = appFactory();
+    var helper = new WCHNTHelper();
+    trace(assemblage.toConstruction(0, helper));
+}
 ```"
           cargo-result (compiler/compile wchnt-content)]
       
@@ -468,12 +501,79 @@ controls = [:Map/{Direction:String} Up:\"jump\", Down:\"crouch\", Left:\"left\" 
       (if (:success cargo-result)
         (let [result (:value cargo-result)]
           (is (schema/valid-full-program? result))
-          (is (str/includes? (:classes result) "class Main"))
+          (is (str/includes? (:classes result) "class App"))
           (is (str/includes? (:classes result) "class Config"))
           (is (str/includes? (:classes result) "enum Direction"))
-          (is (str/includes? (:factory result) "mainFactory")))
+          (is (str/includes? (:factory result) "appFactory")))
         (do
           (println "Map construction failed:")
           (println "Error:" (:error cargo-result))
           (println "Full cargo:" (pr-str cargo-result))
           (is false "Map construction should work")))))) 
+
+(deftest test-dict-example-compiles
+  (testing "dictionary examples preserve nested map construction arguments"
+    (let [cargo-result (compiler/compile (slurp "examples/test_dict.wcn"))]
+      (is (p/is-cargo? cargo-result))
+      (if (:success cargo-result)
+        (let [result (:value cargo-result)
+              factory (:factory result)]
+          (is (schema/valid-full-program? result))
+          (is (str/includes? factory "new Config([\"0\" => 0, \"1\" => 1])"))
+          (is (str/includes? factory "new Config2([Dev => \"dev\", Local => \"local\", Deploy => \"deploy\"])")))
+        (do
+          (println "test_dict.wcn failed:")
+          (println "Error:" (:error cargo-result))
+          (println "Full cargo:" (pr-str cargo-result))
+          (is false "test_dict.wcn should compile"))))))
+
+(deftest test-reactive-example-subscribes
+  (testing "Game = $Time construction wires time.subscribe(game)"
+    (let [cargo-result (compiler/compile (slurp "examples/test_reactive.wcn"))]
+      (is (p/is-cargo? cargo-result))
+      (is (:success cargo-result))
+      (let [result (:value cargo-result)
+            classes (:classes result)
+            factory (:factory result)]
+        (is (str/includes? classes "class Time"))
+        (is (str/includes? classes "public function subscribe(subscriber: Dynamic): Void"))
+        (is (str/includes? factory ".time.subscribe("))
+        (is (re-find #"obj\d+\.time\.subscribe\(obj\d+\);" factory))))))
+
+(deftest test-complex-game-example-resolves-bindings
+  (testing "test.wcn maps ps to an object id and infers nested Player, not String"
+    (let [cargo-result (compiler/compile (slurp "examples/test.wcn"))]
+      (is (:success cargo-result))
+      (let [factory (get-in cargo-result [:value :factory])
+            classes (get-in cargo-result [:value :classes])]
+        (is (not (re-find #"[^a-zA-Z]ps[^a-zA-Z]" factory)))
+        (is (str/includes? factory "new Player(40, 90, \"Bob\")"))
+        (is (not (str/includes? factory "new String(40, 90")))
+        (is (str/includes? classes "helper:IWCHNTHelper"))))))
+
+(deftest test-two-reactive-subscribers-share-time
+  (testing "shared Time is subscribed by both World and Scene, Time built first"
+    (let [cargo-result (compiler/compile (slurp "examples/test_reactive_two_subscribers.wcn"))]
+      (is (:success cargo-result))
+      (let [factory (get-in cargo-result [:value :factory])]
+        (is (re-find #"\.time\.subscribe\(" factory))
+        (is (= 2 (count (re-seq #"\.time\.subscribe\(" factory))))
+        (is (re-find #"(?s)new Time\(0\).*new Scene\(" factory))))))
+
+(deftest mailbox-class-emits-inject
+  (testing "square_openfl >Keys gets a generated inject that calls update"
+    (let [cargo (compiler/compile (slurp "examples/square_openfl.wcn"))]
+      (is (:success cargo) (first (:errors cargo)))
+      (let [classes (get-in cargo [:value :classes])]
+        (is (str/includes? classes "class Keys"))
+        (is (str/includes? classes "public function inject(left:Bool, right:Bool, up:Bool, down:Bool): Keys"))
+        (is (str/includes? classes "return this.update();"))
+        (is (str/includes? (get-in cargo [:value :main-class]) "assemblage.keys.inject("))))))
+
+(deftest factory-emits-false-bool-literals
+  (testing "construction false is Haxe false, not an empty constructor argument"
+    (let [cargo (compiler/compile (slurp "examples/square_openfl.wcn"))]
+      (is (:success cargo) (first (:errors cargo)))
+      (let [factory (get-in cargo [:value :factory])]
+        (is (str/includes? factory "new Keys(false, false, false, false)"))
+        (is (not (str/includes? factory "new Keys(,")))))))

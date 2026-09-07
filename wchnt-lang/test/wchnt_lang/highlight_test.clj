@@ -1,0 +1,64 @@
+(ns wchnt-lang.highlight-test
+  (:require [clojure.test :refer :all]
+            [clojure.string :as str]
+            [wchnt-lang.highlight :as highlight]))
+
+(defn- bounce []
+  (slurp "live-examples/bounce_canvas.wcn"))
+
+(defn- texts
+  [src spans kind]
+  (->> spans
+       (filter #(= kind (:kind %)))
+       (map #(subs src (:start %) (:end %)))))
+
+(deftest bounce-schema-class-names
+  (testing "Schema definees and types are class/type spans in the buffer"
+    (let [src (bounce)
+          {:keys [spans errors]} (highlight/highlight src)]
+      (is (empty? errors))
+      (is (some #{"Game"} (texts src spans :class)))
+      (is (some #{"PlayArea"} (texts src spans :class)))
+      (is (some #{"Int"} (texts src spans :type)))
+      (let [game (first (filter #(and (= :class (:kind %))
+                                      (= "Game" (subs src (:start %) (:end %))))
+                                spans))]
+        (is (str/includes? (subs src 0 (:start game)) "## Schema"))
+        (is (not (str/includes? (subs src 0 (:start game)) "## Construction")))))))
+
+(deftest bounce-construction-and-methods
+  (testing "Construction classes/numbers and Methods names/keywords"
+    (let [src (bounce)
+          {:keys [spans]} (highlight/highlight src)]
+      (is (some #{"Game"} (texts src spans :class)))
+      (is (some #{"800"} (texts src spans :number)))
+      (is (some #{"bounceDx"} (texts src spans :method)))
+      (is (some #{"if"} (texts src spans :keyword)))
+      (is (some #{"or"} (texts src spans :keyword)))
+      (is (some #{"else"} (texts src spans :keyword)))
+      (is (not-any? #{"function"} (texts src spans :keyword))))))
+
+(deftest broken-schema-keeps-last-good
+  (testing "Parse failure keeps previous spans and marks the error"
+    (let [src (bounce)
+          bad (str/replace src #"Game = PlayArea Ball" "Game = !!!")
+          ok (highlight/highlight src)
+          now (highlight/highlight bad)
+          merged (highlight/preserve ok now)
+          err-msg (:message (first (:errors now)))]
+      (is (seq (:errors now)))
+      (is (= "schema" (:section (first (:errors now)))))
+      (is (re-find #"schema:" err-msg))
+      (is (re-find #"Expected" err-msg))
+      (is (some #{"Game"} (texts src (:spans merged) :class)))
+      (is (some #{"PlayArea"} (texts src (:spans merged) :class)))
+      (is (empty? (filter #(= "schema" (:section %)) (:spans now)))))))
+
+(deftest malformed-markdown-preserves-all
+  (testing "Unclosed fence does not drop last good highlights"
+    (let [src (bounce)
+          ok (highlight/highlight src)
+          now (highlight/highlight (str src "\n```\n"))
+          merged (highlight/preserve ok now)]
+      (is (seq (:errors now)))
+      (is (= (:spans ok) (:spans merged))))))

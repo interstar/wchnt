@@ -37,21 +37,21 @@ $people = [:Group [:Person \"John\" \"Smith\"]]
 Person = String String
 ```"
           invalid-result (parse-mainfile invalid-content)]
-      
-      ;; Test successful result conforms to schema
+
       (is (:success valid-result))
       (is (schema/valid-mainfile-parse-result? (:value valid-result)))
       (let [value (:value valid-result)]
+        (is (= :program (:page-kind value)))
         (is (= "Person = String String\nGroup = [Person]" (:schema value)))
         (is (= "$people = [:Group [:Person \"John\" \"Smith\"]]\n[:Town [:School $people] [:Team $people]]" (:construction value)))
-        (is (= "" (:reactive value)))
+        (is (= "" (:methods value)))
         (is (= "" (:imperative value)))
+        (is (= "" (:target-methods value)))
         (is (= "" (:target value))))
-      
-      ;; Test error result conforms to schema
+
       (is (not (:success invalid-result)))
       (is (nil? (:value invalid-result)))
-      (is (and (seq (:errors invalid-result)) (re-find #"order|sequence" (first (:errors invalid-result))))))))
+      (is (re-find #"order|sequence" (first (:errors invalid-result)))))))
 
 
 (deftest test-parse-mainfile-basic
@@ -78,9 +78,9 @@ $people = [:Group [:Person \"John\" \"Smith\"]]
 [:Town [:School $people] [:Team $people]]
 ```
 
-## Reactive
+## Methods
 
-Reactive behavior will go here.
+Methods will go here.
 
 ## Imperative
 
@@ -94,13 +94,13 @@ Target configuration will go here."
       (let [value (:value result)]
         (is (= "Person = String String\nGroup = [Person]" (:schema value)))
         (is (= "$people = [:Group [:Person \"John\" \"Smith\"]]\n[:Town [:School $people] [:Team $people]]" (:construction value)))
-        (is (= "" (:reactive value)))
+        (is (= "" (:methods value)))
         (is (= "" (:imperative value)))
         (is (= "" (:target value)))))))
 
 
 (deftest test-parse-mainfile-schema-only
-  (testing "Parse a mainfile with only Schema section (required)"
+  (testing "Parse a mainfile with only Schema section"
     (let [content "# WCHNT Program
 
 ## Schema
@@ -114,16 +114,26 @@ Some additional text here."
           result (parse-mainfile content)]
       (is (:success result))
       (let [value (:value result)]
+        (is (= :library (:page-kind value)))
         (is (= "Person = String String\nGroup = [Person]" (:schema value)))
-        (is (= "" (:construction value)))
-        (is (= "" (:reactive value)))
-        (is (= "" (:imperative value)))
-        (is (= "" (:target value)))))))
-
+        (is (= "" (:construction value)))))))
 
 
 (deftest test-parse-mainfile-missing-schema
-  (testing "Fail when Schema section is missing"
+  (testing "Documentation page when Schema section is missing"
+    (let [content "# WCHNT Notes
+
+Just prose about the language.
+
+```clojure
+;; example code in prose — ignored
+```
+"
+          result (parse-mainfile content)]
+      (is (:success result))
+      (is (= :documentation (:page-kind (:value result))))))
+
+  (testing "Fail when compile sections appear without Schema"
     (let [content "# WCHNT Program
 
 ## Construction
@@ -132,17 +142,14 @@ Some additional text here."
 $people = [:Group [:Person \"John\" \"Smith\"]]
 ```
 
-## Reactive
+## Methods
 
 ```
-// reactive code here
+Rect::area = { 1 }
 ```"
           result (parse-mainfile content)]
       (is (not (:success result)))
-      (is (and (seq (:errors result)) (re-find #"Schema.*required" (first (:errors result))))))))
-
-
-
+      (is (re-find #"Schema" (first (:errors result)))))))
 
 
 (deftest test-parse-mainfile-multiple-code-blocks
@@ -162,9 +169,7 @@ Entity = Person | Group
 ```"
           result (parse-mainfile content)]
       (is (not (:success result)))
-      (is (and (seq (:errors result)) (re-find #"multiple.*code.*blocks" (first (:errors result)))))))
-
-  )
+      (is (re-find #"multiple.*code.*blocks" (first (:errors result)))))))
 
 
 (deftest test-parse-mainfile-ignore-language-hints
@@ -207,7 +212,7 @@ Group = [Person]
 ```"
           result (parse-mainfile content)]
       (is (not (:success result)))
-      (is (and (seq (:errors result)) (re-find #"order|sequence" (first (:errors result))))))))
+      (is (re-find #"order|sequence" (first (:errors result)))))))
 
 
 (deftest test-parse-mainfile-empty-sections
@@ -222,7 +227,7 @@ Person = String String
 
 ## Construction
 
-## Reactive
+## Methods
 
 ## Imperative
 
@@ -230,14 +235,29 @@ Person = String String
           result (parse-mainfile content)]
       (is (:success result))
       (let [value (:value result)]
+        (is (= :library (:page-kind value)))
         (is (= "Person = String String" (:schema value)))
-        (is (= "" (:construction value)))
-        (is (= "" (:reactive value)))
-        (is (= "" (:imperative value)))
-        (is (= "" (:target value)))))))
+        (is (= "" (:construction value)))))))
 
 
+(deftest test-parse-mainfile-unknown-section-reactive
+  (testing "Old Reactive heading is prose, not a compile section"
+    (let [content "# WCHNT Program
 
+## Schema
+
+```
+Person = String String
+```
+
+## Reactive
+
+```
+Rect::area = { 1 }
+```"
+          result (parse-mainfile content)]
+      (is (:success result))
+      (is (= :library (:page-kind (:value result)))))))
 
 
 (deftest test-parse-mainfile-malformed-markdown
@@ -245,14 +265,53 @@ Person = String String
     (let [content "# WCHNT Program
 
 ## Schema
-                   
+
 Missing closing backticks
-                   
+
 ```
 Person = String String
 "
           result (parse-mainfile content)]
       (is (not (:success result)))
-      (is (and (seq (:errors result)) (re-find #"unclosed.*code.*block" (first (:errors result))))))))
+      (is (re-find #"unclosed.*code.*block" (first (:errors result)))))))
 
 
+(deftest test-parse-mainfile-documentation
+  (testing "Prose-only page is documentation"
+    (let [result (parse-mainfile "# Hello\n\nSee [[bounce_canvas]] for an example.")]
+      (is (:success result))
+      (is (= :documentation (:page-kind (:value result)))))))
+
+
+(deftest test-parse-mainfile-import-and-target-methods
+  (testing "Import and Target Methods sections parse in order"
+    (let [content "## Import
+
+```
+shapes-lib
+[[helpers]]
+```
+
+## Schema
+
+```
+Game = Int/x
+```
+
+## Target Methods
+
+```
+Game::draw : Void = { @Graphics/g | }
+```"
+          result (parse-mainfile content)]
+      (is (:success result))
+      (let [value (:value result)]
+        (is (= :library (:page-kind value)))
+        (is (= "shapes-lib\n[[helpers]]" (:import value)))
+        (is (= "Game::draw : Void = { @Graphics/g | }" (:target-methods value)))))))
+
+
+(deftest test-parse-import-names
+  (testing "plain and bracketed import lines"
+    (is (= ["shapes-lib" "helpers"]
+           (parse-import-names "shapes-lib\n[[helpers]]\n")))))

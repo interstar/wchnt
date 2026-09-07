@@ -3,7 +3,8 @@
             [wchnt-lang.ast-to-ir :as ast-to-ir]
             [wchnt-lang.ast-utils :as ast-utils]
             [wchnt-lang.parser :as parser]
-            [wchnt-lang.schema :as schema]))
+            [wchnt-lang.schema :as schema]
+            [wchnt-lang.ir :as ir]))
 
 ;; =============================================================================
 ;; Schema AST to IR Tests
@@ -25,6 +26,57 @@
       (is (= "playArea" (:component-name result)))
       (is (= "PlayArea" (:type-name result)))
       (is (= :context-specific (:relationship result))))))
+
+(deftest test-process-element-to-component-with-reactive-sigil
+  (testing "process-element-to-component should mark $ as reactive"
+    (let [result (ast-to-ir/process-element-to-component
+                  {:sigil "$" :type "Time" :optional-name nil :name "time"})]
+      (is (= "time" (:component-name result)))
+      (is (= "Time" (:type-name result)))
+      (is (= :reactive (:relationship result))))))
+
+(deftest test-build-observable-and-subscriber-classes
+  (testing "Game = $Time records Time as observable and Game as subscriber"
+    (let [cargo (parser/schema-wchnt->schema-ast "Game = $Time\nTime = Int/t\n")
+          result (ast-to-ir/build-observable-and-subscriber-classes (:value cargo))]
+      (is (:success cargo))
+      (is (= #{"Time"} (set (:observable-classes result))))
+      (is (= #{"Game"} (set (:subscriber-classes result)))))))
+
+(deftest test-schema-ast-to-ir-reactive-component
+  (testing "schema IR keeps the $ field on the subscriber class"
+    (let [cargo (parser/schema-wchnt->schema-ast "Game = $Time\nTime = Int/t\n")
+          schema-ir (ast-to-ir/schema-ast-to-ir (:value cargo))
+          game (first (filter #(= "Game" (:name %)) (:assemblages schema-ir)))
+          time-component (first (:components game))]
+      (is (schema/valid-schema-ir? schema-ir))
+      (is (= :reactive (:relationship time-component)))
+      (is (= "time" (:component-name time-component)))
+      (is (= "Time" (:type-name time-component))))))
+
+(deftest test-schema-ast-to-ir-mailbox-class
+  (testing ">Keys is recorded as a mailbox class"
+    (let [cargo (parser/schema-wchnt->schema-ast
+                 ">Keys = Bool/left\nGame = $Keys\n")
+          schema-ir (ast-to-ir/schema-ast-to-ir (:value cargo))]
+      (is (schema/valid-schema-ir? schema-ir))
+      (is (= ["Keys"] (:mailbox-classes schema-ir)))
+      (is (ir/mailbox-class? schema-ir "Keys"))
+      (is (not (ir/mailbox-class? schema-ir "Game"))))))
+
+(deftest test-schema-ast-to-ir-rejects-inlet-enum
+  (testing "> on an enum fails fast"
+    (let [cargo (parser/schema-wchnt->schema-ast ">Dir = \"A\" | \"B\"\n")]
+      (is (:success cargo))
+      (is (thrown-with-msg? Exception #"composition class"
+                            (ast-to-ir/schema-ast-to-ir (:value cargo)))))))
+
+(deftest test-schema-ast-to-ir-rejects-primitive-reactive
+  (testing "$ on a primitive type fails fast"
+    (let [cargo (parser/schema-wchnt->schema-ast "Game = $Int/t\n")]
+      (is (:success cargo))
+      (is (thrown-with-msg? Exception #"primitive"
+                            (ast-to-ir/schema-ast-to-ir (:value cargo)))))))
 
 (deftest test-build-context-relationships
   (testing "build-context-relationships should extract context mappings"
@@ -110,6 +162,13 @@
       (is (= "Shape" (:name (first (:interfaces result)))))
       (is (= "Direction" (:name (first (:enums result))))))))
 
+(deftest reserved-class-name-main
+  (testing "schema class Main is reserved for the generated entry class"
+    (let [cargo (parser/schema-wchnt->schema-ast "Main = Int/x\n")]
+      (is (:success cargo))
+      (is (thrown-with-msg? Exception #"Main"
+                            (ast-to-ir/schema-ast-to-ir (:value cargo)))))))
+
 ;; =============================================================================
 ;; Construction AST to IR Tests
 ;; =============================================================================
@@ -126,8 +185,8 @@
                                               {:component-name "players" :type-name "Array<Player>"}]}]}
           result (ast-to-ir/extract-args-from-object-construction object-construction schema-ir "Team")]
       (is (= 2 (count result)))
-          (is (= {:type :primitive, :class-name "String", :args [[:StringLiteral "West Ham"]], :index 0} (first result)))
-    (is (= {:type :variable, :class-name "VariableRef", :args ["obj3"], :index 1} (second result))))))
+      (is (= {:type :primitive, :class-name "String", :value "West Ham", :args [], :index 0} (first result)))
+      (is (= {:type :variable, :class-name "VariableRef", :value "obj3", :args [], :index 1} (second result))))))
 
 (deftest test-extract-args-from-object-construction-with-enum
   (testing "extract-args-from-object-construction should identify enum values"
@@ -156,9 +215,11 @@
                                    :components [{:component-name "name" :type-name "String"}]}]}
           result (ast-to-ir/extract-args-from-object-construction object-construction schema-ir "Game")]
       (is (= 1 (count result)))
-      (is (= {:type :object, :class-name "Player", :args [[:InnerObjectConstruction 
-                       [:ClassName "Player"]
-                       [:ArgList [:StringLiteral "Alice"]]]], :index 0} (first result))))))
+      (is (= {:type :object
+              :class-name "Player"
+              :args [{:type :primitive, :class-name "String", :value "Alice", :args [], :index 0}]
+              :index 0}
+             (update (first result) :args vec))))))
 
 (deftest test-extract-args-from-object-construction-with-array
   (testing "extract-args-from-object-construction should handle array constructions"
@@ -172,9 +233,12 @@
                                    :components [{:component-name "players" :type-name "Array<Player>"}]}]}
           result (ast-to-ir/extract-args-from-object-construction object-construction schema-ir "Team")]
       (is (= 1 (count result)))
-      (is (= {:type :array, :class-name "Player", :args [[:ArrayConstruction 
-                       [:Type "Player"]
-                       [:ArgList [:StringLiteral "Alice"] [:StringLiteral "Bob"]]]], :index 0} (first result))))))
+      (is (= {:type :array
+              :class-name "Player"
+              :args [{:type :primitive, :class-name "String", :value "Alice", :args [], :index 0}
+                     {:type :primitive, :class-name "String", :value "Bob", :args [], :index 1}]
+              :index 0}
+             (update (first result) :args vec))))))
 
 (deftest test-process-variable-ref-expression
   (testing "process-variable-ref-expression should resolve nested objects"
@@ -228,7 +292,11 @@
           result (ast-to-ir/process-map-construction-expression inner-expression)]
       (is (= :map (:type result)))
       (is (= "Map<String, Int>" (:class-name result)))
-      (is (= [["a" "1"] ["b" "2"]] (:args result))))))
+      (is (= [{:type :primitive, :class-name "String", :value "a", :args [], :index 0}
+              {:type :primitive, :class-name "Int", :value "1", :args [], :index 1}
+              {:type :primitive, :class-name "String", :value "b", :args [], :index 2}
+              {:type :primitive, :class-name "Int", :value "2", :args [], :index 3}]
+             (vec (:args result)))))))
 
 (deftest test-process-assignment-expression
   (testing "process-assignment-expression should handle different expression types"
@@ -318,6 +386,15 @@
       ;; First, validate that the result conforms to the schema
       (is (schema/valid-construction-ir? result) "Generated construction IR should conform to schema")
       (is (= "Config" (:root-class result)))
+      (let [config-obj (get-in result [:objects (:return-object result)])
+            settings-ref (first (:args config-obj))
+            settings-arg (get-in result [:objects (:value settings-ref)])]
+        (is (= :variable (:type settings-ref)))
+        (is (= :map (:type settings-arg)))
+        (is (= "Map<String, Int>" (:class-name settings-arg)))
+        (is (= [{:type :primitive, :class-name "String", :value "a", :args [], :index 0}
+                {:type :primitive, :class-name "Int", :value "1", :args [], :index 1}]
+               (vec (:args settings-arg)))))
       (is (contains? result :objects))
       (is (contains? result :return-object)))))
 
@@ -386,14 +463,14 @@
           result (ast-to-ir/construction-ast-to-ir construction-ast schema-ir)]
       ;; First, validate that the result conforms to the schema
       (is (schema/valid-construction-ir? result) "Generated construction IR should conform to schema")
-      ;; Check that both inner objects were correctly inferred as Player
+      ;; ArrayConstruction is represented as one array object containing Player args.
       (let [objects (:objects result)
-            player-objects (filter #(and (= :object (:type (val %)))
-                                        (= "Player" (:class-name (val %)))) objects)]
-        (is (= 2 (count player-objects)) "Should have exactly 2 Player objects")
-        (doseq [[obj-id obj] player-objects]
+            array-object (first (filter #(= :array (:type (val %))) objects))
+            player-objects (:args (val array-object))]
+        (is (= 2 (count player-objects)) "Should have exactly 2 Player entries")
+        (doseq [obj player-objects]
           (is (= "Player" (:class-name obj)) 
-              (str "Object " obj-id " should be inferred as Player")))))))
+              "Array element should be inferred as Player"))))))
 
 (deftest test-inner-object-type-inference-multi-layer
   (testing "InnerObjectConstruction should infer type through multiple layers of parent context"
@@ -449,6 +526,39 @@
               (is true "League object correctly identified")
                   :else
               (is false (str "Unexpected object type: " (:class-name obj))))))))))
+
+(deftest test-nested-array-inner-object-is-element-type
+  (testing "untagged [40 90 Bob] inside Array/Player is a Player, not a field of Team"
+    (let [construction-ast [:BlockStatements
+                            [:Expression
+                             [:ObjectConstruction
+                              [:ClassName "Team"]
+                              [:ArgList
+                               [:StringLiteral "Palace"]
+                               [:ArrayConstruction
+                                [:Type "Player"]
+                                [:ArgList
+                                 [:InnerObjectConstruction
+                                  [:ArgList
+                                   [:IntLiteral "40"]
+                                   [:IntLiteral "90"]
+                                   [:StringLiteral "Bob"]]]]]]]]]
+          schema-ir {:assemblages [{:name "Team"
+                                    :components [{:component-name "name" :type-name "String" :relationship :ordinary :optional-name nil}
+                                                 {:component-name "players" :type-name "Array<Player>" :relationship :ordinary :optional-name nil}]}
+                                   {:name "Player"
+                                    :components [{:component-name "x" :type-name "Int" :relationship :ordinary :optional-name nil}
+                                                 {:component-name "y" :type-name "Int" :relationship :ordinary :optional-name nil}
+                                                 {:component-name "name" :type-name "String" :relationship :ordinary :optional-name nil}]}]
+                     :enums [] :interfaces [] :context-relationships {}
+                     :interface-implementers {} :observable-classes [] :subscriber-classes [] :debug-methods []}
+          result (ast-to-ir/construction-ast-to-ir construction-ast schema-ir)
+          nodes (tree-seq coll? seq result)
+          player-nodes (filter #(and (map? %)
+                                     (= :object (:type %))
+                                     (= "Player" (:class-name %)))
+                               nodes)]
+      (is (seq player-nodes) "IR should contain a Player object for Bob"))))
 
 (deftest test-inner-object-type-inference-with-explicit-class
   (testing "InnerObjectConstruction with explicit class name should use that instead of inferring"
