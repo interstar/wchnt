@@ -1,0 +1,77 @@
+# Steer a square (live canvas)
+
+Same Schema, Construction, and Methods as `square_openfl.wcn`, except the live `>Keys` mailbox carries **Int/dx Int/dy** computed in Target from `input.keys` (Firefox on Linux does not deliver Up/Down to a canvas reliably).
+
+Click the **play area** (blue outline) after Run, then use the arrow keys.
+
+## Schema
+
+```
+>Keys = Int/dx Int/dy
+Game = PlayArea Square $Keys
+PlayArea = Rect
+Rect = Int/x Int/y Int/width Int/height
+Square = Int/x Int/y Int/size
+```
+
+## Construction
+
+```
+[:Game
+  [:PlayArea [0 0 800 600]]
+  [:Square 380 280 40]
+  [:Keys 0 0]
+]
+```
+
+## Methods
+
+```
+Keys::update = { [:Keys dx dy] }
+
+Square::nudge = {
+  Int/dx, Int/dy, Int/minX, Int/minY, Int/maxX, Int/maxY |
+  nx = x + dx.
+  ny = y + dy.
+  [:Square
+    (if ((nx < minX) or (nx > maxX)) { x } else { nx })
+    (if ((ny < minY) or (ny > maxY)) { y } else { ny })
+    size]
+}
+
+Game::update = {
+  r = playArea.rect.
+  moved = square.nudge(keys.dx, keys.dy, r.x, r.y, ((r.x + r.width) - square.size), ((r.y + r.height) - square.size)).
+  [:Game playArea moved keys]
+}
+```
+
+## Target
+
+```
+%canvas
+
+%init
+var assemblage;
+
+function init() {
+    assemblage = gameFactory();
+}
+
+%step
+function step() {
+    var k = input.keys;
+    var dx = (k["ArrowRight"] ? 6 : 0) + (k["ArrowLeft"] ? -6 : 0);
+    var dy = (k["ArrowDown"] ? 6 : 0) + (k["ArrowUp"] ? -6 : 0);
+    assemblage.keys.inject(dx, dy);
+    var r = assemblage.playArea.rect;
+    var s = assemblage.square;
+    wchntGraphics.clear();
+    wchntGraphics.beginFill(0x2a2a2a);
+    wchntGraphics.drawRect(r.x, r.y, r.width, r.height);
+    wchntGraphics.endFill();
+    wchntGraphics.beginFill(0xf2f2f2);
+    wchntGraphics.drawRect(s.x, s.y, s.size, s.size);
+    wchntGraphics.endFill();
+}
+```

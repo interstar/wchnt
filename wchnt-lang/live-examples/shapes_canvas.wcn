@@ -1,0 +1,102 @@
+# Moving shapes (live canvas)
+
+Same Schema, Construction, Methods, and Target Methods as `shapes_openfl.wcn`. **`$Time`** ticks; shapes draw via **`@Graphics/g`**. Target passes **`wchntGraphics`** (same API as OpenFL's portable wrapper).
+
+## Schema
+
+```
+Game = PlayArea [Shape]/shapes $Time
+PlayArea = Rect
+Rect = Int/x Int/y Int/width Int/height
+Shape = Circle | Square | Triangle
+Circle = Int/x Int/y Int/radius Int/dx
+Square = Int/x Int/y Int/side Int/dx
+Triangle = Int/x Int/y Int/base Int/height Int/dx
+Time = Int/t
+```
+
+## Construction
+
+```
+[:Game
+  [:PlayArea [0 0 800 600]]
+  [:Array/Shape
+    [:Circle 80 120 24 5]
+    [:Square 220 280 40 3]
+    [:Triangle 520 400 50 45 4]
+  ]
+  [:Time 0]
+]
+```
+
+## Methods
+
+```
+Time::update = { [:Time (t + 1)] }
+
+Shape::step : Shape = { Rect/bounds | }
+
+Circle::step = { Rect/bounds |
+  nx = (x + dx) % bounds.width.
+  [:Circle nx y radius dx]
+}
+
+Square::step = { Rect/bounds |
+  nx = (x + dx) % bounds.width.
+  [:Square nx y side dx]
+}
+
+Triangle::step = { Rect/bounds |
+  nx = (x + dx) % bounds.width.
+  [:Triangle nx y base height dx]
+}
+
+Game::update = {
+  moved = shapes.map({ Shape/s | s.step(playArea.rect) }).
+  [:Game playArea moved time]
+}
+```
+
+## Target Methods
+
+```
+Shape::draw : Void = { @Graphics/g | }
+
+Circle::draw : Void = { @Graphics/g |
+  g.beginFill(15316448).drawCircle(x, y, radius).endFill()
+}
+
+Square::draw : Void = { @Graphics/g |
+  g.beginFill(988016).drawRect(x, y, side, side).endFill()
+}
+
+Triangle::draw : Void = { @Graphics/g |
+  g.beginFill(5453955).moveTo(x, y).lineTo(x + base, y).lineTo(x + (base / 2), y - height).lineTo(x, y).endFill()
+}
+```
+
+## Target
+
+```
+%canvas
+
+%init
+var assemblage;
+
+function init() {
+    assemblage = gameFactory();
+}
+
+%step
+function step() {
+    assemblage.time.update();
+    var r = assemblage.playArea.rect;
+    wchntGraphics.clear();
+    wchntGraphics.beginFill(0x1a1a2e);
+    wchntGraphics.drawRect(r.x, r.y, r.width, r.height);
+    wchntGraphics.endFill();
+    for (var s of assemblage.shapes) {
+        s.draw(wchntGraphics);
+    }
+}
+```

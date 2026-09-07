@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>WCHNT live</title>
+    <link rel="stylesheet" href="vendor/codemirror/codemirror.min.css">
+    <link rel="stylesheet" href="vendor/codemirror/material-darker.min.css">
+    <link rel="stylesheet" href="css/live.css">
+  </head>
+  <body>
+    <header>
+      <h1>WCHNT live</h1>
+      <span id="page-title" class="page-title">—</span>
+      <button id="all-pages" type="button">All Pages</button>
+      <button id="save-page" type="button">Save</button>
+      <button id="export-wiki" type="button">Save all</button>
+      <button id="import-wiki" type="button">Load all</button>
+      <input id="wiki-import-file" type="file" accept=".wcn,.txt,text/plain" hidden>
+      <input id="page-name-input" type="text" placeholder="page-name" aria-label="New page name">
+      <button id="new-page" type="button">New Page</button>
+      <button id="load-example" type="button">Load example</button>
+      <button id="run" type="button">Run</button>
+      <button id="stop" type="button">Stop</button>
+      <span class="hint">%canvas · wiki · localStorage</span>
+    </header>
+    <p id="error" hidden></p>
+    <main>
+      <div id="editor"></div>
+    </main>
+    <div id="run-modal" hidden>
+      <div class="run-modal-backdrop">
+        <div class="run-modal-panel" aria-labelledby="run-modal-title">
+          <div class="run-modal-header">
+            <span id="run-modal-title">Program</span>
+            <button id="close-run" type="button">Close</button>
+          </div>
+          <div id="stage-wrap">
+            <canvas id="stage" width="800" height="600"></canvas>
+            <textarea id="stage-keys"
+                      aria-label="Keyboard input for program"
+                      autocomplete="off"
+                      autocorrect="off"
+                      spellcheck="false"></textarea>
+          </div>
+          <p class="run-modal-hint">Click the play area (blue outline) so arrow keys reach the program, not the editor.</p>
+        </div>
+      </div>
+    </div>
+    <script src="vendor/codemirror/codemirror.min.js"></script>
+    <script src="vendor/codemirror/overlay.min.js"></script>
+    <script src="vendor/codemirror/xml.min.js"></script>
+    <script src="vendor/codemirror/markdown.min.js"></script>
+    <script src="harness.js"></script>
+    <script src="js/main.js"></script>
+  </body>
+</html>

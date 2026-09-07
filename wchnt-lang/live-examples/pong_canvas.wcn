@@ -1,0 +1,137 @@
+# Pong (live canvas)
+
+Same Schema, Construction, and Methods as `pong_openfl.wcn`. **`$Time`** + **`>Keys`** inject-then-tick. **`:Ball`** uses **`theGame`** for vertical bounces. Click the play area after Run so arrow keys reach the canvas.
+
+## Schema
+
+```
+>Keys = Bool/left Bool/right Bool/up Bool/down
+Game = PlayArea :Ball Paddle/paddlePlayer Paddle/paddleAi Int/playerScore Int/aiScore $Time Keys
+PlayArea = Rect
+Rect = Int/x Int/y Int/width Int/height
+Ball = Int/x Int/y Int/dx Int/dy Int/rad
+Paddle = Int/x Int/y Int/h Int/w
+Time = Int/t
+```
+
+## Construction
+
+```
+[:Game
+  [:PlayArea [0 0 800 600]]
+  [:Ball 400 300 5 4 10]
+  [:Paddle 24 250 100 14]
+  [:Paddle 762 250 100 14]
+  0
+  0
+  [:Time 0]
+  [:Keys false false false false]
+]
+```
+
+## Methods
+
+```
+Time::update = { [:Time (t + 1)] }
+
+Keys::update = { [:Keys left right up down] }
+
+Ball::bounceDy = {
+  r = theGame.playArea.rect.
+  ny = (y + dy).
+  if ((ny - rad) < r.y) { -dy } else {
+    if ((ny + rad) > (r.y + r.height)) { -dy } else { dy }
+  }
+}
+
+Ball::withDy = {
+  ndy = this.bounceDy().
+  [:Ball x (y + ndy) dx ndy rad]
+}
+
+Ball::withDx = { Int/ndx |
+  [:Ball (x + ndx) y ndx dy rad]
+}
+
+Paddle::moveY = { Int/dy, Int/minY, Int/maxY |
+  ny = (y + dy).
+  fy = if (ny < minY) { minY } else { if (ny > maxY) { maxY } else { ny } }.
+  [:Paddle x fy h w]
+}
+
+Game::hitsPaddle = { Ball/b, Paddle/p |
+  (b.x + b.rad > p.x) and (b.x - b.rad < (p.x + p.w)) and (b.y + b.rad > p.y) and (b.y - b.rad < (p.y + p.h))
+}
+
+Game::resetBall = { Int/toDx |
+  r = playArea.rect.
+  [:Ball (r.width / 2) (r.height / 2) toDx 4 10]
+}
+
+Game::update = {
+  r = playArea.rect.
+  pdy = (if (keys.up) { -8 } else { 0 }) + (if (keys.down) { 8 } else { 0 }).
+  pMin = r.y.
+  pMax = ((r.y + r.height) - paddlePlayer.h).
+  movedPlayer = paddlePlayer.moveY(pdy, pMin, pMax).
+  aiCenter = (paddleAi.y + (paddleAi.h / 2)).
+  aiDy = if (aiCenter < ball.y) { 5 } else { if (aiCenter > ball.y) { -5 } else { 0 } }.
+  movedAi = paddleAi.moveY(aiDy, pMin, pMax).
+  b1 = ball.withDy().
+  ndx = b1.dx.
+  nx = (b1.x + ndx).
+  scored = if (nx < r.x) { 2 } else { if (nx > (r.x + r.width)) { 1 } else { 0 } }.
+  hitP = if (scored == 0) { this.hitsPaddle(b1, movedPlayer) } else { false }.
+  hitA = if ((scored == 0) and (not hitP)) { this.hitsPaddle(b1, movedAi) } else { false }.
+  ndx2 = if (hitP) {
+    if (ndx < 0) { -(ndx) } else { ndx }
+  } else {
+    if (hitA) {
+      if (ndx > 0) { -(ndx) } else { ndx }
+    } else {
+      ndx
+    }
+  }.
+  b2 = b1.withDx(ndx2).
+  nextBall = if (scored == 1) {
+    this.resetBall(-5)
+  } else {
+    if (scored == 2) { this.resetBall(5) } else { b2 }
+  }.
+  nextPlayerScore = if (scored == 1) { (playerScore + 1) } else { playerScore }.
+  nextAiScore = if (scored == 2) { (aiScore + 1) } else { aiScore }.
+  [:Game playArea nextBall movedPlayer movedAi nextPlayerScore nextAiScore time keys]
+}
+```
+
+## Target
+
+```
+%canvas
+
+%init
+var assemblage;
+
+function init() {
+    assemblage = gameFactory();
+}
+
+%step
+function step() {
+    var k = input.keys;
+    assemblage.keys.inject(!!k["ArrowLeft"], !!k["ArrowRight"], !!k["ArrowUp"], !!k["ArrowDown"]);
+    assemblage.time.update();
+    var r = assemblage.playArea.rect;
+    var b = assemblage.ball;
+    wchntGraphics.clear();
+    wchntGraphics.beginFill(0x1a1a2e);
+    wchntGraphics.drawRect(r.x, r.y, r.width, r.height);
+    wchntGraphics.endFill();
+    wchntGraphics.beginFill(0xe8e8e8);
+    wchntGraphics.drawRect(assemblage.paddlePlayer.x, assemblage.paddlePlayer.y, assemblage.paddlePlayer.w, assemblage.paddlePlayer.h);
+    wchntGraphics.drawRect(assemblage.paddleAi.x, assemblage.paddleAi.y, assemblage.paddleAi.w, assemblage.paddleAi.h);
+    wchntGraphics.drawCircle(b.x, b.y, b.rad);
+    wchntGraphics.endFill();
+    wchntGraphics.fillText("You " + assemblage.playerScore + "  AI " + assemblage.aiScore, 12, 12);
+}
+```

@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>WCHNT interpreter tests</title>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 1rem 2rem; background: #111; color: #eee; }
+      h1 { font-size: 1.25rem; }
+      #output { white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 0.9rem;
+                background: #1a1a1a; border: 1px solid #333; padding: 1rem; min-height: 12rem; }
+      .pass { color: #8f8; }
+      .fail { color: #f88; }
+      a { color: #8cf; }
+    </style>
+  </head>
+  <body>
+    <h1>WCHNT interpreter semantics tests</h1>
+    <p>Shared with JVM via <code>lein test wchnt-lang.semantics-test</code>.
+       Examples load from <code>live-examples/</code> (serve <code>live/public/</code> after <code>lein live-test</code>).</p>
+    <p><a href="index.html">Back to live wiki</a></p>
+    <pre id="output">Running…</pre>
+    <script src="js/tests.js"></script>
+    <script>
+      window.onload = function () {
+        var el = document.getElementById("output");
+        try {
+          var ok = live.test_runner.run_tests(el);
+          el.className = ok ? "pass" : "fail";
+        } catch (e) {
+          el.textContent = String(e && e.stack ? e.stack : e);
+          el.className = "fail";
+        }
+      };
+    </script>
+  </body>
+</html>

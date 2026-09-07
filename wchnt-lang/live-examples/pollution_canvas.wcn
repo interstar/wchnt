@@ -1,0 +1,151 @@
+# Pollution game (live canvas)
+
+Same Schema, Construction, and Methods as `pollution_openfl.wcn`. Target is `%canvas`: inject the arrow snapshot into `>Keys`, tick `$Time`, draw. Click the play area after Run so keys reach the canvas.
+
+## Schema
+
+```
+>Keys = Bool/left Bool/right Bool/up Bool/down
+Game = PlayArea Player [Pollutant]/pollutants Int/score Int/spawnTier Int/spawnEvery $Time Keys
+PlayArea = Rect
+Rect = Int/x Int/y Int/width Int/height
+Player = Int/x Int/y Int/dx Int/dy Int/rad
+Pollutant = Int/x Int/y Int/dx Int/dy Int/rad
+Time = Int/t
+```
+
+## Construction
+
+```
+[:Game
+  [:PlayArea [0 0 800 600]]
+  [:Player 400 300 5 0 20]
+  [:Array/Pollutant]
+  0
+  0
+  400
+  [:Time 0]
+  [:Keys false false false false]
+]
+```
+
+## Methods
+
+```
+Time::update = { [:Time (t + 1)] }
+
+Keys::update = { [:Keys left right up down] }
+
+Player::speed = {
+  ax = if (dx < 0) { -dx } else { dx }.
+  ay = if (dy < 0) { -dy } else { dy }.
+  if (ay > ax) { ay } else { ax }
+}
+
+Player::steer = { Int/udx, Int/udy |
+  if ((udx == 0) and (udy == 0)) { [:Player x y dx dy rad] } else {
+    sp = this.speed().
+    [:Player x y (udx * sp) (udy * sp) rad]
+  }
+}
+
+Player::move = { Rect/bounds |
+  nx = (x + dx).
+  ny = (y + dy).
+  ndx = if ((nx < 5) or (nx > (bounds.width - 5))) { -dx } else { dx }.
+  ndy = if ((ny < 5) or (ny > (bounds.height - 5))) { -dy } else { dy }.
+  fx = if ((nx < 5) or (nx > (bounds.width - 5))) { x } else { nx }.
+  fy = if ((ny < 5) or (ny > (bounds.height - 5))) { y } else { ny }.
+  [:Player fx fy ndx ndy rad]
+}
+
+Player::collides = { Pollutant/o |
+  vx = (x - o.x).
+  vy = (y - o.y).
+  d2 = ((vx * vx) + (vy * vy)).
+  sumR = (rad + o.rad).
+  d2 < (sumR * sumR)
+}
+
+Pollutant::move = { Rect/bounds |
+  w = bounds.width.
+  h = bounds.height.
+  nx = (x + dx).
+  ny = (y + dy).
+  wx = if (nx > w) { 0 } else { if (nx < 0) { w } else { nx } }.
+  wy = if (ny > h) { 0 } else { if (ny < 0) { h } else { ny } }.
+  [:Pollutant wx wy dx dy rad]
+}
+
+Game::makePollutant = { Player/p |
+  shift = ((p.rad * 12) / 10).
+  prad = ((p.rad * 7) / 10).
+  sx = (p.x - (p.dx * shift)).
+  sy = (p.y - (p.dy * shift)).
+  [:Pollutant sx sy (-p.dx) (-p.dy) prad]
+}
+
+Game::update = {
+  r = playArea.rect.
+  udx = (if (keys.right) { 1 } else { 0 }) + (if (keys.left) { -1 } else { 0 }).
+  udy = (if (keys.down) { 1 } else { 0 }) + (if (keys.up) { -1 } else { 0 }).
+  steered = if ((udx == 0) and (udy == 0)) { player } else { player.steer(udx, udy) }.
+  movedP = steered.move(r).
+  movedObs = pollutants.map({ Pollutant/p | p.move(r) }).
+  hit = movedObs.fold(false, { acc, o | if (acc) { true } else { movedP.collides(o) } }).
+  spawning = ((time.t % spawnEvery) == 0).
+  nextP = if (hit) {
+    [:Player (r.width / 2) (r.height / 2) ((r.width / 40) / 4) 0 (r.width / 40)]
+  } else {
+    movedP
+  }.
+  nextObs = if (hit) {
+    [:Array/Pollutant]
+  } else if (spawning) {
+    movedObs.cons(this.makePollutant(movedP))
+  } else {
+    movedObs
+  }.
+  nextScore = if (hit) { 0 } else if (spawning) { (score + spawnTier) } else { score }.
+  nextTier = if (hit) { 0 } else if (spawning) { (spawnTier + 1) } else { spawnTier }.
+  [:Game playArea nextP nextObs nextScore nextTier spawnEvery time keys]
+}
+```
+
+## Target
+
+```
+%canvas
+
+%init
+var assemblage;
+
+function init() {
+    assemblage = gameFactory();
+}
+
+%step
+function step() {
+    var k = input.keys;
+    assemblage.keys.inject(!!k["ArrowLeft"], !!k["ArrowRight"], !!k["ArrowUp"], !!k["ArrowDown"]);
+    assemblage.time.update();
+    var r = assemblage.playArea.rect;
+    var p = assemblage.player;
+    wchntGraphics.clear();
+    wchntGraphics.beginFill(0x000000);
+    wchntGraphics.drawRect(0, 0, r.width, r.height);
+    wchntGraphics.endFill();
+    wchntGraphics.lineStyle(2, 0x00ff00);
+    wchntGraphics.drawRect(r.x, r.y, r.width, r.height);
+    for (var o of assemblage.pollutants) {
+        wchntGraphics.beginFill(0xff6464);
+        wchntGraphics.drawCircle(o.x, o.y, o.rad);
+        wchntGraphics.endFill();
+    }
+    wchntGraphics.beginFill(0xc8c864);
+    wchntGraphics.drawCircle(p.x, p.y, p.rad);
+    wchntGraphics.endFill();
+    wchntGraphics.fillText("Score: " + assemblage.score, 12, 24);
+}
+
+```

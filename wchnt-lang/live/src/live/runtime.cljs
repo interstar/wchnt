@@ -26,12 +26,12 @@
   [program wchnt-graphics input]
   (let [body (target-js-body program)
         ctor (try
-               (js/Function. "wchntGraphics" "gameFactory" "input" body)
+               (js/Function. "wchntGraphics" "graphics" "gameFactory" "input" body)
                (catch :default e
                  (throw (ex-info (str "Target JS compile error: "
                                       (or (.-message e) (str e)))
                                  {:body body}))))]
-    (.call ctor nil wchnt-graphics (game-factory program) input)))
+    (.call ctor nil wchnt-graphics wchnt-graphics (game-factory program) input)))
 
 (defn- compile-check
   [wchnt-markdown]
