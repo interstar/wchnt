@@ -7,4 +7,4 @@
 
 (defmacro blank-source
   []
-  "# Welcome\n\nCreate pages with **New Page**. Link them with [[PageName]].\n")
+  "# Welcome\n\nCreate pages with **New**. Open existing pages with **Go**. Link them with [[PageName]].\n")

@@ -307,3 +307,87 @@ Game::draw : Void = { @Graphics/g | }
   (testing "plain and bracketed import lines"
     (is (= ["shapes-lib" "helpers"]
            (parse-import-names "shapes-lib\n[[helpers]]\n")))))
+
+
+(deftest test-parse-mainfile-section-heading-levels
+  (testing "Reserved sections may use h1, h2, or h3 headings"
+    (let [h1-content "# Pollution Game
+
+# Schema
+
+```
+Game = Int/x
+```
+
+# Construction
+
+```
+[:Game 0]
+```
+
+# Target
+
+```
+%terminal
+
+%main
+public static function main():Void {}
+```"
+          h3-content "# Pollution Game
+
+### Schema
+
+```
+Game = Int/x
+```
+
+### Construction
+
+```
+[:Game 0]
+```"
+          h1-result (parse-mainfile h1-content)
+          h3-result (parse-mainfile h3-content)]
+      (is (:success h1-result))
+      (is (= "Game = Int/x" (:schema (:value h1-result))))
+      (is (= "[:Game 0]" (:construction (:value h1-result))))
+      (is (re-find #"%terminal" (:target (:value h1-result))))
+      (is (:success h3-result))
+      (is (= "Game = Int/x" (:schema (:value h3-result))))
+      (is (= "[:Game 0]" (:construction (:value h3-result))))))
+
+  (testing "Non-reserved h1 title is prose, not a section"
+    (let [content "# Pollution Game
+
+A canvas-style demo.
+
+## Schema
+
+```
+Game = Int/x
+```"
+          result (parse-mainfile content)]
+      (is (:success result))
+      (is (= "Game = Int/x" (:schema (:value result))))))
+
+  (testing "Non-reserved h3 subheadings inside a section must not clear the section"
+    (let [content "## Schema
+
+Prose before notes.
+
+### Notes
+* bullet one
+
+```
+Game = Int/x
+```
+
+## Construction
+
+```
+[:Game 0]
+```"
+          result (parse-mainfile content)]
+      (is (:success result))
+      (is (= "Game = Int/x" (:schema (:value result))))
+      (is (= "[:Game 0]" (:construction (:value result)))))))

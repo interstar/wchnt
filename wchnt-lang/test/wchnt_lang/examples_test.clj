@@ -342,6 +342,12 @@
       (is (str/includes? main-class "assemblage.time.update();"))
       (is (not (str/includes? main-class "assemblage.update();"))))))
 
+(deftest shapes-canvas-registers-graphics-external
+  (testing "shapes_canvas Target Methods register Graphics for the interpreter"
+    (let [cargo (compiler/compile-to-ir (slurp "live-examples/shapes_canvas.wcn"))]
+      (is (:success cargo))
+      (is (contains? (:external-types (get-in cargo [:stash :schema-ir])) "Graphics")))))
+
 
 (deftest square-openfl-example
   (testing "square_openfl.wcn injects >Keys from the OpenFL keyboard"

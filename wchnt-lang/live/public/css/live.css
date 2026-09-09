@@ -6,7 +6,42 @@
   --text: #f2f2f2;
   --muted: #9a9a9a;
   --accent: #6aa9ff;
+  --accent-hover: #9ec5ff;
   --error: #ff6b6b;
+  --input-bg: #111111;
+  --input-border: #3a3a3a;
+  --button-bg: #2a2a2a;
+  --button-border: #3a3a3a;
+  --info-bg: #152a3a;
+  --error-bg: #3a1515;
+  --stage-bg: #111111;
+  --stage-wrap-bg: #0a0a0a;
+  --backdrop: rgba(0, 0, 0, 0.72);
+  --selection: rgba(106, 169, 255, 0.48);
+  --cm-comment: #c4c7cc;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #ffffff;
+  --panel: #f5f5f5;
+  --border: #d8d8d8;
+  --text: #1a1a1a;
+  --muted: #6b6b6b;
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  --error: #dc2626;
+  --input-bg: #ffffff;
+  --input-border: #c4c4c4;
+  --button-bg: #ececec;
+  --button-border: #c4c4c4;
+  --info-bg: #e8f0fe;
+  --error-bg: #fdecec;
+  --stage-bg: #f5f5f5;
+  --stage-wrap-bg: #e8e8e8;
+  --backdrop: rgba(0, 0, 0, 0.45);
+  --selection: rgba(37, 99, 235, 0.22);
+  --cm-comment: #6a737d;
 }
 
 * {
@@ -54,9 +89,9 @@ h1 {
 }
 
 #page-name-input {
-  background: #111;
+  background: var(--input-bg);
   color: var(--text);
-  border: 1px solid #3a3a3a;
+  border: 1px solid var(--input-border);
   border-radius: 4px;
   padding: 5px 8px;
   font-size: 14px;
@@ -68,25 +103,30 @@ h1 {
   border-color: var(--accent);
 }
 
-.cm-s-material-darker .cm-wiki-link {
+.cm-s-material-darker .cm-wiki-link,
+.cm-s-default .cm-wiki-link {
   color: var(--accent) !important;
   text-decoration: underline;
   cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: manipulation;
 }
 
-.cm-s-material-darker .cm-wiki-link:hover {
-  color: #9ec5ff !important;
+.cm-s-material-darker .cm-wiki-link:hover,
+.cm-s-default .cm-wiki-link:hover {
+  color: var(--accent-hover) !important;
 }
 
 #error.info {
-  background: #152a3a;
+  background: var(--info-bg);
   color: var(--accent);
 }
 
 button {
-  background: #2a2a2a;
+  background: var(--button-bg);
   color: var(--text);
-  border: 1px solid #3a3a3a;
+  border: 1px solid var(--button-border);
   border-radius: 4px;
   padding: 6px 14px;
   font-size: 14px;
@@ -105,7 +145,7 @@ button:disabled {
 #error {
   margin: 0;
   padding: 8px 14px;
-  background: #3a1515;
+  background: var(--error-bg);
   color: var(--error);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 13px;
@@ -134,31 +174,38 @@ main {
   font-size: 13px;
 }
 
-/* material-darker selection is ~rgba(97,97,97,.2) — hard to see when copying. */
+/* Dark (material-darker) editor: make the selection clearly visible. */
 .cm-s-material-darker div.CodeMirror-selected,
 .cm-s-material-darker.CodeMirror-focused div.CodeMirror-selected {
-  background: rgba(106, 169, 255, 0.48) !important;
+  background: var(--selection) !important;
 }
 
 .cm-s-material-darker .CodeMirror-line::selection,
 .cm-s-material-darker .CodeMirror-line > span::selection,
 .cm-s-material-darker .CodeMirror-line > span > span::selection {
-  background: rgba(106, 169, 255, 0.48) !important;
+  background: var(--selection) !important;
   color: #ffffff !important;
 }
 
 .cm-s-material-darker .CodeMirror-line::-moz-selection,
 .cm-s-material-darker .CodeMirror-line > span::-moz-selection,
 .cm-s-material-darker .CodeMirror-line > span > span::-moz-selection {
-  background: rgba(106, 169, 255, 0.48) !important;
+  background: var(--selection) !important;
   color: #ffffff !important;
 }
 
-/* Markdown fences use .cm-comment (#545454) — too close to #212121. */
-.cm-s-material-darker .cm-comment {
-  color: #c4c7cc;
+/* Light (default) editor: keep CodeMirror's own selection, just tint it. */
+.cm-s-default div.CodeMirror-selected,
+.cm-s-default.CodeMirror-focused div.CodeMirror-selected {
+  background: var(--selection) !important;
 }
 
+.cm-s-material-darker .cm-comment,
+.cm-s-default .cm-comment {
+  color: var(--cm-comment);
+}
+
+/* WCHNT syntax colours — dark theme */
 .cm-s-material-darker .cm-wchnt-class,
 .cm-s-material-darker .cm-wchnt-class span { color: #82aaff; }
 .cm-s-material-darker .cm-wchnt-type,
@@ -188,6 +235,36 @@ main {
   border-bottom: 2px solid #ff6b6b;
 }
 
+/* WCHNT syntax colours — light theme */
+.cm-s-default .cm-wchnt-class,
+.cm-s-default .cm-wchnt-class span { color: #1c5fbf; }
+.cm-s-default .cm-wchnt-type,
+.cm-s-default .cm-wchnt-type span { color: #0a7d9c; }
+.cm-s-default .cm-wchnt-name,
+.cm-s-default .cm-wchnt-name span { color: #c0392b; }
+.cm-s-default .cm-wchnt-sigil,
+.cm-s-default .cm-wchnt-sigil span { color: #8a6d00; }
+.cm-s-default .cm-wchnt-keyword,
+.cm-s-default .cm-wchnt-keyword span {
+  color: #7c3aed;
+  font-weight: 600;
+}
+.cm-s-default .cm-wchnt-string,
+.cm-s-default .cm-wchnt-string span { color: #2e7d32; }
+.cm-s-default .cm-wchnt-number,
+.cm-s-default .cm-wchnt-number span { color: #b34700; }
+.cm-s-default .cm-wchnt-method,
+.cm-s-default .cm-wchnt-method span { color: #1c5fbf; }
+.cm-s-default .cm-wchnt-path,
+.cm-s-default .cm-wchnt-path span { color: #5a5a7a; }
+.cm-s-default .cm-wchnt-error,
+.cm-s-default .cm-wchnt-error span {
+  background: rgba(220, 38, 38, 0.15);
+}
+.cm-s-default .cm-wchnt-error {
+  border-bottom: 2px solid #dc2626;
+}
+
 #run-modal[hidden] {
   display: none;
 }
@@ -201,7 +278,7 @@ main {
 .run-modal-backdrop {
   width: 100%;
   height: 100%;
-  background: rgba(0, 0, 0, 0.72);
+  background: var(--backdrop);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -244,7 +321,7 @@ main {
   align-items: center;
   justify-content: center;
   padding: 16px;
-  background: #0a0a0a;
+  background: var(--stage-wrap-bg);
 }
 
 #stage {
@@ -252,7 +329,7 @@ main {
   width: 800px;
   height: 600px;
   max-width: 100%;
-  background: #111111;
+  background: var(--stage-bg);
   border: 1px solid var(--border);
 }
 

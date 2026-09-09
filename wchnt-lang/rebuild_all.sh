@@ -1,15 +1,16 @@
 #!/bin/bash
 
-# Rebuild everything: the JVM compiler (JARs) and the live browser bundles.
+# Rebuild everything: JVM compiler (JARs), live browser bundles, and the website.
 # Safe to run from anywhere; it cds to the directory containing this script.
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WEBSITE_DIR="$(cd "$SCRIPT_DIR/../website" && pwd)"
 cd "$SCRIPT_DIR"
 
 echo "=========================================="
-echo "Rebuilding WCHNT: JVM compiler + live page"
+echo "Rebuilding WCHNT: JVM + live + website"
 echo "=========================================="
 echo
 
@@ -23,6 +24,10 @@ echo
 
 echo "==> Live test bundle + examples (live/public/js/tests.js)"
 lein live-test
+echo
+
+echo "==> Website (_site/ including play/ from live/public)"
+python3 "$WEBSITE_DIR/build.py"
 echo
 
 echo "=========================================="

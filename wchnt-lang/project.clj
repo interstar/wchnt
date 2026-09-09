@@ -32,6 +32,7 @@
                                                      :optimizations :simple
                                                      :pretty-print true}}]}}
              :uberjar {:aot :all}}
-  :aliases {"live" ["with-profile" "+live" "cljsbuild" "once" "live"]
-             "live-test" ["do" ["run" "-m" "wchnt-lang.prepare-live-tests"]
+  :aliases {"live" ["do" ["run" "-m" "wchnt-lang.prepare-live"]
+                    ["with-profile" "+live" "cljsbuild" "once" "live"]]
+             "live-test" ["do" ["run" "-m" "wchnt-lang.prepare-live"]
                           ["with-profile" "+live" "cljsbuild" "once" "live-tests"]]})

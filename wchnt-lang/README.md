@@ -107,7 +107,7 @@ Run these from this directory (`wchnt-lang/`). Prerequisites: `lein`, `haxe`, `n
 | Script / command | What it does |
 |---|---|
 | `./build.sh` | Clean, run the unit tests, and build the JVM compiler JARs (`target/wchnt-lang.jar`, `target/wchnt-lang-standalone.jar`). |
-| `./rebuild_all.sh` | Rebuild everything: JVM compiler (via `build.sh`) plus the live bundles. |
+| `./rebuild_all.sh` | Rebuild everything: JVM compiler (via `build.sh`), live bundles, and `website/_site/`. |
 | `lein test` | Run the Clojure unit test suite. |
 | `./run_examples.sh` | Compile **every** `examples/*.wcn` to Haxe and print the output. WCHNT → Haxe only; no JS compile or execution. Prints ✓/✗ per file. |
 | `./go.sh <file.wcn>` | Full pipeline for **one** file: WCHNT → Haxe → JS → `node`. `%openfl` files instead write `project.xml` and launch `lime`. |
@@ -130,9 +130,13 @@ lein test                            # unit tests
 ### Live page (browser interpreter)
 
 ```bash
-lein live        # rebuild live/public/js/main.js (editor bundle)
-lein live-test   # rebuild live/public/js/tests.js + copy examples to live/public/live-examples/
+lein live        # copy examples/seed, rebuild live/public/js/main.js
+lein live-test   # copy examples/seed, rebuild live/public/js/tests.js
 ```
+
+Both aliases first run `wchnt-lang.prepare-live`, which copies `live-examples/*.wcn` →
+`live/public/test-examples/` (loaded by `tests.html`) and `seed-pages/*` →
+`live/public/seed/` (fetched to seed the wiki on first visit; never overwrites user data).
 
 Then serve `live/public/` (e.g. `cd live/public && python3 -m http.server 8080`) and open `index.html` (or `tests.html` for the browser test runner). CodeMirror + 800×600 canvas; default buffer is `examples/bounce_canvas.wcn`. Static HTML + JS — no Node. Watch mode: `lein with-profile +live cljsbuild auto`. Details: [live/README.md](live/README.md), [doc/live.md](doc/live.md).
 
@@ -142,7 +146,7 @@ Then serve `live/public/` (e.g. `cd live/public && python3 -m http.server 8080`)
 ./rebuild_all.sh
 ```
 
-Runs `./build.sh` (JVM: clean → test → jar → uberjar), then `lein live` and `lein live-test`.
+Runs `./build.sh` (JVM: clean → test → jar → uberjar), then `lein live`, `lein live-test`, and `python3 ../website/build.py`.
 
 ## License
 

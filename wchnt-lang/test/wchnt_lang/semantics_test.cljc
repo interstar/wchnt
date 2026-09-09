@@ -1,13 +1,17 @@
 (ns wchnt-lang.semantics-test
   "Shared interpreter semantics: JVM (lein test) and browser (live/public/tests.html)."
   #?(:clj (:require [clojure.test :refer [deftest is testing]]
-                  [wchnt-lang.interpret :as interpret])
+                  [wchnt-lang.interpret :as interpret]
+                  [wchnt-lang.canvas :as canvas])
      :cljs (:require [cljs.test :refer-macros [deftest is testing async]]
                      [wchnt-lang.interpret :as interpret]
                      [wchnt-lang.js-view :as js-view])))
 
 (defn- example-path [name]
-  (str "live-examples/" name ".wcn"))
+  ;; JVM tests slurp the repo-root live-examples/; the browser test runner
+  ;; fetches the copy served from live/public/test-examples/.
+  #?(:clj  (str "live-examples/" name ".wcn")
+     :cljs (str "test-examples/" name ".wcn")))
 
 #?(:clj
    (defn- load-example [name]
@@ -131,7 +135,7 @@
        (let [{:keys [schema-ir methods-ir root]}
              (interpret/load-program (slurp "examples/test_reaction_context_path.wcn"))
              engine (interpret/get-field root "engine")]
-         (is (= "Toyota" (interpret/call schema-ir methods-ir engine "carModel" []))))))
+         (is (= "Toyota" (interpret/call schema-ir methods-ir engine "carModel" [])))))))
 
 #?(:clj
    (deftest pong-ball-reads-play-area-via-context
@@ -140,7 +144,18 @@
              time (interpret/get-field root "time")]
          (is (= "Game" (:wchnt/class (:theGame (interpret/get-field root "ball")))))
          (interpret/call schema-ir methods-ir time "update" [])
-         (is (number? (:y (interpret/get-field root "ball")))))))))
+         (is (number? (:y (interpret/get-field root "ball"))))))))
+
+#?(:clj
+   (deftest shapes-draw-chains-graphics-calls
+     (testing "Target Methods @Graphics/g chains (beginFill.drawCircle.endFill) on canvas"
+       (let [{:keys [schema-ir methods-ir root]} (load-example "shapes_canvas")
+             circle (first (interpret/get-field root "shapes"))
+             g (canvas/make-graphics)]
+         (interpret/call schema-ir methods-ir circle "draw" [g])
+         (is (some #{[:begin-fill 15316448]} (canvas/graphics-log g)))
+         (is (some #{[:draw-circle 80 120 24]} (canvas/graphics-log g)))
+         (is (some #{[:end-fill]} (canvas/graphics-log g)))))))
 
 (deftest else-if-expression
   (testing "else if chains evaluate the matching branch"

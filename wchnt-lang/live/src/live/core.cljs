@@ -1,5 +1,5 @@
 (ns live.core
-  "Live page: wiki storage, CodeMirror, canvas harness, Run/Stop."
+  "Live page: wiki storage, CodeMirror, canvas harness, Run."
   (:require-macros [live.embed :refer [blank-source example-source]])
   (:require [clojure.string :as str]
             [live.editor :as editor]
@@ -76,8 +76,7 @@
 
 (defn- set-running!
   [running?]
-  (gobj/set (el "run") "disabled" running?)
-  (gobj/set (el "stop") "disabled" (not running?)))
+  (gobj/set (el "run") "disabled" running?))
 
 (defn- blur-editor!
   []
@@ -174,7 +173,9 @@
 
 (defn- navigate-to-page!
   [page-name]
-  (open-page! page-name))
+  (if-let [resolved (storage/resolve-page-name page-name)]
+    (open-page! resolved)
+    (show-error! (str "No page named '" page-name "'."))))
 
 (defn- stop!
   []
@@ -228,14 +229,34 @@
     (catch :default e
       (show-error! (err-message e)))))
 
-(defn- on-page-name-submit!
-  "Open an existing page or create a blank one when the name is new."
+(defn- clear-page-name-input!
+  []
+  (set! (.-value (page-name-input)) ""))
+
+(defn- on-go-page!
+  "Open an existing page by name."
   []
   (try
     (if-let [name (prompt-page-name!)]
-      (do (navigate-to-page! name)
-          (clear-message!)
-          (set! (.-value (page-name-input)) ""))
+      (if (storage/resolve-page-name name)
+        (do (navigate-to-page! name)
+            (clear-message!)
+            (clear-page-name-input!))
+        (show-error! (str "No page named '" name "'.")))
+      (show-error! "Enter a page name"))
+    (catch :default e
+      (show-error! (err-message e)))))
+
+(defn- on-new-page!
+  "Create a blank page with the given name."
+  []
+  (try
+    (if-let [name (prompt-page-name!)]
+      (if (storage/get-page name)
+        (show-error! (str "Page '" name "' already exists. Use Go to open it."))
+        (do (open-page-with-content! name (storage/blank-page name))
+            (clear-message!)
+            (clear-page-name-input!)))
       (show-error! "Enter a page name"))
     (catch :default e
       (show-error! (err-message e)))))
@@ -315,28 +336,104 @@
                   (show-error! (err-message err))))))
       (.readAsText reader file "UTF-8"))))
 
+(defn- reset-wiki!
+  "Clear all saved wiki pages and reload. Destructive; callers confirm first."
+  []
+  (storage/reset-pages!)
+  (js/location.reload))
+
+(defn- on-reset-shortcut!
+  [evt]
+  ;; Ctrl+Shift+Alt+W — invisible in the UI, deliberate, and confirmed.
+  (when (and (.-ctrlKey evt)
+             (.-shiftKey evt)
+             (.-altKey evt)
+             (not (.-metaKey evt))
+             (= "w" (str/lower-case (or (.-key evt) ""))))
+    (.preventDefault evt)
+    (when (js/confirm "Reset the WCHNT wiki? All saved pages will be deleted and the default examples reloaded.")
+      (reset-wiki!))))
+
+(def theme-key "wchnt.theme")
+
+(defn- current-theme
+  []
+  (let [saved (.getItem js/localStorage theme-key)]
+    (if (or (= saved "light") (= saved "dark")) saved "dark")))
+
+(defn- cm-theme
+  [theme]
+  (if (= theme "light") "default" "material-darker"))
+
+(defn- apply-theme!
+  [theme]
+  (.setAttribute (.-documentElement js/document) "data-theme" theme)
+  (when-let [cm @!editor]
+    (editor/set-theme! cm (cm-theme theme)))
+  (when-let [btn (el "theme-toggle")]
+    (gobj/set btn "textContent" (if (= theme "light") "Dark" "Light"))))
+
+(defn- on-theme-toggle!
+  []
+  (let [next (if (= (current-theme) "light") "dark" "light")]
+    (.setItem js/localStorage theme-key next)
+    (apply-theme! next)))
+
 (defn- bind-ui!
   []
   (.addEventListener js/window "popstate" on-popstate!)
+  (.addEventListener js/window "keydown" on-reset-shortcut!)
   (.addEventListener (el "run") "click" start-run!)
-  (.addEventListener (el "stop") "click" stop!)
   (.addEventListener (el "close-run") "click" stop!)
   (.addEventListener (el "all-pages") "click" open-pages-index!)
   (.addEventListener (el "save-page") "click" on-save!)
   (.addEventListener (el "export-wiki") "click" on-export-wiki!)
   (.addEventListener (el "import-wiki") "click" on-import-wiki!)
   (.addEventListener (el "wiki-import-file") "change" on-import-file-selected!)
-  (.addEventListener (el "new-page") "click" on-page-name-submit!)
+  (.addEventListener (el "go-page") "click" on-go-page!)
+  (.addEventListener (el "new-page") "click" on-new-page!)
   (.addEventListener (el "load-example") "click" on-load-example!)
+  (.addEventListener (el "theme-toggle") "click" on-theme-toggle!)
   (.addEventListener (page-name-input) "keydown"
                      (fn [evt]
                        (when (= "Enter" (.-key evt))
                          (.preventDefault evt)
-                         (on-page-name-submit!)))))
+                         (on-go-page!)))))
 
 (defn- persist-on-exit!
   []
   (flush-save!))
+
+(def seed-page-names
+  "Default wiki pages seeded from live/public/seed/ on first visit."
+  ["welcome" "bounce" "shapes" "pollution"])
+
+(defn- seed-page!
+  "Fetch a default page from live/public/seed/ and save it — but only if the
+  user doesn't already have a page of that name, so user data is never
+  overwritten. Falls back to a compiled-in welcome when the fetch fails."
+  [name]
+  (when-not (storage/get-page name)
+    (-> (js/fetch (str "seed/" name ".wcn"))
+        (.then (fn [resp]
+                 (if (.-ok resp)
+                   (.text resp)
+                   (throw (js/Error. (str "seed fetch failed: " (.-status resp)))))))
+        (.then (fn [text]
+                 (when-not (storage/get-page name)
+                   (storage/save-page! name text)
+                   (when (= name @!current-page)
+                     (load-editor! text)))))
+        (.catch (fn [_]
+                  (when (and (= name "welcome") (not (storage/get-page name)))
+                    (storage/save-page! name (blank-source))
+                    (when (= name @!current-page)
+                      (load-editor! (blank-source)))))))))
+
+(defn- seed-default-pages!
+  []
+  (doseq [name seed-page-names]
+    (seed-page! name)))
 
 (defn- init-wiki!
   []
@@ -349,31 +446,40 @@
         canvas (el "stage")
         keys-el (el "stage-keys")
         harness (.create js/WCHNTHarness canvas keys-el)
-        start-content (blank-source)
+        theme (current-theme)
         start-page (or (page-from-location)
                        (storage/current-page)
-                       "welcome")]
-    (when-not (storage/get-page start-page)
-      (storage/save-page! start-page
+                       "welcome")
+        start-content (or (storage/get-page start-page)
                           (if (= start-page "welcome")
-                            start-content
-                            (storage/blank-page start-page))))
+                            (blank-source)
+                            (storage/blank-page start-page)))]
+    (apply-theme! theme)
+    ;; Seed pages are written asynchronously below; don't pre-save them here or
+    ;; the seed step would skip them. Non-seed pages keep the old behaviour.
+    (when-not (or (storage/get-page start-page)
+                  (some #{start-page} seed-page-names))
+      (storage/save-page! start-page (storage/blank-page start-page)))
     (reset! !harness harness)
     (reset! !editor (editor/mount! editor-el
-                                    (storage/get-page start-page)
-                                    navigate-to-page!))
+                                    start-content
+                                    navigate-to-page!
+                                    (cm-theme theme)))
     (reset! !history-silent true)
     (reset! !current-page start-page)
     (storage/set-current-page! start-page)
     (update-title! start-page)
-    (load-editor! (storage/get-page start-page))
+    (load-editor! start-content)
     (replace-page-history! start-page)
     (reset! !history-silent false)
     (.on @!editor "change" (fn [_ _] (schedule-save!)))
     (.addEventListener js/window "beforeunload" (fn [_] (persist-on-exit!)))
     (.addEventListener js/window "pagehide" (fn [_] (persist-on-exit!)))
     (set-running! false)
-    (bind-ui!)))
+    (bind-ui!)
+    ;; Hidden developer helper: window.wchntReset() clears pages and reloads.
+    (gobj/set js/window "wchntReset" reset-wiki!)
+    (seed-default-pages!)))
 
 (defn ^:export init
   []

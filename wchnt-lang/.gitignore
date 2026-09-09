@@ -17,4 +17,5 @@ project.xml
 node_modules/
 .shadow-cljs/
 live/public/js/
-live/public/live-examples/
+live/public/test-examples/
+live/public/seed/

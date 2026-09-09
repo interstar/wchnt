@@ -3,7 +3,7 @@
   (:require [clojure.string :as str]
             [wchnt-lang.highlight :as hl]))
 
-(def ^:private delay-ms 250)
+(def ^:private delay-ms 1000)
 
 (def ^:private kind-class
   {:class "cm-wchnt-class"

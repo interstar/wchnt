@@ -35,7 +35,8 @@
 
 (defn- parse-methods-text
   [text section schema-ir target-ir]
-  (when-not (str/blank? text)
+  (if (str/blank? text)
+    {:methods [] :schema-ir schema-ir}
     (let [parsed (parser/parse-reaction-unified text)]
       (when (p/failed? parsed)
         (throw (ex-info (or (first (:errors parsed)) "Methods parse failed")
@@ -47,7 +48,7 @@
             methods (reaction/reaction-ast-to-ir reaction-ast schema-with-ext target-ir
                                                  {:skip-checks? true})]
         (reaction/assert-methods-section-placement! methods schema-with-ext section)
-        methods))))
+        {:methods methods :schema-ir schema-with-ext}))))
 
 (defn- reaction-stages
   []
@@ -55,17 +56,20 @@
    (p/cargo-processor
     (fn [cargo]
       (let [codeblocks (:value cargo)
-            schema-ir (get-in cargo [:stash :schema-ir])
             target-ir (get-in cargo [:stash :target-ir])
-            methods (or (parse-methods-text (:methods codeblocks) :methods schema-ir target-ir) [])
-            target-methods (or (parse-methods-text (:target-methods codeblocks)
-                                                   :target-methods
-                                                   schema-ir
-                                                   target-ir)
-                               [])
-            combined (into methods target-methods)]
+            after-methods (parse-methods-text (:methods codeblocks)
+                                              :methods
+                                              (get-in cargo [:stash :schema-ir])
+                                              target-ir)
+            after-target-methods (parse-methods-text (:target-methods codeblocks)
+                                                     :target-methods
+                                                     (:schema-ir after-methods)
+                                                     target-ir)
+            schema-ir (:schema-ir after-target-methods)
+            combined (into (:methods after-methods) (:methods after-target-methods))]
         (reaction/assert-methods-complete! combined schema-ir)
-        (p/success-cargo combined)))
+        (-> (p/success-cargo combined)
+            (assoc-in [:stash :schema-ir] schema-ir))))
     "methods + target-methods -> IR")
    (p/stash :methods-ir)
    (p/validator schema/valid-methods-ir? "Methods IR matches schema")])

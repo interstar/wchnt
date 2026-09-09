@@ -67,7 +67,7 @@
   (let [pages (remove #(= index-page-name %) (list-pages))]
     (str "# All pages\n\n"
          (if (empty? pages)
-           "_No pages yet. Use **New Page** to create one._\n"
+           "_No pages yet. Use **New** to create one._\n"
            (string/join "\n" (map #(str "- [[" % "]]") pages)))
          "\n")))
 
@@ -83,6 +83,17 @@
   [name]
   (when-let [entry (aget (read-pages) name)]
     (.-content entry)))
+
+(defn resolve-page-name
+  "Find a stored page key matching name (case-insensitive)."
+  [name]
+  (let [trimmed (string/trim name)]
+    (when (seq trimmed)
+      (or (when (get-page trimmed) trimmed)
+          (some #(when (= (string/lower-case %)
+                          (string/lower-case trimmed))
+                   %)
+                (list-pages))))))
 
 (defn save-page!
   [name content]

@@ -9,7 +9,7 @@
   #{"schema" "construction" "methods" "target-methods" "target"})
 
 (defn normalize-section-name
-  "Normalize a ## heading to a section key (e.g. \"Target Methods\" → \"target-methods\")."
+  "Normalize a section heading to a key (e.g. \"Target Methods\" → \"target-methods\")."
   [heading]
   (-> heading str/trim str/lower-case (str/replace #"\s+" "-")))
 
@@ -95,9 +95,9 @@
                  :current-code []
                  :section-map updated-section-map
                  :seen-sections (conj seen-sections section-name)))
-        (assoc state
-               :current-section nil
-               :current-code [])))
+        (if (and current-section (contains? code-block-seen current-section))
+          (assoc state :current-section nil :current-code [])
+          state)))
 
     (re-matches code-block-start trimmed-line)
     (cond
@@ -122,7 +122,7 @@
   (let [lines (str/split-lines content)
         code-block-start #"^```(?:\w+)?\s*$"
         code-block-end #"^```\s*$"
-        section-pattern #"^##\s*(.+?)\s*$"]
+        section-pattern #"^#{1,3}\s*(.+?)\s*$"]
     (loop [lines lines
            state {:current-section nil
                   :current-section-idx -1

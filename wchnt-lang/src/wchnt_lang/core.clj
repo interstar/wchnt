@@ -70,9 +70,7 @@
             (println (str "File not found: " filename))
             (System/exit 1))
           (let [result (compile-file filename)]
-            (if (and
-                 (p/is-cargo? result)
-                 (:success result))
+            (if (and (p/is-cargo? result) (:success result))
               (let [full-program (:value result)
                     has-construction? (:has-construction? full-program)
                     host (or (:host full-program) "none")
@@ -85,10 +83,9 @@
                   (println preamble))
                 (println (:classes full-program))
                 (println (:main-class full-program))
-                (if verbose?                
+                (when verbose?
                   (pp/pprint result)))
               (do
-                (println
-                 (first (:errors result)) "file parsing" filename)
+                (println (first (:errors result)) "file parsing" filename)
                 (println result)
                 (System/exit 1)))))))))

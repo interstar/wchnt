@@ -2,9 +2,16 @@
   "Wiki navigation: [[PageName]] links in prose."
   (:require [clojure.string :as string]))
 
-(def wiki-mode "markdown-wiki")
+(def link-attr "data-wiki-page")
 
-(defonce mode-defined? (atom false))
+(defn touch-primary-device?
+  "True on phones/tablets; false on mouse-driven laptops (incl. touch-screen laptops)."
+  []
+  (let [mq (when (.-matchMedia js/window) (.-matchMedia js/window))]
+    (boolean
+     (or (and mq (.-matches (.call mq js/window "(pointer: coarse)")))
+         (and mq (.-matches (.call mq js/window "(max-width: 768px)"))
+              (.-ontouchstart js/window))))))
 
 (defn find-links
   "Return [{:name :start :end}] for [[PageName]] in markdown."
@@ -14,114 +21,98 @@
       (if-let [m (.exec re text)]
         (recur (conj acc {:name (string/trim (aget m 1))
                            :start (.-index m)
-                           :end (+ (.-index m) (.-length m))}))
+                           :end (+ (.-index m)
+                                   (.-length (aget m 0)))}))
         acc))))
 
 (defn- link-at-index
   [text index]
-  (some #(when (and (<= (:start %) index) (< index (:end %)))
-           %)
-        (find-links text)))
+  (some #(when (and (<= (:start %) index) (< index (:end %))) %)
+          (find-links text)))
 
-(defn- name-from-link-text
-  [text]
-  (when text
-    (or (second (re-find #"\[\[([^\]]+)\]\]" text))
-        (when (and (seq (string/trim text))
-                   (not (re-find #"[\[\]]" text)))
-          (string/trim text)))))
+(defn- clear-link-marks!
+  [marks]
+  (doseq [m @marks]
+    (.clear m))
+  (reset! marks []))
 
-(defn- link-from-dom
-  "Read the page name from a .cm-wiki-link span under the click target."
+(defn- refresh-link-marks!
+  [cm marks]
+  (clear-link-marks! marks)
+  (let [text (.getValue cm)]
+    (doseq [{:keys [name start end]} (find-links text)]
+      (try
+        (let [mark (.markText cm
+                              (.posFromIndex cm start)
+                              (.posFromIndex cm end)
+                              #js {:className "cm-wiki-link"
+                                   :attributes (js-obj link-attr name)
+                                   :handleMouseEvents true
+                                   :inclusiveLeft false
+                                   :inclusiveRight false})]
+          (swap! marks conj mark))
+        (catch :default _ nil)))))
+
+(defn- first-touch
   [evt]
-  (loop [el (.-target evt)]
+  (let [touches (.-touches evt)
+        changed-touches (.-changedTouches evt)]
     (cond
-      (nil? el) nil
-      (and (.-classList el) (.contains (.-classList el) "cm-wiki-link"))
-      (when-let [name (name-from-link-text (.-textContent el))]
-        {:name name})
+      (and touches (> (.-length touches) 0)) (aget touches 0)
+      (and changed-touches (> (.-length changed-touches) 0))
+      (aget changed-touches 0)
+      :else nil)))
 
-      :else (recur (.-parentElement el)))))
+(defn- client-xy
+  [evt]
+  (let [touch (first-touch evt)]
+    [(if touch (.-clientX touch) (.-clientX evt))
+     (if touch (.-clientY touch) (.-clientY evt))]))
 
-(defn- link-at-bbox
-  "Hit-test link bounding boxes — works when nested markdown spans confuse coordsChar."
+(defn- link-page-at-event
   [cm evt]
-  (let [x (.-clientX evt)
-        y (.-clientY evt)
-        pad 3]
-    (some (fn [{:keys [name start end]}]
-            (let [from (.posFromIndex cm start)
-                  to (.posFromIndex cm (max start (dec end)))]
-              (try
-                (let [a (.charCoords cm from "window")
-                      b (.charCoords cm to "window")
-                      left (min (.-left a) (.-left b))
-                      right (max (.-right a) (.-right b))
-                      top (min (.-top a) (.-top b))
-                      bottom (max (.-bottom a) (.-bottom b))]
-                  (when (and (<= (- left pad) x (+ right pad))
-                             (<= (- top pad) y (+ bottom pad)))
-                    {:name name}))
-                (catch :default _ nil))))
-          (find-links (.getValue cm)))))
-
-(defn- link-at-index-neighbors
-  [cm evt]
-  (let [pos (.coordsChar cm #js {:left (.-clientX evt)
-                                  :top (.-clientY evt)})
-        index (.indexFromPos cm pos)
-        text (.getValue cm)]
-    (some #(link-at-index text %)
-          (map #(+ index %) (range -2 3)))))
-
-(defn- link-at-event
-  [cm evt]
-  (or (link-from-dom evt)
-      (link-at-bbox cm evt)
-      (link-at-index-neighbors cm evt)))
-
-(defn ensure-wiki-mode!
-  "Markdown plus an overlay that styles full [[PageName]] tokens."
-  []
-  (when-not @mode-defined?
-    (reset! mode-defined? true)
-    (.defineMode js/CodeMirror wiki-mode
-                 (fn [config]
-                   (let [md (.getMode js/CodeMirror config "markdown")
-                         overlay #js {:token
-                                      (fn [stream]
-                                        (if (.match stream (js/RegExp. "\\[\\[[^\\]]+\\]\\]"))
-                                          "wiki-link"
-                                          (do (.next stream) nil)))}]
-                     (.overlayMode js/CodeMirror md overlay false))))))
+  (when-let [target (.-target evt)]
+    (or (when-let [el (.closest target (str "[" link-attr "]"))]
+          (.getAttribute el link-attr))
+        (let [[x y] (client-xy evt)
+              pos (.coordsChar cm #js {:left x :top y} "window")
+              index (.indexFromPos cm pos)]
+          (:name (link-at-index (.getValue cm) index))))))
 
 (defn attach-link-clicks!
-  "Navigate when the user clicks a [[link]].
-   CM instance .on does not receive DOM events — use CodeMirror.on on the scroller."
+  "Navigate when the user clicks/taps marked [[link]] text."
   [cm on-navigate]
-  (let [scroller (.getScrollerElement cm)
-        down-link (atom nil)
-        on-down (fn [evt]
-                  (when (== 0 (.-button evt))
-                    (let [link (link-at-event cm evt)]
-                      (reset! down-link link)
-                      (when link
-                        (.preventDefault evt)
-                        (.stopPropagation evt)))))
-        on-up (fn [evt]
-                (when (== 0 (.-button evt))
-                  (let [link (or (link-at-event cm evt) @down-link)]
-                    (reset! down-link nil)
-                    (when link
-                      (.preventDefault evt)
-                      (.stopPropagation evt)
-                      (on-navigate (:name link))))))]
-    (.on js/CodeMirror scroller "mousedown" on-down)
-    (.on js/CodeMirror scroller "mouseup" on-up)))
+  (let [marks (atom [])
+        last-nav-ms (atom 0)
+        navigate-once! (fn [evt page-name]
+                         (.preventDefault evt)
+                         (.stopPropagation evt)
+                         (let [now (.now js/Date)]
+                           (when (> (- now @last-nav-ms) 300)
+                             (reset! last-nav-ms now)
+                             (when-let [input (.getInputField cm)]
+                               (.blur input))
+                             (on-navigate page-name))))
+        refresh (fn [] (refresh-link-marks! cm marks))
+        schedule (fn [] (js/setTimeout refresh 0))
+        handle-link-event (fn [evt]
+                            (when-let [page (link-page-at-event cm evt)]
+                              (navigate-once! evt page)))]
+    (doseq [ms [0 50 200 500]]
+      (js/setTimeout refresh ms))
+    (.on cm "change" (fn [_ _] (schedule)))
+    (.on cm "refresh" refresh)
+    (.on cm "viewportChange" refresh)
+    (.addEventListener js/window "resize" schedule)
+    (let [wrapper (.getWrapperElement cm)]
+      (doseq [event ["click" "mousedown"]]
+        (.addEventListener wrapper event handle-link-event
+                           #js {:capture true}))
+      (.addEventListener wrapper "touchstart" handle-link-event
+                         #js {:capture true :passive false}))
+    {:refresh refresh}))
 
 (defn attach-link-marks!
-  "Back-compat name: define mode styling + click handler."
+  "Back-compat name: click handler + link marks."
   [cm on-navigate]
-  (ensure-wiki-mode!)
-  (attach-link-clicks! cm on-navigate)
-  {:refresh (fn [])})
+  (attach-link-clicks! cm on-navigate))
