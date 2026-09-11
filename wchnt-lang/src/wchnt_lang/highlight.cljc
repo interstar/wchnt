@@ -112,9 +112,11 @@
   (re-matches #"^```(?:\w+)?\s*$" trimmed))
 
 (defn- section-name
+  "Match the compiler's heading rule: 1-3 hashes, any name, normalized
+   (e.g. \"## Target Methods\" -> \"target-methods\")."
   [trimmed]
-  (when-let [m (re-matches #"^##\s*(\w+)\s*$" trimmed)]
-    (str/lower-case (second m))))
+  (when-let [m (re-matches #"^#{1,3}\s*(.+?)\s*$" trimmed)]
+    (-> (second m) str/trim str/lower-case (str/replace #"\s+" "-"))))
 
 (defn- close-block
   [section lines]

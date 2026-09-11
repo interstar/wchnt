@@ -36,7 +36,7 @@ class WCHNTHelper implements IWCHNTHelper {
         var ind = \"\";
         for (i in 0...depth) ind += \"  \";
         var nl = '\\n';
-        var result = ind + '[:Map';
+        var result = ind + '{';
         for (key in map.keys()) {
             var value = map.get(key);
             result += nl + ind + '  ';
@@ -54,7 +54,7 @@ class WCHNTHelper implements IWCHNTHelper {
                 result += Std.string(value);
             }
         }
-        result += nl + ind + ']';
+        result += nl + ind + '}';
         return result;
     }
     
@@ -83,6 +83,15 @@ class WCHNTRuntime {
         return cast m.get(key);
     }
 
+    public static function mapGetDefault<K,V>(m:Map<K,V>, key:K, fallback:V):V {
+        if (m.exists(key)) return cast m.get(key);
+        return fallback;
+    }
+
+    public static function mapExists<K,V>(m:Map<K,V>, key:K):Bool {
+        return m.exists(key);
+    }
+
     public static function mapPut<K,V>(m:Map<K,V>, key:K, value:V):Map<K,V> {
         var copy = m.copy();
         copy.set(key, value);
@@ -100,6 +109,40 @@ class WCHNTRuntime {
         if (start < 0 || end < 0 || start > s.length || end > s.length || start > end)
             throw \"String::substring: invalid range\";
         return s.substring(start, end);
+    }
+
+    public static function tplHoleName(name:String):Bool {
+        if (name.length == 0) return false;
+        var c0 = name.charCodeAt(0);
+        if (!((c0 >= 65 && c0 <= 90) || (c0 >= 97 && c0 <= 122) || c0 == 95)) return false;
+        for (i in 1...name.length) {
+            var c = name.charCodeAt(i);
+            if (!((c >= 65 && c <= 90) || (c >= 97 && c <= 122) || (c >= 48 && c <= 57) || c == 95)) return false;
+        }
+        return true;
+    }
+
+    public static function tpl(s:String, vars:Map<String, String>):String {
+        var out = new StringBuf();
+        var i = 0;
+        while (i < s.length) {
+            var c = s.charAt(i);
+            if (c == \"{\") {
+                var close = s.indexOf(\"}\", i + 1);
+                if (close < 0) throw \"String::tpl: unmatched '{'\";
+                var name = s.substring(i + 1, close);
+                if (!tplHoleName(name)) throw \"String::tpl: bad hole '{\" + name + \"}'\";
+                if (!vars.exists(name)) throw \"String::tpl: missing '\" + name + \"'\";
+                out.add(vars.get(name));
+                i = close + 1;
+            } else if (c == \"}\") {
+                throw \"String::tpl: unmatched '}'\";
+            } else {
+                out.addChar(s.charCodeAt(i));
+                i++;
+            }
+        }
+        return out.toString();
     }
 
     public static function times<T>(n:Int, f:Int -> T):Array<T> {
@@ -165,6 +208,42 @@ class WCHNTGraphics {
 
     private function __wchntFrame(_e:Event):Void {
         step();
+    }")
+
+(def cli-console-wrapper
+  "// Portable text console for Target: same API on neko %cli and live %cli-live.
+class WCHNTConsole {
+    public function new() {}
+
+    public inline function print(s:String):Void {
+        Sys.print(s);
+    }
+
+    public inline function println(s:String):Void {
+        Sys.println(s);
+    }
+}")
+
+(def cli-lifecycle
+  "public var wchntConsole:WCHNTConsole;
+
+    public function new() {
+        wchntConsole = new WCHNTConsole();
+    }
+
+    public static function main():Void {
+        var app = new Main();
+        app.init();
+        while (true) {
+            var line:String = null;
+            try {
+                line = Sys.stdin().readLine();
+            } catch (e:haxe.io.Eof) {
+                break;
+            }
+            if (line == null) break;
+            app.step(line);
+        }
     }")
 
 (def iwchnt-object-interface

@@ -107,3 +107,62 @@
   [schema-ir class-name]
   (filterv #(= :reactive (:relationship %))
            (or (get-assemblage-components schema-ir class-name) [])))
+
+(defn- variable-arg-name
+  [arg]
+  (when (and (map? arg) (= (:type arg) :variable))
+    (or (:value arg) (first (:args arg)))))
+
+(defn- arg-ref-names
+  [arg]
+  (cond
+    (nil? arg) []
+    (variable-arg-name arg) [(variable-arg-name arg)]
+    (and (map? arg) (:args arg)) (mapcat arg-ref-names (:args arg))
+    (sequential? arg) (mapcat arg-ref-names arg)
+    :else []))
+
+(defn- resolve-object-id
+  [name variable-mappings object-ids]
+  (let [resolved (get variable-mappings name name)]
+    (when (contains? object-ids resolved)
+      resolved)))
+
+(defn- object-dependencies
+  [obj-data variable-mappings object-ids]
+  (->> (arg-ref-names obj-data)
+       (keep #(resolve-object-id % variable-mappings object-ids))
+       set))
+
+(defn- next-ready-object-id
+  [remaining deps objects]
+  (->> remaining
+       (filter #(empty? (get deps %)))
+       (sort-by #(or (:index (get objects %)) 0))
+       first))
+
+(defn topo-sort-object-ids
+  "Object ids in an order where each object's variable refs already exist.
+   Nested maps are often extracted before the assignments they name."
+  [objects variable-mappings]
+  (let [object-ids (set (keys objects))
+        initial-deps (into {} (map (fn [[id data]]
+                                     [id (object-dependencies data variable-mappings object-ids)])
+                                   objects))]
+    (loop [remaining object-ids
+           deps initial-deps
+           ordered []]
+      (if (empty? remaining)
+        ordered
+        (if-let [id (next-ready-object-id remaining deps objects)]
+          (recur (disj remaining id)
+                 (into {} (map (fn [[k v]] [k (disj v id)]) deps))
+                 (conj ordered id))
+          (throw (ex-info "Circular object references in construction"
+                          {:remaining remaining :deps deps})))))))
+
+(defn objects-in-construction-order
+  "Construction objects as [id data] pairs, dependencies before dependents."
+  [objects variable-mappings]
+  (map (fn [id] [id (get objects id)])
+       (topo-sort-object-ids objects variable-mappings)))

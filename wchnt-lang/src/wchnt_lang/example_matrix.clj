@@ -2,7 +2,8 @@
   "Compile examples and report which compiler stages are currently working."
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
-            [wchnt-lang.compiler :as compiler]))
+            [wchnt-lang.compiler :as compiler]
+            [wchnt-lang.pages :as pages]))
 
 (defn- wcn-files
   [dir]
@@ -27,7 +28,9 @@
 
 (defn analyze-file
   [file]
-  (let [result (compiler/compile (slurp file))
+  (let [parent (.getParent file)
+        opts (if parent {:resolve-page (pages/sibling-resolve parent)} {})
+        result (compiler/compile (slurp file) opts)
         stash (:stash result)
         codeblocks (or (:codeblocks stash) {})
         value (:value result)]

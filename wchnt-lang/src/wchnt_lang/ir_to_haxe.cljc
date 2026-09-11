@@ -8,6 +8,13 @@
 ;; IR to Haxe Transformation
 ;; =============================================================================
 
+(defn- haxe-enum-ctor
+  "Haxe enum constructors are type identifiers: first letter upper-case."
+  [raw]
+  (-> (str/trim (str raw))
+      (str/replace #"[^A-Za-z0-9]" "")
+      (str/replace #"^[a-z]" str/upper-case)))
+
 (defn generate-component-field
   "Generate a Haxe field declaration for a component"
   [component]
@@ -30,13 +37,39 @@
             type-name (:type-name component)]
         (str component-name ":" type-name)))))
 
-(defn generate-constructor-body
-  "Generate constructor body for an assemblage"
+(defn- constructor-context-lines
+  "Wire :context children to this parent. Same rule as factory setContext."
+  [components schema-ir class-name]
+  (keep (fn [component]
+          (let [type-name (:type-name component)]
+            (when (and schema-ir class-name type-name
+                       (ir/needs-context? schema-ir type-name)
+                       (= class-name (ir/get-context-parent schema-ir type-name)))
+              (str "this." (:component-name component) ".setContext(this);"))))
+        components))
+
+(defn- constructor-subscribe-lines
+  "Subscribe this parent to each $ reactive child. Same rule as factory subscribe."
   [components]
-  (str/join "\n        " 
-    (for [component components]
-      (let [component-name (:component-name component)]
-        (str "this." component-name " = " component-name ";")))))
+  (keep (fn [component]
+          (when (= :reactive (:relationship component))
+            (str "this." (:component-name component) ".subscribe(this);")))
+        components))
+
+(defn generate-constructor-body
+  "Generate constructor body: field assigns, then construction magic
+   (context back-refs and reactive subscriptions). Magic runs for every
+   `new Class(...)`, including objects built inside methods."
+  ([components]
+   (generate-constructor-body components nil nil))
+  ([components schema-ir class-name]
+   (str/join "\n        "
+             (concat
+              (for [component components]
+                (str "this." (:component-name component) " = "
+                     (:component-name component) ";"))
+              (constructor-context-lines components schema-ir class-name)
+              (constructor-subscribe-lines components)))))
 
 (defn generate-to-construction-parts
   "Generate the parts for a toConstruction method using the new helper pattern"
@@ -89,7 +122,9 @@
        "    private var subscribers: Array<Dynamic> = [];\n"
        "\n"
        "    public function subscribe(subscriber: Dynamic): Void {\n"
-       "        subscribers.push(subscriber);\n"
+       "        if (subscribers.indexOf(subscriber) < 0) {\n"
+       "            subscribers.push(subscriber);\n"
+       "        }\n"
        "    }\n"
        "\n"
        "    public function unsubscribe(subscriber: Dynamic): Void {\n"
@@ -233,7 +268,11 @@
 
 (defn- haxe-call
   [expr]
-  (case (:method expr)
+  (if (= :import-alias (:expr (:receiver expr)))
+    (str (:import-class expr) "." (:method expr) "("
+         (str/join ", " (map expr-ir-to-haxe (:args expr)))
+         ")")
+    (case (:method expr)
     "fold" (haxe-fold expr)
     "length" (str (expr-ir-to-haxe (:receiver expr)) ".length")
     "concat" (str (expr-ir-to-haxe (:receiver expr)) " + "
@@ -242,14 +281,20 @@
                 (expr-ir-to-haxe (:receiver expr)) ")")
     "head" (haxe-runtime-call "arrayHead" expr)
     "tail" (haxe-runtime-call "arrayTail" expr)
-    "get" (haxe-runtime-call "mapGet" expr)
+    "get" (haxe-runtime-call (if (= 2 (count (:args expr)))
+                               "mapGetDefault"
+                               "mapGet")
+                             expr)
+    "exists" (haxe-runtime-call "mapExists" expr)
     "put" (haxe-runtime-call "mapPut" expr)
     "remove" (haxe-runtime-call "mapRemove" expr)
     "substring" (haxe-runtime-call "substring" expr)
+    "str" (str "Std.string(" (expr-ir-to-haxe (:receiver expr)) ")")
+    "tpl" (haxe-runtime-call "tpl" expr)
     "times" (haxe-runtime-call "times" expr)
     (str (expr-ir-to-haxe (:receiver expr)) "." (:method expr) "("
          (str/join ", " (map expr-ir-to-haxe (:args expr)))
-         ")")))
+         ")"))))
 
 (defn expr-ir-to-haxe
   "Render a reaction expression IR node as a Haxe expression string."
@@ -294,6 +339,7 @@
                                                (expr-ir-to-haxe (:value pair))))
                                         (:pairs expr)))
                 "]"))
+    :enum (haxe-enum-ctor (:name expr))
     (throw (ex-info "Unknown expression IR in method body" {:expr expr}))))
 
 (defn- method-let-lines
@@ -400,14 +446,15 @@
           steps)))
 
 (defn- generate-ordinary-method
-  [{:keys [method-name parameters return-type body lets]}]
+  [{:keys [method-name parameters return-type body lets]} static?]
   (let [branch-lets (when (= :if (:expr body)) (collect-if-branch-lets body))
         body (if (seq branch-lets) (strip-if-branch-lets body) body)
         params (str/join ", " (map #(str (:name %) ":" (:type %)) parameters))
         body-lines (if (void-call-chain? return-type body)
                      (unroll-call-chain-lines body)
-                     [(str "        return " (expr-ir-to-haxe body) ";")])]
-    (str "\n    public function " method-name "(" params "): " return-type " {\n"
+                     [(str "        return " (expr-ir-to-haxe body) ";")])
+        kind (if static? "public static function" "public function")]
+    (str "\n    " kind " " method-name "(" params "): " return-type " {\n"
          (str/join "\n" (concat (method-let-lines lets)
                                 (method-let-lines branch-lets)
                                 body-lines))
@@ -461,7 +508,7 @@
                      {:class (:class method) :method-name (:method-name method)})))
    (if (= "update" (:method-name method))
      (generate-update-method method ctx)
-     (generate-ordinary-method method))))
+     (generate-ordinary-method method false))))
 
 (defn- methods-for-class
   [methods-ir class-name]
@@ -490,7 +537,7 @@
                       (conj component-fields context-field)
                       component-fields)
          constructor-params (generate-constructor-params components)
-         constructor-body (generate-constructor-body components)
+         constructor-body (generate-constructor-body components schema-ir class-name)
          to-construction-method (generate-to-construction-method class-name components schema-ir)
          set-context-method (when (and needs-context context-parent) (generate-set-context-method context-parent))
          observable-infrastructure (when is-observable (generate-observable-infrastructure class-name))
@@ -500,7 +547,17 @@
                      :observable? is-observable
                      :schema-ir schema-ir
                      :class-name class-name}
-         user-methods (str/join "" (map #(generate-method % method-ctx) class-methods))]
+         static-public (or (:static-public-methods schema-ir) #{})
+         instance-methods (remove #(contains? static-public
+                                             [class-name (:method-name %)])
+                                  class-methods)
+         user-methods (str/join "" (map #(generate-method % method-ctx)
+                                        instance-methods))
+         static-methods (str/join ""
+                                  (for [m class-methods
+                                        :when (contains? static-public
+                                                         [class-name (:method-name m)])]
+                                    (generate-ordinary-method m true)))]
      (str "class " class-name implements-clause " {\n"
           (str/join "\n" all-fields)
           "\n\n"
@@ -508,6 +565,7 @@
           "        " constructor-body "\n"
           "    }"
           user-methods
+          static-methods
           (or inject-method "")
           (or set-context-method "")
           to-construction-method
@@ -539,12 +597,7 @@
   [enum]
   (let [enum-name (:name enum)
         enum-values (:values enum)
-        processed-values (for [value enum-values]
-                          (let [raw-value (str/trim value)
-                                enum-value-name (-> raw-value
-                                                   (str/replace #"[^A-Za-z0-9]" "")
-                                                   (str/replace #"^[a-z]" str/upper-case))]
-                            enum-value-name))]
+        processed-values (map haxe-enum-ctor enum-values)]
     (str "enum " enum-name " {\n"
          (str/join "\n" (map #(str "    " % ";") processed-values))
          "\n}")))
@@ -677,24 +730,29 @@
                            (:args arg)))
        "]"))
 
+(declare render-map-arg)
+
 (defn render-map-entry
-  [arg]
+  [arg schema-ir variable-mappings]
   (if (and (map? arg) (contains? arg :type))
     (case (:type arg)
       :primitive (render-primitive-value arg)
-      :variable (or (:value arg) (first (:args arg)))
-      :enum-value (:value arg)
+      :variable (render-variable-ref arg variable-mappings)
+      :enum-value (haxe-enum-ctor (:value arg))
+      :object (render-object-arg arg schema-ir variable-mappings)
+      :array (render-array-arg arg schema-ir variable-mappings)
+      :map (render-map-arg arg schema-ir variable-mappings)
       (str (:value arg)))
     (str arg)))
 
 (defn render-map-literal
-  [args]
-  (let [pairs (partition 2 (map render-map-entry args))]
+  [args schema-ir variable-mappings]
+  (let [pairs (partition 2 (map #(render-map-entry % schema-ir variable-mappings) args))]
     (str "[" (str/join ", " (map #(str (first %) " => " (second %)) pairs)) "]")))
 
 (defn render-map-arg
-  [arg]
-  (render-map-literal (:args arg)))
+  [arg schema-ir variable-mappings]
+  (render-map-literal (:args arg) schema-ir variable-mappings))
 
 (defn render-plain-string-arg
   [arg component-types arg-index]
@@ -710,6 +768,9 @@
     (and (map? arg) (= (:type arg) :object))
     (render-object-arg arg schema-ir variable-mappings)
 
+    (and (map? arg) (= (:type arg) :call))
+    (expr-ir-to-haxe (:expr arg))
+
     (and (map? arg) (= (:type arg) :variable))
     (render-variable-ref arg variable-mappings)
 
@@ -717,13 +778,13 @@
     (render-primitive-value arg)
 
     (and (map? arg) (= (:type arg) :enum-value))
-    (:value arg)
+    (haxe-enum-ctor (:value arg))
 
     (and (map? arg) (= (:type arg) :array))
     (render-array-arg arg schema-ir variable-mappings)
 
     (and (map? arg) (= (:type arg) :map))
-    (render-map-arg arg)
+    (render-map-arg arg schema-ir variable-mappings)
 
     :else
     (throw (ex-info "Unexpected object constructor argument in construction IR"
@@ -754,8 +815,8 @@
 
 (defn generate-map-assignment
   "Generate Haxe code for a map assignment"
-  [obj-id class-name args schema-ir]
-  (str "  var " obj-id " = " (render-map-literal args) ";"))
+  [obj-id class-name args schema-ir variable-mappings]
+  (str "  var " obj-id " = " (render-map-literal args schema-ir variable-mappings) ";"))
 
 (defn generate-primitive-assignment
   "Generate Haxe code for a primitive assignment"
@@ -780,9 +841,10 @@
       :object (generate-object-assignment obj-id class-name args schema-ir variable-mappings)
       :variable (generate-variable-assignment obj-id (if (contains? obj-data :value) [(:value obj-data)] args))
       :enum-value (if (or (contains? obj-data :value) (seq args))
-                    (str "  var " obj-id " = " (or (:value obj-data) (first args)) ";")
+                    (str "  var " obj-id " = "
+                         (haxe-enum-ctor (or (:value obj-data) (first args))) ";")
                     (throw (ex-info "Enum value assignment missing arguments" {:obj-id obj-id :args args})))
-      :map (generate-map-assignment obj-id class-name args schema-ir)
+      :map (generate-map-assignment obj-id class-name args schema-ir variable-mappings)
       :primitive (generate-primitive-assignment obj-id obj-data)
       (throw (ex-info "Unknown object type in factory generation" 
                     {:obj-type obj-type
@@ -811,67 +873,11 @@
                    (= parent-class (ir/get-context-parent schema-ir child-type)))]
     (str "  " obj-id "." (:component-name component) ".setContext(" obj-id ");")))
 
-(defn- variable-arg-name
-  [arg]
-  (when (and (map? arg) (= (:type arg) :variable))
-    (or (:value arg) (first (:args arg)))))
-
-(defn- arg-ref-names
-  [arg]
-  (cond
-    (nil? arg) []
-    (variable-arg-name arg) [(variable-arg-name arg)]
-    (and (map? arg) (:args arg)) (mapcat arg-ref-names (:args arg))
-    (sequential? arg) (mapcat arg-ref-names arg)
-    :else []))
-
-(defn- resolve-object-id
-  [name variable-mappings object-ids]
-  (let [resolved (get variable-mappings name name)]
-    (when (contains? object-ids resolved)
-      resolved)))
-
-(defn- object-dependencies
-  [obj-data variable-mappings object-ids]
-  (->> (arg-ref-names obj-data)
-       (keep #(resolve-object-id % variable-mappings object-ids))
-       set))
-
-(defn- next-ready-object-id
-  [remaining deps objects]
-  (->> remaining
-       (filter #(empty? (get deps %)))
-       (sort-by #(or (:index (get objects %)) 0))
-       first))
-
-(defn- topo-sort-object-ids
-  [objects variable-mappings]
-  (let [object-ids (set (keys objects))
-        initial-deps (into {} (map (fn [[id data]]
-                                     [id (object-dependencies data variable-mappings object-ids)])
-                                   objects))]
-    (loop [remaining object-ids
-           deps initial-deps
-           ordered []]
-      (if (empty? remaining)
-        ordered
-        (if-let [id (next-ready-object-id remaining deps objects)]
-          (recur (disj remaining id)
-                 (into {} (map (fn [[k v]] [k (disj v id)]) deps))
-                 (conj ordered id))
-          (throw (ex-info "Circular object references in construction"
-                          {:remaining remaining :deps deps})))))))
-
-(defn- objects-in-construction-order
-  [objects variable-mappings]
-  (map (fn [id] [id (get objects id)])
-       (topo-sort-object-ids objects variable-mappings)))
-
 (defn generate-factory-body
   "Generate the body of a factory function from construction IR"
   [construction-ir schema-ir]
-  (let [objects (objects-in-construction-order (:objects construction-ir)
-                                               (:variable-mappings construction-ir))
+  (let [objects (ir/objects-in-construction-order (:objects construction-ir)
+                                                  (:variable-mappings construction-ir))
         variable-mappings (:variable-mappings construction-ir)
         return-object (:return-object construction-ir)
         assignment-statements

@@ -10,25 +10,26 @@
 (def schema-grammar
   "
 Schema = DefLine (<NL> DefLine)* <NL>?
-DefLine = CompositionLine | DisjunctionLine | EnumLine
-CompositionLine = Definee <SPACE> <'='> <SPACE> Element (<SPACE> Element)* <SPACE>?
+DefLine = EnumLine / DisjunctionLine / CompositionLine
+CompositionLine = Definee Implements? <SPACE> <'='> <SPACE> Element (<SPACE> Element)* <SPACE>?
+Implements = <SPACE> <':'> <SPACE> Name
 DisjunctionLine = Definee <SPACE> <'='> <SPACE> Element (<SPACE> <'|'> <SPACE> Element)+ <SPACE>?
 EnumLine = Definee <SPACE> <'='> <SPACE> <'\"'> EnumValue <'\"'> (<SPACE> <'|'> <SPACE> <'\"'> EnumValue <'\"'>)+ <SPACE>?
 Definee = Inlet? Name
 Inlet = '>'
 <Name> = #'[A-Za-z][A-Za-z0-9_]*'
 NL = #'\n+'
-Element = ((Sigil Type) | TypeMarker) ('/' AltName)?
+Element = (Sigil Type / TypeMarker) ('/' AltName)?
 SPACE = #'\\s+'
-TypeMarker = Name | ArrayType | MapType | EmptyType
-ArrayType = <'['> (Type | MapType) <']'>
+TypeMarker = ArrayType / MapType / EmptyType / Name
+ArrayType = <'['> (Type / MapType) <']'>
 Type = Name
 MapType =  <'{'> KeyType <SPACE>? <':'> <SPACE>? ValType <'}'>
 KeyType = Name 
-ValType = Name | ArrayType 
+ValType = ArrayType / Name
 AltName = Name
 EnumValue =  #'[^\"]+'
-Sigil = ':'  | '@' | '$'
+Sigil = ':' / '@' / '$'
 EmptyType = '_'
 ")
 
@@ -36,16 +37,20 @@ EmptyType = '_'
 ;; Construction Grammar (for parsing construction and reaction phases)
 ;; =============================================================================
 
+;; Construction/reaction is a PEG: / is ordered choice. Do not use | for
+;; alternatives that share a prefix — JVM and CLJS Instaparse resolve | differently.
+;; Brace forms: {Type:Type ...} map, then { args | body } lambda, then { stmts } block.
+
 (def construction-grammar
-  "Code = (MethodDefinition | WS)*
-MethodDefinition = ClassName <'::'> MethodName ReturnAnn? <'='> BlockOrLambda
-ReturnAnn = <':'> Type
-BlockOrLambda = Lambda | Block
+  "Code = (MethodDefinition / WS)*
+MethodDefinition = ClassName <'::'> MethodName <'='> BlockOrLambda ReturnAnn?
+ReturnAnn = <'->'> Type
+BlockOrLambda = Lambda / Block
 Lambda = <'{'> LambdaArgs? <'|'> BlockStatements <'}'>
 LambdaArgs = LambdaArg (<','> LambdaArg)*
 ExternalLambdaArg = <'@'> Type <'/'> VariableName
 TypedLambdaArg = Type <'/'> VariableName
-LambdaArg = ExternalLambdaArg | TypedLambdaArg | VariableName
+LambdaArg = ExternalLambdaArg / TypedLambdaArg / VariableName
 Block = <'{'> BlockStatements <'}'>
 <Stmt> = Assignment / Expression
 BlockStatements = (Stmt (StmtSep Stmt)*)?
@@ -54,19 +59,19 @@ Assignment = VariableName <'='> Expression
 TargetCommand = <'%'> TargetMethodName <'('> MethodArgList <')'>
 TargetMethodName = Name
 Expression = OrExpr
-<OrExpr> = OrOp | AndExpr
+<OrExpr> = OrOp / AndExpr
 OrOp = AndExpr (<'or'> AndExpr)+
-<AndExpr> = AndOp | NotExpr
+<AndExpr> = AndOp / NotExpr
 AndOp = NotExpr (<'and'> NotExpr)+
-<NotExpr> = NotOp | CmpExpr
+<NotExpr> = NotOp / CmpExpr
 NotOp = <'not'> NotExpr
-<CmpExpr> = CmpOp | ArithExpr
+<CmpExpr> = CmpOp / ArithExpr
 CmpOp = ArithExpr CompOp ArithExpr
-<CompOp> = '==' | '!=' | '<=' | '>=' | '<' | '>'
-<ArithExpr> = AddOp | Term
-AddOp = Term (('+' | '-') Term)+
-<Term> = MulOp | Factor
-MulOp = Factor (('*' | '/' | '%') Factor)+
+<CompOp> = '<=' / '>=' / '==' / '!=' / '<' / '>'
+<ArithExpr> = AddOp / Term
+AddOp = Term (('+' / '-') Term)+
+<Term> = MulOp / Factor
+MulOp = Factor (('*' / '/' / '%') Factor)+
 <Factor> = IfExpr
          / TargetCommand
          / MethodCall
@@ -86,8 +91,8 @@ NegOp = <'-'> Factor
 ObjectConstruction = <'['> <':'> ClassName ArgList <']'> 
 InnerObjectConstruction = <'['> (<':'> ClassName)? ArgList <']'>
 ArrayConstruction = <'['> <':'> <'Array'> <'/'> Type ArgList <']'>
-MapConstruction = <'['> <':'> <'Map'> <'/'> <'{'> KeyType <':'> ValType <'}'> KeyValueList? <']'>
-MethodCall = (StringLiteral | IntLiteral | VariableRef) (<#'\\.'> Name)+ <'('> MethodArgList <')'> (<#'\\.'> Name <'('> MethodArgList <')'>)*
+MapConstruction = <'{'> KeyType <':'> ValType KeyValueList? <'}'>
+MethodCall = (StringLiteral / IntLiteral / VariableRef) (<#'\\.'> Name)+ <'('> MethodArgList <')'> (<#'\\.'> Name <'('> MethodArgList <')'>)*
 FieldPath = #'[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)+'
 VariableRef = Name
 <ArgItem> = MethodCall
@@ -102,14 +107,14 @@ VariableRef = Name
 ArgList = ArgItem*
 <ParenArg> = <'('> OrExpr <')'>
 MethodArgList = (MethodArgItem (<','> MethodArgItem)*)?
-MethodArgItem = Expression | BlockOrLambda
+MethodArgItem = Expression
 KeyValueList = KeyValuePair (<','>? WS* KeyValuePair)*
 KeyValuePair = Expression (<':'>)? Expression
-<Literal> = IntLiteral | FloatLiteral | StringLiteral | BoolLiteral
+<Literal> = FloatLiteral / IntLiteral / StringLiteral / BoolLiteral
 IntLiteral = #'(-)?[0-9]+'
 FloatLiteral = #'(-)?[0-9]+\\.[0-9]+'
 StringLiteral = <'\"'> #'[^\"]*' <'\"'>
-BoolLiteral = 'true' | 'false'
+BoolLiteral = 'true' / 'false'
 ClassName = Name
 MethodName = Name
 VariableName = Name

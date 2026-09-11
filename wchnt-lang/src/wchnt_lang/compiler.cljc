@@ -10,6 +10,7 @@
             [wchnt-lang.reaction :as reaction]
             [wchnt-lang.ir-to-haxe :as ir-to-haxe]
             [wchnt-lang.target :as target]
+            [wchnt-lang.importing :as importing]
             [wchnt-lang.haxe-helpers :as haxe-helpers]
             [clojure.string :as str]))
 
@@ -74,6 +75,35 @@
    (p/stash :methods-ir)
    (p/validator schema/valid-methods-ir? "Methods IR matches schema")])
 
+(defn- attach-import-env-stages
+  []
+  [(p/retrieve :codeblocks)
+   (p/cargo-processor
+    (fn [cargo]
+      (let [env (:import-env (:value cargo))
+            schema-ir (get-in cargo [:stash :schema-ir])
+            schema-ir (if env
+                        (importing/attach-import-env schema-ir env)
+                        schema-ir)]
+        (-> cargo
+            (assoc :value schema-ir)
+            (assoc-in [:stash :schema-ir] schema-ir))))
+    "attach import env")])
+
+(defn- public-stages
+  []
+  [(p/retrieve :codeblocks)
+   (p/cargo-processor
+    (fn [cargo]
+      (let [schema-ir (importing/apply-public
+                       (get-in cargo [:stash :schema-ir])
+                       (or (get-in cargo [:stash :methods-ir]) [])
+                       (or (:public (:value cargo)) ""))]
+        (-> cargo
+            (assoc :value schema-ir)
+            (assoc-in [:stash :schema-ir] schema-ir))))
+    "apply ## Public")])
+
 (defn- construction-ir-stages
   []
   [(p/retrieve :codeblocks)
@@ -125,7 +155,11 @@
 
 (defn- ir-stages-from-codeblocks
   []
-  (concat (schema-stages) (reaction-stages) (construction-ir-stages)))
+  (concat (schema-stages)
+          (attach-import-env-stages)
+          (reaction-stages)
+          (public-stages)
+          (construction-ir-stages)))
 
 (defn- ir-stages
   []
@@ -151,33 +185,42 @@
          :target ""
          :page-kind :library))
 
-(defn- compile-import-cargos
+(defn- compile-import-page
+  [page-name resolve-page]
+  (let [markdown (resolve-page page-name)
+        parsed (mainfile/parse-mainfile markdown)]
+    (when (p/failed? parsed)
+      (throw (ex-info (str "Import page '" page-name "' parse error: "
+                           (first (:errors parsed)))
+                      {:page page-name})))
+    (let [cargo (compile-codeblocks-to-ir (import-codeblocks (:value parsed)))]
+      (when (p/failed? cargo)
+        (throw (ex-info (str "Import page '" page-name "' compile error: "
+                             (first (:errors cargo)))
+                        {:page page-name})))
+      (importing/assert-importable-public! page-name cargo)
+      cargo)))
+
+(defn- compile-import-cargos-by-page
   [import-order resolve-page]
-  (when (seq import-order)
-    (reduce
-     (fn [acc page-name]
-       (let [markdown (resolve-page page-name)
-             parsed (mainfile/parse-mainfile markdown)]
-         (when (p/failed? parsed)
-           (throw (ex-info (str "Import page '" page-name "' parse error: "
-                                (first (:errors parsed)))
-                           {:page page-name})))
-         (let [cargo (compile-codeblocks-to-ir (import-codeblocks (:value parsed)))]
-           (if (p/failed? cargo)
-             (throw (ex-info (str "Import page '" page-name "' compile error: "
-                                  (first (:errors cargo)))
-                             {:page page-name}))
-             (if acc
-               (pages/merge-cargo-stashes acc cargo)
-               cargo)))))
-     nil
-     import-order)))
+  (into {} (map (fn [name] [name (compile-import-page name resolve-page)])
+                import-order)))
+
+(defn- merge-import-cargos
+  [import-order cargos-by-page]
+  (reduce (fn [acc name]
+            (let [cargo (get cargos-by-page name)]
+              (if acc
+                (pages/merge-cargo-stashes acc cargo)
+                cargo)))
+          nil
+          import-order))
 
 (defn- merge-imports-into-cargo
-  [page-cargo import-order resolve-page]
+  [page-cargo import-order cargos-by-page]
   (if (empty? import-order)
     page-cargo
-    (let [import-cargo (compile-import-cargos import-order resolve-page)]
+    (let [import-cargo (merge-import-cargos import-order cargos-by-page)]
       (pages/merge-cargo-stashes import-cargo page-cargo))))
 
 (defn- finalize-ir-cargo
@@ -190,7 +233,7 @@
   "Parse a .wcn markdown file to schema, methods, construction, and target IR.
    Does not emit Haxe. Used by the interpreter / live page.
 
-   Optional :resolve-page (fn [name] markdown-or-nil) merges ## Import siblings."
+   Optional :resolve-page (fn [name] markdown-or-nil) loads ## Import siblings."
   ([wchnt-markdown]
    (compile-to-ir wchnt-markdown {}))
   ([wchnt-markdown {:keys [resolve-page]}]
@@ -201,15 +244,24 @@
          (let [codeblocks (:value parsed)]
            (if (= :documentation (:page-kind codeblocks))
              (documentation-cargo codeblocks)
-             (let [import-order (when resolve-page
+             (let [import-specs (when resolve-page
+                                  (mainfile/parse-import-specs (:import codeblocks)))
+                   import-order (when (seq import-specs)
                                   (pages/resolve-import-order
-                                   (mainfile/parse-import-names (:import codeblocks))
+                                   (mapv :page import-specs)
                                    resolve-page))
-                   page-cargo (compile-codeblocks-to-ir codeblocks)]
+                   cargos-by-page (when (seq import-order)
+                                    (compile-import-cargos-by-page
+                                     import-order resolve-page))
+                   import-env (when (seq import-specs)
+                                (importing/env-from-import-cargos
+                                 import-specs cargos-by-page))
+                   page-cargo (compile-codeblocks-to-ir
+                               (assoc codeblocks :import-env import-env))]
                (if (p/failed? page-cargo)
                  page-cargo
                  (finalize-ir-cargo
-                  (merge-imports-into-cargo page-cargo import-order resolve-page)
+                  (merge-imports-into-cargo page-cargo import-order cargos-by-page)
                   codeblocks)))))))
      (catch #?(:clj Exception :cljs :default) e
        (p/fail-cargo (or (ex-message e) (str e)))))))
@@ -236,13 +288,22 @@
        (class-body factory helpers init step haxe-helpers/openfl-lifecycle)
        "\n}"))
 
+(defn- emit-cli-main
+  [factory helpers init step]
+  (when (or (str/blank? (or init "")) (str/blank? (or step "")))
+    (throw (ex-info "%cli requires %init and %step" {})))
+  (str "class Main {\n"
+       (class-body factory helpers init step haxe-helpers/cli-lifecycle)
+       "\n}"))
+
 (defn- emit-main-class
   [factory target-ir]
   (if (str/blank? factory)
     ""
     (let [host (:host target-ir)]
       (when-not host
-        (throw (ex-info "Target must name a host (%terminal, %openfl, or %canvas)"
+        (throw (ex-info (str "Target must name a host ("
+                             "terminal, cli, cli-live, openfl, or canvas)")
                         {:target-ir target-ir})))
       (let [helpers (str/join "\n" (map :haxe (vals (:bindings (or target-ir {:bindings {}})))))
             main (get-in target-ir [:main :haxe])
@@ -251,8 +312,11 @@
         (case host
           "terminal" (emit-terminal-main factory helpers main)
           "openfl" (emit-openfl-main factory helpers init step)
+          "cli" (emit-cli-main factory helpers init step)
           "canvas" (throw (ex-info "%canvas is for the live interpreter, not the Haxe backend"
                                    {:host host}))
+          "cli-live" (throw (ex-info "%cli-live is for the live interpreter, not the Haxe backend"
+                                     {:host host}))
           (throw (ex-info (str "Unknown Target host '" host "'") {:host host})))))))
 
 (defn- cargo->full-program
@@ -272,9 +336,10 @@
      :main main
      :init (or (get-in target-ir [:init :haxe]) "")
      :step (or (get-in target-ir [:step :haxe]) "")
-     :preamble (if (= host "openfl")
-                 (str haxe-helpers/openfl-imports "\n\n"
-                      haxe-helpers/openfl-graphics-wrapper)
+     :preamble (case host
+                 "openfl" (str haxe-helpers/openfl-imports "\n\n"
+                               haxe-helpers/openfl-graphics-wrapper)
+                 "cli" haxe-helpers/cli-console-wrapper
                  "")
      :main-class main-class
      :has-construction? has-construction?

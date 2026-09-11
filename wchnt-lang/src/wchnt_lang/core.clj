@@ -4,6 +4,7 @@
             [wchnt-lang.mainfile :as mainfile]
             [wchnt-lang.schema :as schema]
             [wchnt-lang.compiler :as compiler]
+            [wchnt-lang.pages :as pages]
             [clojure.string :as str]
             [clojure.pprint :as pp]
             [clojure.java.io :as io]
@@ -21,6 +22,14 @@
 
 
 
+(defn- compile-opts-for-file
+  "Resolve [[page]] imports against sibling .wcn files in the same directory."
+  [file]
+  (let [parent (.getParent (io/file file))]
+    (if parent
+      {:resolve-page (pages/sibling-resolve parent)}
+      {})))
+
 (defn compile-wchnt-file
   "Compile a WCHNT file.
    
@@ -31,7 +40,7 @@
   [file-path]
   (try
     (let [file-content (slurp file-path)
-          result (compiler/compile file-content)]
+          result (compiler/compile file-content (compile-opts-for-file file-path))]
       result)))
 
 (defn compile-file
@@ -39,7 +48,7 @@
   [file-path]
   (let [file (io/file file-path)
         file-content (slurp file)
-        result (compiler/compile file-content)]
+        result (compiler/compile file-content (compile-opts-for-file file))]
     result))
 
 (defn eyeball

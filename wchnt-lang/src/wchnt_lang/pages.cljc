@@ -34,11 +34,25 @@
         (update :enums into (:enums overlay))
         (update :observable-classes into (:observable-classes overlay))
         (update :subscriber-classes into (:subscriber-classes overlay))
+        (update :public-methods #(into (or % #{}) (or (:public-methods overlay) #{})))
+        (update :static-public-methods #(into (or % #{}) (or (:static-public-methods overlay) #{})))
         (update :mailbox-classes into (:mailbox-classes overlay))
         (update :debug-methods into (:debug-methods overlay))
         (update :external-types #(into (or % #{}) (:external-types overlay)))
         (update :context-relationships #(merge-map-keys "context" % (:context-relationships overlay)))
-        (update :interface-implementers #(merge-map-keys "interface" % (:interface-implementers overlay))))))
+        (update :interface-implementers #(merge-with (fn [a b]
+                                                       (into (set (if (coll? a) a [a]))
+                                                             (set (if (coll? b) b [b]))))
+                                                     (or % {})
+                                                     (or (:interface-implementers overlay) {})))
+        (update :imported-interfaces #(into (or % #{}) (or (:imported-interfaces overlay) #{})))
+        (update :public-interfaces #(into (or % #{}) (or (:public-interfaces overlay) #{})))
+        (assoc :imported-methods (merge (:imported-methods base)
+                                        (:imported-methods overlay))
+               :imported-handles (into (or (:imported-handles base) #{})
+                                       (or (:imported-handles overlay) #{}))
+               :import-aliases (merge (:import-aliases base)
+                                      (:import-aliases overlay))))))
 
 (defn merge-methods-irs
   "Append imported methods. Fail on duplicate [class method]."

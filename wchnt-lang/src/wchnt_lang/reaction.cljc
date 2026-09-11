@@ -2,7 +2,8 @@
   "Reaction section: method AST → methods IR."
   (:require [clojure.string :as str]
             [wchnt-lang.ast-utils :as ast-utils]
-            [wchnt-lang.ir :as ir]))
+            [wchnt-lang.ir :as ir]
+            [wchnt-lang.template :as template]))
 
 (defn- unwrap-expr
   [node]
@@ -22,7 +23,8 @@
 
 (defn- interface-names
   [schema-ir]
-  (set (map :name (:interfaces schema-ir))))
+  (into (set (map :name (:interfaces schema-ir)))
+        (or (:imported-interfaces schema-ir) #{})))
 
 (defn- enum-names
   [schema-ir]
@@ -40,6 +42,7 @@
       (contains? (interface-names schema-ir) type-name)
       (contains? (enum-names schema-ir) type-name)
       (ir/external-type? schema-ir type-name)
+      (contains? (or (:imported-handles schema-ir) #{}) type-name)
       (and (string? type-name)
            (or (str/starts-with? type-name "Array<")
                (str/starts-with? type-name "Map<"))
@@ -77,6 +80,20 @@
   [schema-ir class-name]
   (set (map :component-name (ir/get-assemblage-components schema-ir class-name))))
 
+(defn- enums-with-value
+  [schema-ir name]
+  (filterv #(some #{name} (:values %)) (or (:enums schema-ir) [])))
+
+(defn- resolve-enum-ctor
+  [name schema-ir class-name]
+  (let [hits (enums-with-value schema-ir name)]
+    (when (> (count hits) 1)
+      (throw (ex-info (str "Enum constructor '" name "' belongs to more than one enum")
+                      {:name name :class-name class-name
+                       :enums (mapv :name hits)})))
+    (when-let [e (first hits)]
+      {:expr :enum :name name :type (:name e)})))
+
 (defn- resolve-name
   [name {:keys [param-names let-names schema-ir class-name]}]
   (cond
@@ -86,6 +103,9 @@
     (contains? (or let-names #{}) name)
     {:expr :local :name name}
 
+    (contains? (or (:import-aliases schema-ir) {}) name)
+    {:expr :import-alias :name name}
+
     (contains? param-names name)
     {:expr :param :name name}
 
@@ -94,9 +114,10 @@
     {:expr :field :name name}
 
     :else
-    (throw (ex-info (str "Unknown name '" name "' in " class-name
-                         " method (not a field, parameter, or let)")
-                    {:name name :class-name class-name}))))
+    (or (resolve-enum-ctor name schema-ir class-name)
+        (throw (ex-info (str "Unknown name '" name "' in " class-name
+                             " method (not a field, parameter, or let)")
+                        {:name name :class-name class-name})))))
 
 (declare ast->expr process-statements assert-fresh-let-name value-type block-statements convert-call-arg)
 
@@ -116,6 +137,10 @@
 
 (defn- validate-construct!
   [class-name args schema-ir]
+  (when (contains? (or (:imported-handles schema-ir) #{}) class-name)
+    (throw (ex-info (str "Cannot construct imported handle '" class-name
+                         "'; call a public method that returns one")
+                    {:class-name class-name})))
   (when-not (contains? (assemblage-names schema-ir) class-name)
     (throw (ex-info (str "Unknown class '" class-name "' in method construction")
                     {:class-name class-name})))
@@ -135,6 +160,7 @@
     :local (get let-types (:name root))
     :param (get param-types (:name root))
     :call (:type root)
+    :import-alias nil
     :target-call (:type root)
     :path (:type root)
     :if (:type root)
@@ -149,6 +175,10 @@
 
 (defn- follow-field
   [schema-ir class-name field-name]
+  (when (contains? (or (:imported-handles schema-ir) #{}) class-name)
+    (throw (ex-info (str "Cannot read field '" field-name "' on imported handle "
+                         class-name)
+                    {:class-name class-name :field-name field-name})))
   (when (or (str/starts-with? class-name "Array<")
             (str/starts-with? class-name "Map<"))
     (throw (ex-info (str "Cannot access fields of collection type " class-name)
@@ -332,10 +362,11 @@
 
 (defn- require-lambda
   [node method-name]
-  (when-not (ast-utils/node-type? node :BlockOrLambda)
-    (throw (ex-info (str method-name " expects a block argument")
-                    {:node node})))
-  node)
+  (let [node (unwrap-expr node)]
+    (when-not (ast-utils/node-type? node :BlockOrLambda)
+      (throw (ex-info (str method-name " expects a block argument")
+                      {:node node})))
+    node))
 
 (defn- map-types
   [type-name]
@@ -362,6 +393,18 @@
 (defn- assert-arg-type
   [expected actual what]
   (when (and actual (not= expected actual))
+    (throw (ex-info (str what " expected " expected ", got " actual)
+                    {:expected expected :actual actual}))))
+
+(defn- type-assignable?
+  [schema-ir expected actual]
+  (or (nil? actual)
+      (= expected actual)
+      (contains? (set (interface-implementers schema-ir expected)) actual)))
+
+(defn- assert-assignable!
+  [schema-ir expected actual what]
+  (when-not (type-assignable? schema-ir expected actual)
     (throw (ex-info (str what " expected " expected ", got " actual)
                     {:expected expected :actual actual}))))
 
@@ -403,7 +446,7 @@
     (expect-arity "Array" "cons" 1 arg-nodes)
     (let [elem-type (array-elem-type class-name)
           elem (convert-call-arg (first arg-nodes) ctx)]
-      (assert-arg-type elem-type (value-type elem ctx) "Array::cons")
+      (assert-assignable! (:schema-ir ctx) elem-type (value-type elem ctx) "Array::cons")
       {:expr :call
        :receiver receiver
        :method "cons"
@@ -463,19 +506,42 @@
 (defn- get-call
   [receiver class-name method arg-nodes ctx]
   (when (= method "get")
-    (let [types (map-types class-name)]
+    (let [types (map-types class-name)
+          n (count arg-nodes)]
       (when-not types
         (throw (ex-info (str "'get' is only defined on maps, not " class-name)
                         {:class-name class-name})))
-      (expect-arity "Map" "get" 1 arg-nodes)
-      (let [k (convert-call-arg (first arg-nodes) ctx)]
+      (when-not (or (= n 1) (= n 2))
+        (throw (ex-info (str "Map::get expected 1 or 2 arguments, got " n)
+                        {:expected "1 or 2" :got n})))
+      (let [k (convert-call-arg (first arg-nodes) ctx)
+            fallback (when (= n 2) (convert-call-arg (second arg-nodes) ctx))]
         (assert-arg-type (:key types) (value-type k ctx) "Map::get")
+        (when fallback
+          (assert-arg-type (:val types) (value-type fallback ctx) "Map::get"))
         {:expr :call
          :receiver receiver
          :method "get"
+         :args (if fallback [k fallback] [k])
+         :arg-types (if fallback [(:key types) (:val types)] [(:key types)])
+         :type (:val types)}))))
+
+(defn- exists-call
+  [receiver class-name method arg-nodes ctx]
+  (when (= method "exists")
+    (let [types (map-types class-name)]
+      (when-not types
+        (throw (ex-info (str "'exists' is only defined on maps, not " class-name)
+                        {:class-name class-name})))
+      (expect-arity "Map" "exists" 1 arg-nodes)
+      (let [k (convert-call-arg (first arg-nodes) ctx)]
+        (assert-arg-type (:key types) (value-type k ctx) "Map::exists")
+        {:expr :call
+         :receiver receiver
+         :method "exists"
          :args [k]
          :arg-types [(:key types)]
-         :type (:val types)}))))
+         :type "Bool"}))))
 
 (defn- remove-call
   [receiver class-name method arg-nodes ctx]
@@ -493,6 +559,53 @@
          :args [k]
          :arg-types [(:key types)]
          :type class-name}))))
+
+(defn- str-call
+  [receiver class-name method arg-nodes]
+  (when (= method "str")
+    (when-not (stringifyable? class-name)
+      (throw (ex-info (str "'str' is only defined on String, Int, Float, and Bool, not "
+                           class-name)
+                      {:class-name class-name})))
+    (expect-arity class-name "str" 0 arg-nodes)
+    {:expr :call
+     :receiver receiver
+     :method "str"
+     :args []
+     :arg-types []
+     :type "String"}))
+
+(defn- literal-string-keys
+  [map-expr]
+  (when (and (= :map (:expr map-expr))
+             (every? #(= :string (get-in % [:key :expr])) (:pairs map-expr)))
+    (set (map #(get-in % [:key :value]) (:pairs map-expr)))))
+
+(defn- assert-literal-tpl-holes!
+  [receiver arg]
+  (when (= :string (:expr receiver))
+    (when-let [keys (literal-string-keys arg)]
+      (doseq [hole (template/holes (:value receiver))]
+        (when-not (contains? keys hole)
+          (throw (ex-info (str "String::tpl: missing '" hole "'")
+                          {:hole hole})))))))
+
+(defn- tpl-call
+  [receiver class-name method arg-nodes ctx]
+  (when (= method "tpl")
+    (when (not= class-name "String")
+      (throw (ex-info (str "'tpl' is only defined on strings, not " class-name)
+                      {:class-name class-name})))
+    (expect-arity "String" "tpl" 1 arg-nodes)
+    (let [arg (convert-call-arg (first arg-nodes) ctx)]
+      (assert-arg-type "Map<String, String>" (value-type arg ctx) "String::tpl")
+      (assert-literal-tpl-holes! receiver arg)
+      {:expr :call
+       :receiver receiver
+       :method "tpl"
+       :args [arg]
+       :arg-types ["Map<String, String>"]
+       :type "String"})))
 
 (defn- substring-call
   [receiver class-name method arg-nodes ctx]
@@ -594,7 +707,10 @@
       (tail-call receiver class-name method arg-nodes)
       (put-call receiver class-name method arg-nodes ctx)
       (get-call receiver class-name method arg-nodes ctx)
+      (exists-call receiver class-name method arg-nodes ctx)
       (remove-call receiver class-name method arg-nodes ctx)
+      (str-call receiver class-name method arg-nodes)
+      (tpl-call receiver class-name method arg-nodes ctx)
       (substring-call receiver class-name method arg-nodes ctx)
       (times-call receiver class-name method arg-nodes ctx)
       (combinator-call receiver class-name method arg-nodes ctx)))
@@ -631,36 +747,167 @@
        :arg-types (vec (repeat (count args) nil))
        :type class-name})))
 
+(defn- imported-handle?
+  [schema-ir class-name]
+  (contains? (or (:imported-handles schema-ir) #{}) class-name))
+
+(defn- assert-public-method!
+  [schema-ir class-name method]
+  (when (imported-handle? schema-ir class-name)
+    (when-not (contains? (or (:public-methods schema-ir) #{}) [class-name method])
+      (throw (ex-info (str class-name "::" method
+                           " is not on the Public list of the imported assemblage")
+                      {:class-name class-name :method-name method})))))
+
+(defn- resolve-import-method
+  "Map alias.method or alias.Class.method to a public Class::method."
+  [alias fields method schema-ir]
+  (let [info (get (:import-aliases schema-ir) alias)
+        public (or (:public-methods info) #{})]
+    (when-not info
+      (throw (ex-info (str "Unknown import alias '" alias "'") {:alias alias})))
+    (if (seq fields)
+      (let [class-name (first fields)]
+        (when (next fields)
+          (throw (ex-info (str "Import call '" alias "." (str/join "." fields)
+                               "." method "' is too long; use alias.method or alias.Class.method")
+                          {:alias alias :fields fields :method method})))
+        (when-not (contains? public [class-name method])
+          (throw (ex-info (str class-name "::" method
+                               " is not public on imported assemblage '"
+                               (:page info) "'")
+                          {:class-name class-name :method-name method})))
+        class-name)
+      (let [matches (filterv #(= method (second %)) public)]
+        (cond
+          (empty? matches)
+          (throw (ex-info (str "No public method '" method "' on imported assemblage '"
+                               (:page info) "'")
+                          {:alias alias :method method}))
+
+          (next matches)
+          (throw (ex-info (str "Ambiguous public method '" method
+                               "' on '" alias "'; qualify with the class")
+                          {:alias alias :method method :matches matches}))
+
+          :else
+          (first (first matches)))))))
+
+(defn expr-uses-instance?
+  "True when a method IR (or expression) reads this or a field of this."
+  [node]
+  (cond
+    (nil? node) false
+    (map? node)
+    (or (contains? #{:this :field} (:expr node))
+        (and (= :path (:expr node))
+             (expr-uses-instance? (:root node)))
+        (some expr-uses-instance? (vals node)))
+    (sequential? node) (boolean (some expr-uses-instance? node))
+    :else false))
+
+(defn- method-uses-instance?
+  [method]
+  (or (expr-uses-instance? (:body method))
+      (expr-uses-instance? (:lets method))))
+
+(defn- import-call
+  [receiver fields method arg-list ctx]
+  (let [alias (:name receiver)
+        class-name (resolve-import-method alias fields method (:schema-ir ctx))
+        arg-nodes (method-arg-items arg-list)
+        args (mapv #(convert-call-arg % ctx) arg-nodes)
+        callee (lookup-callee class-name method (count args) ctx)]
+    (when (method-uses-instance? callee)
+      (throw (ex-info (str class-name "::" method
+                           " uses instance state; call it on a "
+                           class-name " handle, not on import alias '" alias "'")
+                      {:class-name class-name :method-name method})))
+    {:expr :call
+     :receiver receiver
+     :import-class class-name
+     :method method
+     :args args
+     :arg-types (mapv :type (:parameters callee))
+     :type (:return-type callee)}))
+
 (defn- make-call
   [receiver method arg-list ctx]
-  (let [arg-nodes (method-arg-items arg-list)
-        class-name (receiver-class receiver ctx)]
-    (or (builtin-call receiver class-name method arg-nodes ctx)
-        (external-call receiver class-name method arg-nodes ctx)
-        (let [args (mapv #(convert-call-arg % ctx) arg-nodes)
-              callee (lookup-callee class-name method (count args) ctx)]
-          {:expr :call
-           :receiver receiver
-           :method method
-           :args args
-           :arg-types (mapv :type (:parameters callee))
-           :type (:return-type callee)}))))
+  (if (= :import-alias (:expr receiver))
+    (import-call receiver [] method arg-list ctx)
+    (let [arg-nodes (method-arg-items arg-list)
+          class-name (receiver-class receiver ctx)]
+      (assert-public-method! (:schema-ir ctx) class-name method)
+      (or (builtin-call receiver class-name method arg-nodes ctx)
+          (and (not (imported-handle? (:schema-ir ctx) class-name))
+               (external-call receiver class-name method arg-nodes ctx))
+          (let [args (mapv #(convert-call-arg % ctx) arg-nodes)
+                callee (lookup-callee class-name method (count args) ctx)]
+            (doseq [[arg param] (map vector args (:parameters callee))]
+              (assert-assignable! (:schema-ir ctx) (:type param) (value-type arg ctx)
+                                  (str class-name "::" method)))
+            {:expr :call
+             :receiver receiver
+             :method method
+             :args args
+             :arg-types (mapv :type (:parameters callee))
+             :type (:return-type callee)})))))
 
 (defn- ast->call
   [node ctx]
   (let [root (ast->expr (second node) ctx)
-        first-step (take-call-step (drop 2 node))
-        first-recv (apply-fields root (:fields first-step) ctx)]
-    (loop [call (make-call first-recv (:method first-step) (:args first-step) ctx)
-           remaining (:more first-step)]
-      (if (empty? remaining)
-        call
-        (let [step (take-call-step remaining)]
-          (when (seq (:fields step))
-            (throw (ex-info "Cannot walk fields after a method call"
-                            {:fields (:fields step)})))
-          (recur (make-call call (:method step) (:args step) ctx)
-                 (:more step)))))))
+        first-step (take-call-step (drop 2 node))]
+    (if (= :import-alias (:expr root))
+      (let [call (import-call root (:fields first-step) (:method first-step)
+                              (:args first-step) ctx)]
+        (if (empty? (:more first-step))
+          call
+          (loop [call call
+                 remaining (:more first-step)]
+            (if (empty? remaining)
+              call
+              (let [step (take-call-step remaining)]
+                (when (seq (:fields step))
+                  (throw (ex-info "Cannot walk fields after a method call"
+                                  {:fields (:fields step)})))
+                (recur (make-call call (:method step) (:args step) ctx)
+                       (:more step)))))))
+      (let [first-recv (apply-fields root (:fields first-step) ctx)]
+        (loop [call (make-call first-recv (:method first-step) (:args first-step) ctx)
+               remaining (:more first-step)]
+          (if (empty? remaining)
+            call
+            (let [step (take-call-step remaining)]
+              (when (seq (:fields step))
+                (throw (ex-info "Cannot walk fields after a method call"
+                                {:fields (:fields step)})))
+              (recur (make-call call (:method step) (:args step) ctx)
+                     (:more step)))))))))
+
+(defn construction-call->ir
+  "Lower a construction-slot MethodCall AST using import aliases on schema-ir."
+  [node schema-ir index]
+  (let [ctx {:schema-ir schema-ir
+             :class-name "_Construction"
+             :param-names #{}
+             :let-names #{}
+             :let-types {}
+             :param-types {}
+             :lookup-method (fn [class-name method-name]
+                              (or (get (:imported-methods schema-ir)
+                                       [class-name method-name])
+                                  (throw (ex-info (str "Unknown method "
+                                                       class-name "::" method-name
+                                                       " in construction")
+                                                  {:class-name class-name
+                                                   :method-name method-name}))))
+             :target-fns {}}
+        expr (ast->expr node ctx)]
+    {:type :call
+     :class-name (or (:type expr) "Unknown")
+     :expr expr
+     :args []
+     :index index}))
 
 (defn- ast->construct
   "ObjectConstruction or InnerObjectConstruction with an explicit class name."
@@ -685,10 +932,10 @@
   (let [node (unwrap-expr node)]
     (if (ast-utils/node-type? node :InnerObjectConstruction)
       (let [expr (ast->construct (named-inner-construct node elem-type) ctx)]
-        (assert-arg-type elem-type (:class-name expr) "array element")
+        (assert-assignable! (:schema-ir ctx) elem-type (:class-name expr) "array element")
         expr)
       (let [expr (ast->expr node ctx)]
-        (assert-arg-type elem-type (value-type expr ctx) "array element")
+        (assert-assignable! (:schema-ir ctx) elem-type (value-type expr ctx) "array element")
         expr))))
 
 (defn- ast->array
@@ -1144,6 +1391,7 @@
     :construct (:class-name expr)
     :array (:type expr)
     :map (:type expr)
+    :enum (:type expr)
     nil))
 
 (defn- bind-let
@@ -1249,35 +1497,48 @@
        (= (mapv :type (:parameters signature))
           (mapv :type (:parameters implementation)))))
 
+(defn- signatures-for
+  [methods-ir schema-ir iface-name]
+  (let [from-page (filterv #(and (= iface-name (:class %))
+                                 (:interface-signature? %))
+                           methods-ir)
+        from-import (filterv #(and (= iface-name (:class %))
+                                   (:interface-signature? %))
+                             (vals (or (:imported-methods schema-ir) {})))]
+    (if (seq from-page) from-page from-import)))
+
+(defn- check-implementer-method!
+  [schema-ir by-key iface-name signature impl-name]
+  (let [impl (get by-key [impl-name (:method-name signature)])]
+    (cond
+      (nil? impl)
+      (throw (ex-info (str impl-name " must implement " iface-name
+                           "::" (:method-name signature))
+                      {:interface iface-name
+                       :implementer impl-name
+                       :method-name (:method-name signature)}))
+
+      (:interface-signature? impl)
+      (throw (ex-info (str impl-name "::" (:method-name signature)
+                           " must provide an implementation, not a signature")
+                      {:class-name impl-name
+                       :method-name (:method-name signature)}))
+
+      (not (signatures-match? schema-ir signature impl))
+      (throw (ex-info (str impl-name "::" (:method-name signature)
+                           " does not match " iface-name " signature")
+                      {:interface-signature signature
+                       :implementation impl})))))
+
 (defn- validate-interface-implementations!
   [methods-ir schema-ir]
-  (let [by-key (into {} (map (juxt (juxt :class :method-name) identity) methods-ir))]
-    (doseq [iface (:interfaces schema-ir)
-            :let [iface-name (:name iface)]
-            signature (filter #(and (= iface-name (:class %))
-                                    (:interface-signature? %))
-                              methods-ir)]
-      (doseq [impl-name (:implementers iface)]
-        (let [impl (get by-key [impl-name (:method-name signature)])]
-          (cond
-            (nil? impl)
-            (throw (ex-info (str impl-name " must implement " iface-name
-                                 "::" (:method-name signature))
-                            {:interface iface-name
-                             :implementer impl-name
-                             :method-name (:method-name signature)}))
-
-            (:interface-signature? impl)
-            (throw (ex-info (str impl-name "::" (:method-name signature)
-                                 " must provide an implementation, not a signature")
-                            {:class-name impl-name
-                             :method-name (:method-name signature)}))
-
-            (not (signatures-match? schema-ir signature impl))
-            (throw (ex-info (str impl-name "::" (:method-name signature)
-                                 " does not match " iface-name " signature")
-                            {:interface-signature signature
-                             :implementation impl}))))))))
+  (let [by-key (into {} (map (juxt (juxt :class :method-name) identity) methods-ir))
+        local (assemblage-names schema-ir)]
+    (doseq [iface-name (interface-names schema-ir)
+            signature (signatures-for methods-ir schema-ir iface-name)
+            impl-name (interface-implementers schema-ir iface-name)
+            :when (contains? local impl-name)]
+      (check-implementer-method! schema-ir by-key iface-name signature impl-name))))
 
 (defn- interface-method-def->ir
   [method-node schema-ir]
@@ -1291,7 +1552,7 @@
                       {:class-name class-name :method-name method-name})))
     (when-not return-type
       (throw (ex-info (str class-name "::" method-name
-                           " interface signature requires an explicit return type (e.g. : Float)")
+                           " interface signature requires an explicit return type (e.g. -> Float)")
                       {:class-name class-name :method-name method-name})))
     (assert-valid-type! schema-ir return-type
                         {:class-name class-name :method-name method-name})
@@ -1432,9 +1693,11 @@
                                (first key) "::" (second key))
                           {:key key})))
         (swap! state update :visiting conj key)
-        (let [lookup (fn [class-name method-name]
-                       (ensure-method! state defs-by-key schema-ir target-fns
-                                       [class-name method-name]))
+        (let [imported (or (:imported-methods schema-ir) {})
+              lookup (fn [class-name method-name]
+                       (or (get imported [class-name method-name])
+                           (ensure-method! state defs-by-key schema-ir target-fns
+                                           [class-name method-name])))
               ir (method-def->ir (get defs-by-key key) schema-ir lookup target-fns)]
           (swap! state (fn [s]
                          (-> s

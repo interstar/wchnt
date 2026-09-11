@@ -3,9 +3,11 @@
    Same IR as the Haxe backend; no host drawing."
   (:require [wchnt-lang.compiler :as compiler]
             [wchnt-lang.ir :as ir]
-            [wchnt-lang.pipeline :as p]))
+            [wchnt-lang.pipeline :as p]
+            [wchnt-lang.template :as template]))
 
-(declare eval-expr instantiate wire-subscriptions wire-context apply-update)
+(declare eval-expr instantiate wire-subscriptions wire-context wire-new
+         apply-update eval-map-construction eval-construction-arg)
 
 (defn- class-of
   [obj]
@@ -41,45 +43,85 @@
          :wchnt/subscribers (atom [])}
         (into {:wchnt/class class-name} fields-map)))))
 
+(defn- primitive-value
+  [arg]
+  (let [v (:value arg)]
+    (if (and (= "Int" (:class-name arg)) (string? v))
+      #?(:clj (Long/parseLong v)
+         :cljs (js/parseInt v 10))
+      v)))
+
+(defn- construction-var-name
+  [arg]
+  (or (:value arg) (first (:args arg))))
+
+(defn- resolve-construction-var
+  [arg env mappings]
+  (let [name (construction-var-name arg)
+        id (get mappings name name)]
+    (or (get env id)
+        (throw (ex-info (str "Unknown construction variable '" name "'")
+                        {:name name})))))
+
+(defn- eval-map-construction
+  "Flattened key/value construction args → a Clojure map. Missing class on
+   purpose: Map<K,V> is not a schema assemblage."
+  [args env schema-ir methods-ir mappings]
+  (when (odd? (count args))
+    (throw (ex-info "Map construction expected key/value pairs"
+                    {:got (count args)})))
+  (into {}
+        (map (fn [[k v]]
+               [(eval-construction-arg k env schema-ir methods-ir mappings)
+                (eval-construction-arg v env schema-ir methods-ir mappings)])
+             (partition 2 args))))
+
 (defn- eval-construction-arg
-  [arg env schema-ir]
+  [arg env schema-ir methods-ir mappings]
   (case (:type arg)
-    :primitive (:value arg)
+    :primitive (primitive-value arg)
     :enum-value (or (:value arg) (first (:args arg)))
-    :variable (if-let [found (get env (:value arg))]
-                found
-                (throw (ex-info (str "Unknown construction variable '"
-                                     (:value arg) "'")
-                                {:name (:value arg)})))
-    :object (instantiate arg env schema-ir)
-    :array (mapv #(eval-construction-arg % env schema-ir) (:args arg))
+    :variable (resolve-construction-var arg env mappings)
+    :call (eval-expr (:expr arg) {:schema-ir schema-ir
+                                  :methods-ir methods-ir
+                                  :this nil
+                                  :params {}
+                                  :locals {}})
+    :object (instantiate arg env schema-ir methods-ir mappings)
+    :array (mapv #(eval-construction-arg % env schema-ir methods-ir mappings)
+                 (:args arg))
+    :map (eval-map-construction (:args arg) env schema-ir methods-ir mappings)
     (throw (ex-info "Unsupported construction argument"
                     {:arg arg}))))
 
 (defn- instantiate
-  [obj-data env schema-ir]
-  (if (= :array (:type obj-data))
-    (mapv #(eval-construction-arg % env schema-ir) (:args obj-data))
+  [obj-data env schema-ir methods-ir mappings]
+  (case (:type obj-data)
+    :array (mapv #(eval-construction-arg % env schema-ir methods-ir mappings)
+                 (:args obj-data))
+    :map (eval-map-construction (:args obj-data) env schema-ir methods-ir mappings)
     (make-instance schema-ir
                    (:class-name obj-data)
-                   (mapv #(eval-construction-arg % env schema-ir)
+                   (mapv #(eval-construction-arg % env schema-ir methods-ir mappings)
                          (:args obj-data)))))
 
 (defn construct
   "Build the root object graph from construction IR."
-  [schema-ir construction-ir]
-  (let [ordered (sort-by (fn [[_ data]] (or (:index data) 0))
-                         (:objects construction-ir))
-        env (reduce (fn [env [id data]]
-                      (assoc env id (instantiate data env schema-ir)))
-                    {}
-                    ordered)
-        root-id (:return-object construction-ir)
-        root (or (get env root-id)
-                 (throw (ex-info "Construction has no return object"
-                                 {:return-object root-id})))]
-    (wire-subscriptions schema-ir root)
-    (wire-context schema-ir root)))
+  ([schema-ir construction-ir]
+   (construct schema-ir construction-ir []))
+  ([schema-ir construction-ir methods-ir]
+   (let [mappings (or (:variable-mappings construction-ir) {})
+         ordered (ir/objects-in-construction-order (:objects construction-ir)
+                                                   mappings)
+         env (reduce (fn [env [id data]]
+                       (assoc env id (instantiate data env schema-ir methods-ir mappings)))
+                     {}
+                     ordered)
+         root-id (:return-object construction-ir)
+         root (or (get env root-id)
+                  (throw (ex-info "Construction has no return object"
+                                  {:return-object root-id})))]
+     (wire-new schema-ir root))))
 
 (defn load-program
   "Parse markdown to IR and construct the initial heap."
@@ -102,7 +144,8 @@
       :page-kind (get-in cargo [:value :page-kind])
       :root (when (get-in cargo [:stash :construction-ir])
               (construct (get-in cargo [:stash :schema-ir])
-                         (get-in cargo [:stash :construction-ir])))})))
+                         (get-in cargo [:stash :construction-ir])
+                         (or (get-in cargo [:stash :methods-ir]) [])))})))
 
 (defn- lookup-method
   [methods-ir class-name method-name]
@@ -110,6 +153,16 @@
                            (= method-name (:method-name %))
                            (not (:interface-signature? %)))
                      methods-ir))
+      (throw (ex-info (str "Unknown method " class-name "::" method-name)
+                      {:class-name class-name :method-name method-name}))))
+
+(defn- lookup-method-ctx
+  [ctx class-name method-name]
+  (or (first (filter #(and (= class-name (:class %))
+                           (= method-name (:method-name %))
+                           (not (:interface-signature? %)))
+                     (or (:methods-ir ctx) [])))
+      (get (:imported-methods (:schema-ir ctx)) [class-name method-name])
       (throw (ex-info (str "Unknown method " class-name "::" method-name)
                       {:class-name class-name :method-name method-name}))))
 
@@ -222,9 +275,14 @@
 
 (defn- eval-construct
   [expr ctx]
-  (make-instance (:schema-ir ctx)
-                 (:class-name expr)
-                 (mapv #(eval-expr % ctx) (:args expr))))
+  ;; Objects built inside a method get the *same* construction magic as the
+  ;; initial heap — reactive subscriptions and context back-references — so a
+  ;; :Ball rebuilt each tick still resolves `theGame`, and any reactive wiring
+  ;; is re-established. Without this the next tick breaks. See `wire-new`.
+  (wire-new (:schema-ir ctx)
+            (make-instance (:schema-ir ctx)
+                           (:class-name expr)
+                           (mapv #(eval-expr % ctx) (:args expr)))))
 
 (defn- bind-params
   [method args]
@@ -271,8 +329,71 @@
     "cons"
     (into [(eval-expr (first arg-exprs) ctx)] recv)
 
+    "length"
+    (count recv)
+
     (throw (ex-info (str "Unknown array method '" method "'")
                     {:method method}))))
+
+(defn- wchnt-dict?
+  "A WCHNT Map value is a Clojure map with no assemblage class tag."
+  [recv]
+  (and (map? recv) (not (class-of recv))))
+
+(defn- eval-map-call
+  [method recv arg-exprs ctx]
+  (let [args (mapv #(eval-expr % ctx) arg-exprs)]
+    (case method
+      "get"
+      (if (= 2 (count args))
+        (get recv (first args) (second args))
+        (let [k (first args)]
+          (when-not (contains? recv k)
+            (throw (ex-info "Map::get: key not found" {:key k})))
+          (get recv k)))
+
+      "exists"
+      (contains? recv (first args))
+
+      "put"
+      (assoc recv (first args) (second args))
+
+      "remove"
+      (let [k (first args)]
+        (when-not (contains? recv k)
+          (throw (ex-info "Map::remove: key not found" {:key k})))
+        (dissoc recv k))
+
+      (throw (ex-info (str "Unknown map method '" method "'")
+                      {:method method})))))
+
+(defn- eval-string-call
+  [method recv arg-exprs ctx]
+  (case method
+    "concat" (str recv (eval-expr (first arg-exprs) ctx))
+    "str" (str recv)
+    "tpl" (template/expand recv (eval-expr (first arg-exprs) ctx))
+    "length" (count recv)
+    "substring"
+    (let [start (eval-expr (first arg-exprs) ctx)
+          end (eval-expr (second arg-exprs) ctx)]
+      (when (or (neg? start) (neg? end) (> start (count recv))
+                (> end (count recv)) (> start end))
+        (throw (ex-info "String::substring: invalid range"
+                        {:start start :end end})))
+      (subs recv start end))
+    (throw (ex-info (str "Unknown string method '" method "'")
+                    {:method method}))))
+
+(defn- eval-object-call
+  [recv method arg-exprs ctx]
+  (let [class-name (class-of recv)
+        m (lookup-method-ctx ctx class-name method)
+        args (mapv #(eval-expr % ctx) arg-exprs)]
+    (eval-method m
+                 (-> ctx
+                     (assoc :this recv)
+                     (update :params merge (bind-params m args))))))
 
 (defn- eval-external-call
   [recv method args]
@@ -295,24 +416,45 @@
 
 (defn- eval-call
   [expr ctx]
-  (let [recv (eval-expr (:receiver expr) ctx)
-        method (:method expr)
-        ext-type (:type expr)]
-    (cond
-      (and ext-type (ir/external-type? (:schema-ir ctx) ext-type))
-      (eval-external-call recv method (mapv #(eval-expr % ctx) (:args expr)))
+  (if (= :import-alias (:expr (:receiver expr)))
+    (let [class-name (:import-class expr)
+          method (:method expr)
+          m (lookup-method-ctx ctx class-name method)
+          args (mapv #(eval-expr % ctx) (:args expr))]
+      (eval-method m
+                   (-> ctx
+                       (assoc :this nil)
+                       (update :params merge (bind-params m args)))))
+    (let [recv (eval-expr (:receiver expr) ctx)
+          method (:method expr)
+          ext-type (:type expr)]
+      (cond
+        (and ext-type (ir/external-type? (:schema-ir ctx) ext-type))
+        (eval-external-call recv method (mapv #(eval-expr % ctx) (:args expr)))
 
-      (vector? recv)
-      (eval-array-call method recv (:args expr) ctx)
+        (vector? recv)
+        (eval-array-call method recv (:args expr) ctx)
 
-      :else
-      (let [class-name (class-of recv)
-            m (lookup-method (:methods-ir ctx) class-name method)
-            args (mapv #(eval-expr % ctx) (:args expr))]
-        (eval-method m
-                     (-> ctx
-                         (assoc :this recv)
-                         (update :params merge (bind-params m args))))))))
+        (number? recv)
+        (if (= method "str")
+          (str recv)
+          (throw (ex-info (str "Unknown numeric method '" method "'")
+                          {:method method})))
+
+        (boolean? recv)
+        (if (= method "str")
+          (str recv)
+          (throw (ex-info (str "Unknown boolean method '" method "'")
+                          {:method method})))
+
+        (string? recv)
+        (eval-string-call method recv (:args expr) ctx)
+
+        (wchnt-dict? recv)
+        (eval-map-call method recv (:args expr) ctx)
+
+        :else
+        (eval-object-call recv method (:args expr) ctx)))))
 
 (defn- lookup-binding
   "Resolve a name from method params or let locals. false is a valid value."
@@ -352,17 +494,28 @@
     :neg (- (eval-expr (:arg expr) ctx))
     :if (eval-if expr ctx)
     :array (mapv #(eval-expr % ctx) (:items expr))
+    :map (into {} (map (fn [pair]
+                         [(eval-expr (:key pair) ctx)
+                          (eval-expr (:value pair) ctx)])
+                       (:pairs expr)))
     :construct (eval-construct expr ctx)
     :call (eval-call expr ctx)
+    :enum (:name expr)
     (throw (ex-info (str "Unsupported method expression: " (:expr expr))
                     {:expr expr}))))
 
 (defn- subscribe!
+  "Register subscriber on observable once. Re-wiring a reconstructed graph
+   must not stack duplicate notifications."
   [observable subscriber]
   (when-not (:wchnt/subscribers observable)
     (throw (ex-info "Cannot subscribe to a non-identity object"
                     {:class (class-of observable)})))
-  (swap! (:wchnt/subscribers observable) conj subscriber))
+  (swap! (:wchnt/subscribers observable)
+         (fn [subs]
+           (if (some #(identical? % subscriber) subs)
+             subs
+             (conj subs subscriber)))))
 
 (defn- replace-field!
   "Install value on parent. Identity parents mutate :wchnt/cell; ordinary maps return updated."
@@ -414,6 +567,15 @@
       (subscribe! (get-field obj (:component-name comp)) obj))
     (doseq [fname (field-names schema-ir (class-of obj))]
       (wire-subscriptions schema-ir (get-field obj fname)))))
+
+(defn- wire-new
+  "Construction magic shared by the initial heap and method-level `[:Class …]`:
+   reactive $ subscriptions and :context parent back-references. Always applied
+   to a freshly built object graph so a reconstructed Game still has `theGame`
+   on a :Ball and still receives Time.notify."
+  [schema-ir obj]
+  (wire-subscriptions schema-ir obj)
+  (wire-context schema-ir obj))
 
 (defn- field-snapshot
   [schema-ir obj]
@@ -471,7 +633,7 @@
              :locals {}}
         inner (eval-lets (:lets method) (assoc ctx :locals {}))]
     (install-update! schema-ir obj (:body method) inner)
-    (wire-context-on-object! schema-ir obj)
+    (wire-new schema-ir obj)
     (when (ir/is-observable? schema-ir (class-of obj))
       (doseq [sub @(:wchnt/subscribers obj)]
         (apply-update schema-ir methods-ir sub)))

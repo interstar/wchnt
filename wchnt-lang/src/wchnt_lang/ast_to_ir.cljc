@@ -84,21 +84,30 @@
 (defn build-interface-implementers
   "Build interface implementation mappings from schema AST"
   [schema-ast]
-  (let [disjunction-nodes (parser/find-all-nodes :DisjunctionLine schema-ast)]
-    (reduce (fn [acc disjunction-node]
-              (let [[_ & children] disjunction-node
-                    definee-node (first (filter #(= (first %) :Definee) children))
-                    interface-name (ast-utils/definee-name definee-node)
-                    element-nodes (filter #(= (first %) :Element) children)
-                    type-names (for [element element-nodes
-                                     :let [type-marker (first (filter #(and (vector? %) (= (first %) :TypeMarker)) element))]
-                                     :when type-marker]
-                                 (second type-marker))]
-                ;; Track which classes implement this interface
-                (reduce (fn [current-acc implementer]
-                          (update current-acc interface-name (fnil conj #{}) implementer))
-                        acc type-names)))
-            {} disjunction-nodes)))
+  (let [from-sums (reduce (fn [acc disjunction-node]
+                            (let [[_ & children] disjunction-node
+                                  definee-node (first (filter #(= (first %) :Definee) children))
+                                  interface-name (ast-utils/definee-name definee-node)
+                                  element-nodes (filter #(= (first %) :Element) children)
+                                  type-names (for [element element-nodes
+                                                   :let [type-marker (first (filter #(and (vector? %) (= (first %) :TypeMarker)) element))]
+                                                   :when type-marker]
+                                               (second type-marker))]
+                              (reduce (fn [current-acc implementer]
+                                        (update current-acc interface-name (fnil conj #{}) implementer))
+                                      acc type-names)))
+                          {}
+                          (parser/find-all-nodes :DisjunctionLine schema-ast))
+        from-implements (reduce (fn [acc line]
+                                  (let [impl (first (filter #(= (first %) :Implements) (rest line)))]
+                                    (if impl
+                                      (let [definee (first (filter #(= (first %) :Definee) (rest line)))
+                                            class-name (ast-utils/definee-name definee)]
+                                        (update acc (second impl) (fnil conj #{}) class-name))
+                                      acc)))
+                                {}
+                                (parser/find-all-nodes :CompositionLine schema-ast))]
+    (merge-with into from-sums from-implements)))
 
 (def primitive-type-names #{"Int" "String" "Float" "Bool"})
 
@@ -163,14 +172,18 @@
   (let [[_ & children] composition-line
         definee-node (first (filter #(= (first %) :Definee) children))
         class-name (ast-utils/definee-name definee-node)
+        implements-node (first (filter #(= (first %) :Implements) children))
         element-nodes (filter #(= (first %) :Element) children)
         processed-elements (map parser/process-element element-nodes)
-        components (map process-element-to-component processed-elements)]
-    {:name class-name
-     :components components
-     :context-dependencies []
-     :context-providers []
-     :observable nil}))
+        components (map process-element-to-component processed-elements)
+        assemblage {:name class-name
+                    :components components
+                    :context-dependencies []
+                    :context-providers []
+                    :observable nil}]
+    (if implements-node
+      (assoc assemblage :implements (second implements-node))
+      assemblage)))
 
 (defn transform-disjunction-line
   "Transform a disjunction line to an interface"
@@ -352,8 +365,10 @@
 
 (defn process-map-construction-expression
   "Process a MapConstruction expression"
-  [inner-expression]
-  (ast-args/process-map-construction-expression inner-expression))
+  ([inner-expression]
+   (process-map-construction-expression inner-expression nil))
+  ([inner-expression schema-ir]
+   (ast-args/process-map-construction-expression inner-expression schema-ir)))
 
 (defn process-assignment-expression
   "Process an assignment expression to extract object information"
@@ -376,7 +391,7 @@
       (process-object-construction-expression inner-expression schema-ir)
       
       (ast-utils/node-type? inner-expression :MapConstruction)
-      (process-map-construction-expression inner-expression)
+      (process-map-construction-expression inner-expression schema-ir)
       
       :else
       (throw (ex-info "Unknown expression type in assignment" 
@@ -586,7 +601,7 @@
           {:result [:VariableRef (:obj-id result)], :nested-objects (:nested-objects result), :object-counter (:object-counter result)}))
 
       (= tag :MapConstruction)
-      (let [map-ir (process-map-construction-expression node)
+      (let [map-ir (process-map-construction-expression node schema-ir)
             [obj-id updated-nested-objects] (record-nested-object! nested-objects object-counter map-ir)]
         {:result [:VariableRef obj-id], :nested-objects updated-nested-objects, :object-counter (inc object-counter)})
 
@@ -641,7 +656,12 @@
         (visit-node node ctx nested-objects object-counter schema-ir)
         
         :MapConstruction
-        (visit-node node ctx nested-objects object-counter schema-ir)
+        (let [transformed (process-children children ctx nested-objects object-counter schema-ir)
+              node' (into [:MapConstruction] (:children transformed))]
+          (visit-node node' ctx
+                      (:nested-objects transformed)
+                      (:object-counter transformed)
+                      schema-ir))
         
         ;; Handle other nodes by processing children
         (let [new-ctx (build-context-for-node node ctx schema-ir)

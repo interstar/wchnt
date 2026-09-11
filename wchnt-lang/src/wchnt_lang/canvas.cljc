@@ -36,7 +36,8 @@
                          (js-view/wrap program
                                        (interpret/construct
                                         (:schema-ir program)
-                                        (:construction-ir program))))}))
+                                        (:construction-ir program)
+                                        (or (:methods-ir program) []))))}))
 
 (defn assert-canvas-host
   [program]

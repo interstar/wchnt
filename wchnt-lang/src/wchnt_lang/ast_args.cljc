@@ -3,7 +3,10 @@
 
   This is intentionally not tied to a specific phase name (construction/reactive/imperative),
   since the same argument extraction logic is expected to be reused across phases."
-  (:require [wchnt-lang.ast-utils :as ast-utils]))
+  (:require [wchnt-lang.ast-utils :as ast-utils]
+            [wchnt-lang.reaction :as reaction]))
+
+(declare extract-args-from-arg-list variable-ref->arg inner-object-construction->arg)
 
 (defn- unwrap-expression
   [expr]
@@ -12,63 +15,76 @@
     expr))
 
 (defn- map-key-expr->arg
-  [key-expr index]
-  (let [unwrapped (unwrap-expression key-expr)]
+  [key-expr index ctx]
+  (let [unwrapped (unwrap-expression key-expr)
+        enum-values (:enum-values ctx)]
     (cond
       (ast-utils/node-type? unwrapped :StringLiteral)
       {:type :primitive :class-name "String" :value (second unwrapped) :args [] :index (* index 2)}
 
       (ast-utils/node-type? unwrapped :VariableRef)
-      {:type :variable :class-name "VariableRef" :value (second unwrapped) :args [] :index (* index 2)}
+      (variable-ref->arg enum-values unwrapped (* index 2))
 
       :else
       (throw (ex-info "Unsupported key type in map construction" {:key-expr key-expr})))))
 
 (defn- map-val-expr->arg
-  [val-expr index]
-  (let [unwrapped (unwrap-expression val-expr)]
+  [val-expr index ctx]
+  (let [unwrapped (unwrap-expression val-expr)
+        enum-values (:enum-values ctx)
+        val-index (+ (* index 2) 1)]
     (cond
       (ast-utils/node-type? unwrapped :StringLiteral)
-      {:type :primitive :class-name "String" :value (second unwrapped) :args [] :index (+ (* index 2) 1)}
+      {:type :primitive :class-name "String" :value (second unwrapped) :args [] :index val-index}
 
       (ast-utils/node-type? unwrapped :IntLiteral)
-      {:type :primitive :class-name "Int" :value (second unwrapped) :args [] :index (+ (* index 2) 1)}
+      {:type :primitive :class-name "Int" :value (second unwrapped) :args [] :index val-index}
 
       (ast-utils/node-type? unwrapped :VariableRef)
-      {:type :variable :class-name "VariableRef" :value (second unwrapped) :args [] :index (+ (* index 2) 1)}
+      (variable-ref->arg enum-values unwrapped val-index)
+
+      (or (ast-utils/node-type? unwrapped :ObjectConstruction)
+          (ast-utils/node-type? unwrapped :InnerObjectConstruction))
+      (inner-object-construction->arg ctx unwrapped val-index)
 
       :else
       (throw (ex-info "Unsupported value type in map construction" {:val-expr val-expr})))))
 
 (defn process-map-construction-expression
   "Process a MapConstruction expression into structured ConstructionArg IR."
-  [inner-expression]
-  (let [key-type-node (second inner-expression)
-        key-type (if (ast-utils/node-type? key-type-node :KeyType)
-                   (second key-type-node)
-                   (throw (ex-info "Map construction missing key type node"
-                                   {:inner-expression inner-expression})))
-        val-type-node (nth inner-expression 2)
-        val-type (if (ast-utils/node-type? val-type-node :ValType)
-                   (second val-type-node)
-                   (throw (ex-info "Map construction missing value type node"
-                                   {:inner-expression inner-expression})))
-        key-value-list (nth inner-expression 3)
-        structured-args (if (ast-utils/node-type? key-value-list :KeyValueList)
-                          (map-indexed
-                           (fn [index key-value-pair]
-                             (if (ast-utils/node-type? key-value-pair :KeyValuePair)
-                               (let [key-expr (second key-value-pair)
-                                     val-expr (nth key-value-pair 2)]
-                                 [(map-key-expr->arg key-expr index)
-                                  (map-val-expr->arg val-expr index)])
-                               (throw (ex-info "Invalid key-value pair in map construction"
-                                               {:key-value-pair key-value-pair}))))
-                           (rest key-value-list))
-                          [])]
-    {:type :map
-     :class-name (str "Map<" key-type ", " val-type ">")
-     :args (flatten structured-args)}))
+  ([inner-expression]
+   (process-map-construction-expression inner-expression nil))
+  ([inner-expression schema-ir]
+   (let [ctx {:schema-ir schema-ir
+              :root-class-name nil
+              :enum-values (set (mapcat :values (:enums schema-ir)))}
+         key-type-node (second inner-expression)
+         key-type (if (ast-utils/node-type? key-type-node :KeyType)
+                    (second key-type-node)
+                    (throw (ex-info "Map construction missing key type node"
+                                    {:inner-expression inner-expression})))
+         val-type-node (nth inner-expression 2)
+         val-type (if (ast-utils/node-type? val-type-node :ValType)
+                    (second val-type-node)
+                    (throw (ex-info "Map construction missing value type node"
+                                    {:inner-expression inner-expression})))
+         key-value-list (nth inner-expression 3)
+         ctx (assoc ctx :root-class-name val-type)
+         structured-args (if (ast-utils/node-type? key-value-list :KeyValueList)
+                           (map-indexed
+                            (fn [index key-value-pair]
+                              (if (ast-utils/node-type? key-value-pair :KeyValuePair)
+                                (let [key-expr (second key-value-pair)
+                                      val-expr (nth key-value-pair 2)]
+                                  [(map-key-expr->arg key-expr index ctx)
+                                   (map-val-expr->arg val-expr index ctx)])
+                                (throw (ex-info "Invalid key-value pair in map construction"
+                                                {:key-value-pair key-value-pair}))))
+                            (rest key-value-list))
+                           [])]
+     {:type :map
+      :class-name (str "Map<" key-type ", " val-type ">")
+      :args (flatten structured-args)})))
 
 (defn- build-extract-args-context
   [schema-ir root-class-name]
@@ -86,8 +102,6 @@
                       {:arg-index arg-index
                        :root-class-name root-class-name
                        :schema-ir schema-ir})))))
-
-(declare extract-args-from-arg-list)
 
 (defn- variable-ref->arg
   [enum-values arg-item arg-index]
@@ -142,8 +156,8 @@
      :index arg-index}))
 
 (defn- map-construction->arg
-  [arg-item arg-index]
-  (assoc (process-map-construction-expression arg-item)
+  [arg-item arg-index schema-ir]
+  (assoc (process-map-construction-expression arg-item schema-ir)
          :index arg-index))
 
 (defn- int-literal->arg
@@ -183,7 +197,7 @@
     (array-construction->arg ctx arg-item arg-index)
 
     (ast-utils/node-type? arg-item :MapConstruction)
-    (map-construction->arg arg-item arg-index)
+    (map-construction->arg arg-item arg-index (:schema-ir ctx))
 
     (ast-utils/node-type? arg-item :IntLiteral)
     (int-literal->arg arg-item arg-index)
@@ -193,6 +207,9 @@
 
     (ast-utils/node-type? arg-item :BoolLiteral)
     (bool-literal->arg arg-item arg-index)
+
+    (ast-utils/node-type? arg-item :MethodCall)
+    (reaction/construction-call->ir arg-item (:schema-ir ctx) arg-index)
 
     :else
     {:type :primitive

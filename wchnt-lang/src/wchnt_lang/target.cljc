@@ -3,18 +3,21 @@
   (:require [clojure.string :as str]))
 
 (def known-hosts
-  #{"terminal" "openfl" "canvas"})
+  #{"terminal" "cli" "cli-live" "openfl" "canvas"})
+
+(def host-help
+  "%terminal, %cli, %cli-live, %openfl, or %canvas")
 
 (def frame-hosts
-  "Hosts that use %init / %step instead of %main."
-  #{"openfl" "canvas"})
+  "Hosts that use %init / %step instead of %main (frame loop or line loop)."
+  #{"openfl" "canvas" "cli" "cli-live"})
 
 (def lifecycle-names
   #{"main" "init" "step"})
 
 (defn- header-name
   [line]
-  (second (re-matches #"^[ \t]*%([A-Za-z_][A-Za-z0-9_]*)[ \t]*$" line)))
+  (second (re-matches #"^[ \t]*%([A-Za-z_][A-Za-z0-9_-]*)[ \t]*$" line)))
 
 (defn- collect-blocks
   [lines]
@@ -55,7 +58,7 @@
   [blocks]
   (let [hosts (filterv host-block? blocks)]
     (when (> (count hosts) 1)
-      (throw (ex-info "Target may name only one host (%terminal, %openfl, or %canvas)"
+      (throw (ex-info (str "Target may name only one host (" host-help ")")
                       {:names (mapv :name hosts)})))
     (if-let [host (first hosts)]
       (do
@@ -63,7 +66,7 @@
           (throw (ex-info (str "%" (:name host) " names the host and must be empty")
                           {:name (:name host)})))
         (:name host))
-      (throw (ex-info "Target must name a host (%terminal, %openfl, or %canvas)"
+      (throw (ex-info (str "Target must name a host (" host-help ")")
                       {:hint "Add an empty host line before lifecycle blocks, e.g. %terminal then %main"})))))
 
 (defn- names-of
@@ -73,7 +76,7 @@
 (defn- assert-terminal-lifecycle
   [names]
   (when (or (contains? names "init") (contains? names "step"))
-    (throw (ex-info "%init and %step are for %openfl and %canvas, not %terminal"
+    (throw (ex-info (str "%init and %step are for %openfl, %canvas, %cli and %cli-live, not %terminal")
                     {:names names})))
   (when-not (contains? names "main")
     (throw (ex-info "Target must define %main"
@@ -128,7 +131,7 @@
 (defn parse-target
   "Turn Target section text into a host, lifecycle bodies, and % bindings.
    Blank input is empty. Non-empty input must start with %name.
-   Terminal requires %main. OpenFL and canvas require %init and %step, not %main.
+   Terminal requires %main. OpenFL, canvas, cli and cli-live require %init and %step, not %main.
    Host % names take no body. A host line is required for every non-empty Target."
   [text]
   (if (str/blank? (or text ""))

@@ -3,10 +3,10 @@
             [wchnt-lang.pipeline :as p]))
 
 (def section-order
-  ["import" "schema" "construction" "methods" "target-methods" "target"])
+  ["import" "schema" "construction" "methods" "public" "target-methods" "target"])
 
 (def compile-sections
-  #{"schema" "construction" "methods" "target-methods" "target"})
+  #{"schema" "construction" "methods" "public" "target-methods" "target"})
 
 (defn normalize-section-name
   "Normalize a section heading to a key (e.g. \"Target Methods\" → \"target-methods\")."
@@ -161,7 +161,7 @@
       {:error "Import with nothing to compile"}
 
       (and (not (has? "schema"))
-           (some has? #{"construction" "methods" "target-methods" "target"}))
+           (some has? #{"construction" "methods" "public" "target-methods" "target"}))
       {:error "Compile sections require a Schema section"}
 
       (empty? compile-present)
@@ -179,14 +179,70 @@
     (str/trim inner)
     (str/trim name)))
 
+(defn- valid-alias?
+  [name]
+  (boolean (re-matches #"[A-Za-z][A-Za-z0-9_]*" (or name ""))))
+
+(defn- parse-import-line
+  "One Import line: page, [[page]], page as alias, [[page]] as alias."
+  [line]
+  (let [line (str/trim line)]
+    (if-let [[_ page alias] (re-matches #"(?:\[\[)?([\w-]+)(?:\]\])?\s+as\s+([A-Za-z][A-Za-z0-9_]*)" line)]
+      {:page page :alias alias}
+      (let [page (strip-brackets line)]
+        (when-not (re-matches #"[\w-]+" page)
+          (throw (ex-info (str "Invalid import line '" line "'") {:line line})))
+        (if (valid-alias? page)
+          {:page page :alias page}
+          (throw (ex-info (str "Import '" page "' needs an alias (e.g. " page " as lib)")
+                          {:page page})))))))
+
 (defn parse-import-names
-  "Parse ## Import fence: one sibling page name per line (plain or [[Name]])."
+  "Page names from ## Import (plain or [[Name]]), in file order."
   [import-text]
   (->> (str/split-lines (or import-text ""))
        (map str/trim)
        (remove str/blank?)
        (map strip-brackets)
        vec))
+
+(defn parse-import-specs
+  "Parse ## Import fence into {:page :alias} in file order.
+   Identifier page names default to themselves as alias; hyphenated names need `as`."
+  [import-text]
+  (let [specs (->> (str/split-lines (or import-text ""))
+                   (map str/trim)
+                   (remove str/blank?)
+                   (mapv parse-import-line))
+        aliases (map :alias specs)]
+    (when (not= (count aliases) (count (set aliases)))
+      (throw (ex-info (str "Duplicate import alias '"
+                           (ffirst (filter (fn [[_ n]] (> n 1))
+                                           (frequencies aliases)))
+                           "'")
+                      {:specs specs})))
+    specs))
+
+(defn parse-public-names
+  "Parse ## Public fence: one Class::method or published type name per line."
+  [public-text]
+  (->> (str/split-lines (or public-text ""))
+       (map str/trim)
+       (remove str/blank?)
+       (mapv (fn [line]
+               (cond
+                 (re-matches #"([A-Za-z][A-Za-z0-9_]*)::([A-Za-z_][A-Za-z0-9_]*)" line)
+                 (let [[_ class method]
+                       (re-matches #"([A-Za-z][A-Za-z0-9_]*)::([A-Za-z_][A-Za-z0-9_]*)" line)]
+                   {:class class :method method})
+
+                 (re-matches #"([A-Za-z][A-Za-z0-9_]*)" line)
+                 {:type line}
+
+                 :else
+                 (throw (ex-info (str "Invalid Public line '" line
+                                      "' (expected Class::method or a type name)")
+                                 {:line line})))))))
 
 (defn valid-page-name?
   "Page / sibling file stem: letters, digits, hyphen, underscore."
@@ -212,6 +268,7 @@
                             :schema (get section-map "schema" "")
                             :construction (get section-map "construction" "")
                             :methods (get section-map "methods" "")
+                            :public (get section-map "public" "")
                             :target-methods (get section-map "target-methods" "")
                             :target (get section-map "target" "")}))))
     (catch #?(:clj Exception :cljs :default) e

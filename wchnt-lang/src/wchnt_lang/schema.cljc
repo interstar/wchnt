@@ -29,6 +29,7 @@
    [:schema string?]
    [:construction string?]
    [:methods string?]
+   [:public {:optional true} string?]
    [:target-methods string?]
    [:target string?]])
 
@@ -153,7 +154,8 @@
    [:components [:sequential Component]]
    [:context-dependencies [:sequential string?]]
    [:context-providers [:sequential string?]]
-   [:observable [:maybe boolean?]]])
+   [:observable [:maybe boolean?]]
+   [:implements {:optional true} [:maybe string?]]])
 
 (def Interface
   [:map
@@ -183,7 +185,14 @@
    [:subscriber-classes [:sequential string?]]
    [:mailbox-classes {:optional true} [:sequential string?]]
    [:debug-methods [:sequential DebugMethod]]
-   [:external-types {:optional true} [:set string?]]])
+   [:external-types {:optional true} [:set string?]]
+   [:imported-handles {:optional true} [:set string?]]
+   [:public-methods {:optional true} any?]
+   [:static-public-methods {:optional true} any?]
+   [:imported-methods {:optional true} any?]
+   [:import-aliases {:optional true} any?]
+   [:imported-interfaces {:optional true} [:set string?]]
+   [:public-interfaces {:optional true} any?]])
 
 ;; Construction IR Schemas (for object instances being constructed)
 ;; Argument structure for construction objects
@@ -193,7 +202,7 @@
     (m/default-schemas)                   ;; keep built-ins like :map, :sequential, :maybe, etc.
     {::ConstructionArg
      [:map
-      [:type [:enum :object :primitive :variable :enum-value :array :map]]
+      [:type [:enum :object :primitive :variable :enum-value :array :map :call]]
       [:class-name string?]
       [:args [:sequential [:ref ::ConstructionArg]]]  ;; All nested args should be structured ConstructionArg objects
       [:index int?]
