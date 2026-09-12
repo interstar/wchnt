@@ -77,6 +77,7 @@ MulOp = Factor (('*' / '/' / '%') Factor)+
          / MethodCall
          / NegOp
          / <'('> OrExpr <')'>
+         / WithConstruction
          / ObjectConstruction
          / ArrayConstruction
          / MapConstruction
@@ -90,6 +91,11 @@ IfExpr = <'if'> <'('> OrExpr <')'> Block ElsePart
 NegOp = <'-'> Factor
 ObjectConstruction = <'['> <':'> ClassName ArgList <']'> 
 InnerObjectConstruction = <'['> (<':'> ClassName)? ArgList <']'>
+WithConstruction = <'['> <':'> ClassName WithSource? <'|'> WithAssignList <']'>
+WithSource = FieldPath / VariableRef
+WithAssignList = WithAssign (<','>? WithAssign)*
+WithAssign = WithPath <'='> Expression
+<WithPath> = FieldPath / VariableRef
 ArrayConstruction = <'['> <':'> <'Array'> <'/'> Type ArgList <']'>
 MapConstruction = <'{'> KeyType <':'> ValType KeyValueList? <'}'>
 MethodCall = (StringLiteral / IntLiteral / VariableRef) (<#'\\.'> Name)+ <'('> MethodArgList <')'> (<#'\\.'> Name <'('> MethodArgList <')'>)*
@@ -98,6 +104,7 @@ VariableRef = Name
 <ArgItem> = MethodCall
           / ArrayConstruction
           / MapConstruction
+          / WithConstruction
           / InnerObjectConstruction
           / Literal
           / FieldPath

@@ -27,7 +27,7 @@
 (defn- object-node?
   [node]
   (contains? #{:ObjectConstruction :InnerObjectConstruction
-               :ArrayConstruction :MapConstruction}
+               :WithConstruction :ArrayConstruction :MapConstruction}
              (tag node)))
 
 (defn- find-child
@@ -69,13 +69,22 @@
   [node]
   (if (and (vector? node) (= (tag node) :Expression)) (first (children node)) node))
 
+(defn- needs-arg-parens?
+  "Construction ArgItem is atoms, constructions, calls, and ParenArg.
+   Operator expressions and if-forms must be wrapped or they reparse as
+   adjacent VariableRefs (if / else)."
+  [node]
+  (let [n (effective node)]
+    (or (< (node-prec n) 100)
+        (and (vector? n) (= (tag n) :IfExpr)))))
+
 (defn- arg-str
   "Render a construction argument (object/array/map slot). The grammar only
    admits atoms, constructions, and parenthesized expressions here, so a bare
    operator expression must be wrapped."
   [node depth ctx]
   (let [s (unparse-node node depth ctx)]
-    (if (< (node-prec (effective node)) 100) (str "(" s ")") s)))
+    (if (needs-arg-parens? node) (str "(" s ")") s)))
 
 (defn- emit-list
   "Render a bracketed construction from a pre-built `head` (already ending in a
@@ -96,6 +105,30 @@
   [node depth ctx]
   (let [args (arg-nodes node)]
     (emit-list (inline-head (classname-of node) args) args depth ctx)))
+
+(defn- unparse-with-path
+  [node]
+  (case (tag node)
+    :WithPath (unparse-with-path (first (children node)))
+    :FieldPath (str/join "." (children node))
+    :VariableRef (second node)
+    (unparse-node node 0 :expr)))
+
+(defn- unparse-with-assign
+  [node depth]
+  (str (unparse-with-path (second node)) " = "
+       (unparse-node (nth node 2) depth :expr)))
+
+(defn- unparse-with
+  "[:Class | field = expr] / [:Class src | path = expr]."
+  [node depth]
+  (let [src (find-child node :WithSource)
+        assigns (children (find-child node :WithAssignList))]
+    (str "[:" (classname-of node)
+         (when src (str " " (unparse-with-path (first (children src)))))
+         " | "
+         (str/join ", " (map #(unparse-with-assign % depth) assigns))
+         "]")))
 
 (defn- unparse-array
   "An [:Array/Type ...] construction."
@@ -251,6 +284,7 @@
        :Expression (unparse-node (first (children node)) depth ctx)
        :ObjectConstruction (unparse-object node depth ctx)
        :InnerObjectConstruction (unparse-object node depth ctx)
+       :WithConstruction (unparse-with node depth)
        :ArrayConstruction (unparse-array node depth ctx)
        :MapConstruction (unparse-map-construction node depth ctx)
        :Code (str/join "\n\n" (map #(unparse-node % depth :expr) (children node)))

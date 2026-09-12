@@ -909,6 +909,171 @@
      :args []
      :index index}))
 
+(defn- with-path-segments
+  [node]
+  (cond
+    (ast-utils/node-type? node :WithPath) (with-path-segments (second node))
+    (ast-utils/node-type? node :FieldPath) (vec (rest node))
+    (ast-utils/node-type? node :VariableRef) [(second node)]
+    :else (throw (ex-info "Write-path must be a field name or dotted path"
+                          {:node node}))))
+
+(defn- with-assign-entries
+  [assign-list]
+  (when-not (ast-utils/node-type? assign-list :WithAssignList)
+    (throw (ex-info "Write-path construction is missing assignments"
+                    {:node assign-list})))
+  (mapv (fn [assign]
+          (when-not (ast-utils/node-type? assign :WithAssign)
+            (throw (ex-info "Expected field = expr in write-path"
+                            {:node assign})))
+          {:path (with-path-segments (second assign))
+           :value (nth assign 2)})
+        (rest assign-list)))
+
+(defn- add-with-slot
+  [slot rest-path value class-name field-name]
+  (if (empty? rest-path)
+    (do
+      (when (:exact slot)
+        (throw (ex-info (str "Duplicate write-path '" field-name "' on " class-name)
+                        {:class-name class-name :field field-name})))
+      (when (seq (:nested slot))
+        (throw (ex-info (str "Cannot assign '" field-name "' and also a path under it on "
+                             class-name)
+                        {:class-name class-name :field field-name})))
+      (assoc slot :exact value))
+    (do
+      (when (:exact slot)
+        (throw (ex-info (str "Cannot assign '" field-name "' and also a path under it on "
+                             class-name)
+                        {:class-name class-name :field field-name})))
+      (update slot :nested conj {:path rest-path :value value}))))
+
+(defn- group-with-assigns
+  [assigns class-name]
+  (reduce (fn [acc {:keys [path value]}]
+            (when (empty? path)
+              (throw (ex-info (str "Empty write-path on " class-name)
+                              {:class-name class-name})))
+            (let [field (first path)]
+              (update acc field
+                      (fn [slot]
+                        (add-with-slot (or slot {:nested []})
+                                       (vec (rest path))
+                                       value class-name field)))))
+          {}
+          assigns))
+
+(defn- assert-known-with-fields!
+  [grouped components class-name]
+  (let [known (set (map :component-name components))
+        extra (remove known (keys grouped))]
+    (when (seq extra)
+      (throw (ex-info (str "Unknown field '" (first extra) "' on " class-name
+                           " in write-path")
+                      {:class-name class-name :field (first extra)})))))
+
+(defn- read-component
+  "IR that reads one component from a with-construction source."
+  [source-ir class-name field-name schema-ir]
+  (let [typ (follow-field schema-ir class-name field-name)]
+    (if (= :this (:expr source-ir))
+      {:expr :field :name field-name}
+      (let [root (if (= :path (:expr source-ir)) (:root source-ir) source-ir)
+            fields (if (= :path (:expr source-ir))
+                     (conj (vec (:fields source-ir)) field-name)
+                     [field-name])]
+        {:expr :path :root root :fields fields :type typ}))))
+
+(defn- field-type-at-path
+  [schema-ir class-name path]
+  (reduce (fn [typ field]
+            (follow-field schema-ir typ field))
+          class-name
+          path))
+
+(declare lower-with)
+
+(defn- lower-with-field
+  [class-name source-ir component grouped ctx]
+  (let [field (:component-name component)
+        typ (:type-name component)
+        hits (get grouped field)]
+    (cond
+      (nil? hits)
+      (read-component source-ir class-name field (:schema-ir ctx))
+
+      (:exact hits)
+      (let [value (ast->expr (:exact hits) ctx)]
+        (assert-assignable! (:schema-ir ctx) typ (value-type value ctx)
+                            (str class-name "." field))
+        value)
+
+      :else
+      (lower-with typ
+                  (read-component source-ir class-name field (:schema-ir ctx))
+                  (:nested hits)
+                  ctx))))
+
+(defn- lower-with
+  "Expand [:Class | path = expr] into a full :construct of every schema field."
+  [class-name source-ir assigns ctx]
+  (let [schema-ir (:schema-ir ctx)
+        components (or (ir/get-assemblage-components schema-ir class-name) [])]
+    (when (empty? components)
+      (throw (ex-info (str "Cannot use write-path construction on '" class-name
+                           "' (not a composition class)")
+                      {:class-name class-name})))
+    (let [grouped (group-with-assigns assigns class-name)]
+      (assert-known-with-fields! grouped components class-name)
+      (doseq [{:keys [path]} assigns]
+        (field-type-at-path schema-ir class-name path))
+      {:expr :construct
+       :class-name class-name
+       :args (mapv #(lower-with-field class-name source-ir % grouped ctx)
+                   components)})))
+
+(defn- with-source-ir
+  [source-node class-name ctx]
+  (if (nil? source-node)
+    (do
+      (when (not= (:class-name ctx) class-name)
+        (throw (ex-info (str "[:" class-name " | ...] needs a source because this is "
+                             (:class-name ctx)
+                             " (e.g. [:" class-name " ball | x = nx])")
+                        {:class-name class-name :this (:class-name ctx)})))
+      {:expr :this})
+    (let [src (ast->expr source-node ctx)
+          typ (value-type src ctx)]
+      (when-not typ
+        (throw (ex-info (str "[:" class-name " | ...] cannot determine source type")
+                        {:class-name class-name})))
+      (when (not= typ class-name)
+        (throw (ex-info (str "[:" class-name " | ...] source must be " class-name
+                             ", got " typ)
+                        {:expected class-name :actual typ})))
+      src)))
+
+(defn- ast->with
+  "[:Class | path = expr] or [:Class src | path = expr]. Lowers to :construct."
+  [node ctx]
+  (let [class-name (second (second node))
+        mid (nth node 2)
+        source-node (when (ast-utils/node-type? mid :WithSource) mid)
+        assign-list (if source-node (nth node 3) mid)]
+    (when (contains? (or (:imported-handles (:schema-ir ctx)) #{}) class-name)
+      (throw (ex-info (str "Cannot construct imported handle '" class-name
+                           "'; call a public method that returns one")
+                      {:class-name class-name})))
+    (when-not (contains? (assemblage-names (:schema-ir ctx)) class-name)
+      (throw (ex-info (str "Unknown class '" class-name "' in write-path construction")
+                      {:class-name class-name})))
+    (let [source-inner (when source-node (second source-node))
+          source (with-source-ir source-inner class-name ctx)
+          assigns (with-assign-entries assign-list)]
+      (lower-with class-name source assigns ctx))))
+
 (defn- ast->construct
   "ObjectConstruction or InnerObjectConstruction with an explicit class name."
   [node ctx]
@@ -1047,6 +1212,9 @@
 
       (ast-utils/node-type? node :MapConstruction)
       (ast->map node ctx)
+
+      (ast-utils/node-type? node :WithConstruction)
+      (ast->with node ctx)
 
       (or (ast-utils/node-type? node :ObjectConstruction)
           (ast-utils/node-type? node :InnerObjectConstruction))

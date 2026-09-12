@@ -493,9 +493,17 @@
   ;; Nested objects don't have variable names, so just return the original mappings
   variable-mappings)
 
+(defn- assert-no-with-construction!
+  [construction-ast]
+  (when-let [node (first (ast-utils/find-nodes-by-type construction-ast :WithConstruction))]
+    (throw (ex-info
+            "Write-path constructions [:Class | field = ...] are only allowed in Methods, not in Construction"
+            {:node node}))))
+
 (defn construction-ast-to-ir
   "Transform construction AST to IR construction"
   [construction-ast schema-ir]
+  (assert-no-with-construction! construction-ast)
   (let [root-class (extract-root-class-from-construction construction-ast schema-ir)
         factory-name (str (str/lower-case (first root-class)) (subs root-class 1) "Factory")
         {:keys [flattened-ast nested-objects]} (flatten-nested-constructions construction-ast schema-ir)
