@@ -1,0 +1,32 @@
+# Welcome to WCHNT
+
+This is the live editor for **WCHNT — We CAN Have Nice Things**, an experimental
+object-oriented language. Everything here runs in your browser.
+
+## What you're looking at
+
+The editor holds a `.wcn` file: ordinary markdown whose code lives in fenced blocks under a
+few headings — `## Schema`, `## Construction`, `## Methods`, and `## Target`.
+
+- **Run** builds the program. Canvas games play in the window; **[[adventure]]**
+  uses a text transcript. **Close** stops it; the next Run rebuilds from Construction.
+- **Go** opens an existing page by name; **New** creates a sibling page. Link pages with `[[PageName]]`.
+- Pages are saved in your browser (localStorage), so they survive reloads.
+
+## Try it
+
+- **[[bounce]]** — the classic bouncing ball from the tutorial.
+- **[[shapes]]** — a circle, square, and triangle drifting across the screen.
+- **[[square]]** — click the play area, then steer with the arrow keys.
+- **[[pollution]]** — a little arcade game. Click the canvas after Run, then steer with the
+  arrow keys.
+- **[[adventure]]** — a ten-room text world. Type `N` `E` `S` `W` and press Enter.
+- **[[writepaths]]** — a six-level world. Type `jets`, `ocean`, `resize`, or a fountain name.
+- **[[flyingA]]** — a shape box that publishes `Shape`, `make`, `addShape`, and `update`.
+- **[[flyingB]]** — imports flyingA and adds a `Pentagon`. Run this page to see the membrane.
+
+## Learn more
+
+The language itself is documented on the [WCHNT website](https://synaesmedia.net/apps/wchnt/).
+If you just want to jump in, edit the Schema and Construction and hit Run — most things you
+change will show up immediately.

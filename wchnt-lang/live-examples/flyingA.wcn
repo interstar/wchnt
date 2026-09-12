@@ -1,6 +1,13 @@
-# Moving shapes (live canvas)
+# Flying shapes (the box)
 
-Same Schema, Construction, Methods, and Target Methods as `shapes_openfl.wcn`. **`$Time`** ticks; shapes draw via **`@Graphics/g`**. Target passes **`wchntGraphics`** (same API as OpenFL's portable wrapper).
+An assemblage of moving shapes. Other pages may add new `Shape` implementers
+through `Game::addShape`. Circle, Square, and Triangle stay private; only the
+`Shape` contract, `make`, `addShape`, and `update` cross the membrane.
+
+`[[flyingB]]` imports this page and adds a Pentagon.
+
+`Shape::step` takes a width, not a `Rect`, so importers do not need this page's
+layout.
 
 ## Schema
 
@@ -34,27 +41,51 @@ Time = Int/t
 ```
 Time::update = { [:Time (t + 1)] }
 
-Shape::step = { Rect/bounds | } -> Shape
+Shape::step = { Int/width | } -> Shape
 
-Circle::step = { Rect/bounds |
-  nx = (x + dx) % bounds.width.
+Circle::step = { Int/width |
+  nx = (x + dx) % width.
   [:Circle nx y radius dx]
 }
 
-Square::step = { Rect/bounds |
-  nx = (x + dx) % bounds.width.
+Square::step = { Int/width |
+  nx = (x + dx) % width.
   [:Square nx y side dx]
 }
 
-Triangle::step = { Rect/bounds |
-  nx = (x + dx) % bounds.width.
+Triangle::step = { Int/width |
+  nx = (x + dx) % width.
   [:Triangle nx y base height dx]
 }
 
+Game::make = {
+  [:Game
+    [:PlayArea [:Rect 0 0 800 600]]
+    [:Array/Shape
+      [:Circle 80 120 24 5]
+      [:Square 220 280 40 3]
+      [:Triangle 520 400 50 45 4]
+    ]
+    [:Time 0]]
+}
+
+Game::addShape = { Shape/s |
+  [:Game playArea shapes.cons(s) time]
+}
+
 Game::update = {
-  moved = shapes.map({ Shape/s | s.step(playArea.rect) }).
+  moved = shapes.map({ Shape/s | s.step(playArea.rect.width) }).
   [:Game playArea moved time]
 }
+```
+
+## Public
+
+```
+Game::make
+Game::addShape
+Game::update
+Shape
 ```
 
 ## Target Methods

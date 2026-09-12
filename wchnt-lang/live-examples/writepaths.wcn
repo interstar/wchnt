@@ -1,0 +1,95 @@
+# Write paths: a deep nested copy (live)
+
+Same assemblage as `examples/writepaths.wcn`. Target is `%cli-live`. Type a
+command and press Enter: `jets`, `ocean`, `resize`, or a new fountain name.
+
+`[:Class | path = expr]` rebuilds only the objects on the path. The fountain
+sits six levels down; the ocean is a sibling so a deep write can prove it
+stays put.
+
+## Schema
+
+```
+World = Continent Ocean
+Continent = Country
+Country = Capital
+Capital = Plaza
+Plaza = Fountain
+Fountain = Int/jets String/name
+Ocean = Int/depth
+```
+
+## Construction
+
+```
+[:World
+  [:Continent
+    [:Country
+      [:Capital
+        [:Plaza
+          [:Fountain 7 "Triton"]]]]]
+  [:Ocean 4000]
+]
+```
+
+## Methods
+
+```
+Fountain::rename = { String/n | [:Fountain | name = n] }
+
+World::moreJets = {
+  [:World | continent.country.capital.plaza.fountain.jets = (continent.country.capital.plaza.fountain.jets + 1)]
+}
+
+World::renameFountain = { String/n |
+  [:World | continent.country.capital.plaza.fountain.name = n]
+}
+
+World::deeperOcean = {
+  [:World | ocean.depth = (ocean.depth + 100)]
+}
+
+World::resize = {
+  [:World | continent.country.capital.plaza.fountain.jets = 12, ocean.depth = 5000]
+}
+
+World::boostFountain = { Fountain/f |
+  [:Fountain f | jets = (f.jets + 1)]
+}
+
+World::label = {
+  f = continent.country.capital.plaza.fountain.
+  jets = f.jets.
+  depth = ocean.depth.
+  "Fountain {name} has {jets} jets; ocean {depth} deep.".tpl({String:String "name": f.name, "jets": jets.str(), "depth": depth.str()})
+}
+```
+
+## Target
+
+```
+%cli-live
+
+%init
+var assemblage;
+
+function init() {
+    assemblage = gameFactory();
+    wchntConsole.println("jets | ocean | resize | or type a fountain name");
+    wchntConsole.println(assemblage.label());
+}
+
+%step
+function step(line) {
+    if (line === "jets") {
+        assemblage = assemblage.moreJets();
+    } else if (line === "ocean") {
+        assemblage = assemblage.deeperOcean();
+    } else if (line === "resize") {
+        assemblage = assemblage.resize();
+    } else if (line.length > 0) {
+        assemblage = assemblage.renameFountain(line);
+    }
+    wchntConsole.println(assemblage.label());
+}
+```
