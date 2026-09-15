@@ -23,9 +23,11 @@ Ball = Int/x Int/y Int/dx Int/dy Int/rad
 ```
 Rect::area = { width * height }
 
-Rect::doubleWidth = { [:Rect x y (width * 2) height] }
+Rect::doubleWidth = { [:Rect | width = (width * 2)] }
 
-Ball::move = { [:Ball (x + dx) (y + dy) dx dy rad] }
+Ball::move = { [:Ball | x = (x + dx), y = (y + dy)] }
+
+Game::widen = { [:Game | playArea.rect.width = (playArea.rect.width * 2)] }
 
 Rect::wrapX = { x % width }
 ```
@@ -37,7 +39,7 @@ Rect::wrapX = { x % width }
 
 %main
 public static function main():Void {
-    var assemblage = gameFactory();
+    var assemblage = GameAssemblage.factory();
     var helper = new WCHNTHelper();
     trace(assemblage.toConstruction(0, helper));
 }

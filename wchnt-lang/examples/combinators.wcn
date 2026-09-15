@@ -1,0 +1,77 @@
+# Combinators on arrays and maps
+
+`map`, `filter`, and `fold` are collection methods. The block is a delayed
+function. `fold` takes the seed first. Target prints through `wchntConsole`.
+
+On an array the block sees one element. On a map it sees the key and the value.
+`filter` keeps the same collection type. `map` on a map keeps the keys and
+replaces the values. `fold` types `acc` from the seed: `0` is Int, `""` is
+String, `[:Summary 0 0]` is Summary.
+
+## Schema
+
+```
+Team = [Player]/players {String : Int}/scores
+Player = String/name Int/score
+Summary = Int/total Int/count
+```
+
+## Construction
+
+```
+[:Team
+  [:Array/Player
+    ["Ada" 3]
+    ["Bob" 0]
+    ["Cy" 5]
+  ]
+  {String:Int "Ada":3 "Bob":0 "Cy":5}
+]
+```
+
+## Methods
+
+```
+Team::names = { players.map({ p | p.name }) }
+
+Team::scorers = { players.filter({ p | p.score > 0 }) }
+
+Team::total = { players.fold(0, { acc, p | acc + p.score }) }
+
+Team::boosted = { scores.map({ k, v | v + 1 }) }
+
+Team::hot = { scores.filter({ k, v | v > 0 }) }
+
+Team::sum = { scores.fold(0, { acc, k, v | acc + v }) }
+
+Team::stats = { players.fold([:Summary 0 0], { acc, p | [:Summary (acc.total + p.score) (acc.count + 1)] }) }
+
+Team::joined = { players.fold("", { acc, p | acc.concat(p.name) }) }
+```
+
+## Target
+
+```
+%terminal
+
+%main
+public static function main():Void {
+    var assemblage = TeamAssemblage.factory();
+    wchntConsole.println("names");
+    wchntConsole.println(assemblage.names());
+    wchntConsole.println("scorers");
+    wchntConsole.println(assemblage.scorers());
+    wchntConsole.println("total");
+    wchntConsole.println(assemblage.total());
+    wchntConsole.println("boosted");
+    wchntConsole.println(assemblage.boosted());
+    wchntConsole.println("hot");
+    wchntConsole.println(assemblage.hot());
+    wchntConsole.println("sum");
+    wchntConsole.println(assemblage.sum());
+    wchntConsole.println("stats");
+    wchntConsole.println(assemblage.stats());
+    wchntConsole.println("joined");
+    wchntConsole.println(assemblage.joined());
+}
+```

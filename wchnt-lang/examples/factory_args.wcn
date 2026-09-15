@@ -1,0 +1,38 @@
+# Factory arguments
+
+A free name in an `@` slot is not a hole and not a null. It is an argument
+to the generated factory. Target must pass it; Construction does not build it.
+
+`pen` appears first (and only once), so the factory is `SketchAssemblage.factory(pen: Pen)`.
+
+## Schema
+
+```
+Pen = String/ink
+Sketch = String/name @Pen
+```
+
+## Construction
+
+```
+[:Sketch "star" pen]
+```
+
+## Methods
+
+```
+Sketch::caption = { name.concat(" drawn in ").concat(pen.ink) }
+```
+
+## Target
+
+```
+%terminal
+
+%main
+public static function main():Void {
+    var pen = new Pen("blue");
+    var s = SketchAssemblage.factory(pen);
+    trace(s.caption());
+}
+```

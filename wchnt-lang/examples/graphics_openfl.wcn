@@ -1,0 +1,68 @@
+# Graphics API parity (OpenFL)
+
+A static scene exercising the portable WCHNTGraphics surface. The same
+drawing appears in `live-examples/graphics_canvas.wcn`; both hosts use
+identical calls so the visual result matches.
+
+- `background` sets the clear colour; `clear` paints it.
+- `beginFill` fills; `lineStyle` strokes; `noStroke` clears the stroke.
+- `drawRect` / `drawCircle` / `drawEllipse` fill **and** stroke when both are set.
+- `drawLine` strokes only.
+- `moveTo` / `lineTo` … `endFill` draw a filled/stroked polygon path.
+
+## Schema
+
+```
+Game = Int/w Int/h
+```
+
+## Construction
+
+```
+[:Game 800 600]
+```
+
+## Target
+
+```
+%openfl
+
+%init
+var assemblage:Game;
+
+function init():Void {
+    assemblage = GameAssemblage.factory();
+}
+
+%step
+function step():Void {
+    wchntGraphics.background(0x1a1a2e);
+    wchntGraphics.clear();
+    wchntGraphics.beginFill(0x2a2a2a);
+    wchntGraphics.drawRect(20, 20, 160, 100);
+    wchntGraphics.endFill();
+    wchntGraphics.lineStyle(2, 0x00ff00);
+    wchntGraphics.drawRect(200, 20, 160, 100);
+    wchntGraphics.noStroke();
+    wchntGraphics.beginFill(0xf2f2f2);
+    wchntGraphics.drawCircle(100, 200, 40);
+    wchntGraphics.endFill();
+    wchntGraphics.lineStyle(3, 0xff6464);
+    wchntGraphics.drawCircle(260, 200, 40);
+    wchntGraphics.noStroke();
+    wchntGraphics.beginFill(0x6464ff);
+    wchntGraphics.lineStyle(2, 0xffffff);
+    wchntGraphics.drawEllipse(420, 200, 60, 30);
+    wchntGraphics.endFill();
+    wchntGraphics.noStroke();
+    wchntGraphics.lineStyle(4, 0xffffff);
+    wchntGraphics.drawLine(20, 300, 760, 300);
+    wchntGraphics.noStroke();
+    wchntGraphics.beginFill(0xc8c864);
+    wchntGraphics.moveTo(100, 400);
+    wchntGraphics.lineTo(200, 340);
+    wchntGraphics.lineTo(300, 400);
+    wchntGraphics.lineTo(100, 400);
+    wchntGraphics.endFill();
+}
+```

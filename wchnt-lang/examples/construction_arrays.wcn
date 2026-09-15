@@ -20,7 +20,7 @@ Person = String/name
 
 %main
 public static function main():Void {
-    var assemblage = schoolFactory();
+    var assemblage = SchoolAssemblage.factory();
     var helper = new WCHNTHelper();
     trace(assemblage.toConstruction(0, helper));
 }

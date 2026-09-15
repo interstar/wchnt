@@ -31,7 +31,7 @@ Player::initial = { name.substring(0, 1) }
 
 %main
 public static function main():Void {
-    var assemblage = playerFactory();
+    var assemblage = PlayerAssemblage.factory();
     var helper = new WCHNTHelper();
     trace(assemblage.toConstruction(0, helper));
     trace("nameLen");

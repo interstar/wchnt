@@ -54,7 +54,7 @@ Haxe entry. Drive the clock; Game moves because Time notifies.
 
 %main
 public static function main():Void {
-    var assemblage = gameFactory();
+    var assemblage = GameAssemblage.factory();
     var helper = new WCHNTHelper();
     trace(assemblage.toConstruction(0, helper));
     for (i in 0...10) {

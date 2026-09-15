@@ -127,7 +127,7 @@ var assemblage:Game;
 var down:Map<Int, Bool> = new Map();
 
 function init():Void {
-    assemblage = gameFactory();
+    assemblage = GameAssemblage.factory();
     stage.addEventListener(KeyboardEvent.KEY_DOWN, function(e:KeyboardEvent) {
         down.set(e.keyCode, true);
     });

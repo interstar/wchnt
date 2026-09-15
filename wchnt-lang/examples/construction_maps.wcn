@@ -11,7 +11,7 @@ Config = {Direction : String}/moves
 ## Construction
 
 ```
-controls = [:Map/{Direction:String} Up:"jump", Down:"crouch", Left:"left" Right:"right"].
+controls = {Direction:String Up:"jump", Down:"crouch", Left:"left" Right:"right"}.
 [:App "Hello" [:Config controls]]
 ```
 
@@ -22,7 +22,7 @@ controls = [:Map/{Direction:String} Up:"jump", Down:"crouch", Left:"left" Right:
 
 %main
 public static function main():Void {
-    var assemblage = appFactory();
+    var assemblage = AppAssemblage.factory();
     var helper = new WCHNTHelper();
     trace(assemblage.toConstruction(0, helper));
 }

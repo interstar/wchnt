@@ -38,7 +38,7 @@ Team::total = { players.fold(0, { acc, p | acc + p.score }) }
 
 %main
 public static function main():Void {
-    var assemblage = teamFactory();
+    var assemblage = TeamAssemblage.factory();
     var helper = new WCHNTHelper();
     trace(assemblage.toConstruction(0, helper));
     trace("names");

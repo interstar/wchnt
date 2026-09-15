@@ -27,7 +27,7 @@ people =
 
 %main
 public static function main():Void {
-    var assemblage = townFactory();
+    var assemblage = TownAssemblage.factory();
     var helper = new WCHNTHelper();
     trace(assemblage.toConstruction(0, helper));
 }

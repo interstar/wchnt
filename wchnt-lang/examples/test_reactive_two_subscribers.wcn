@@ -30,7 +30,7 @@ Scene::update = { [:Scene time] }
 
 %main
 public static function main():Void {
-    var assemblage = worldFactory();
+    var assemblage = WorldAssemblage.factory();
     var helper = new WCHNTHelper();
     trace(assemblage.toConstruction(0, helper));
     assemblage.time.update();

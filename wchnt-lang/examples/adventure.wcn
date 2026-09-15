@@ -1,0 +1,109 @@
+# Adventure: a ten-room text world
+
+A toy text adventure for the `%cli` host. Target prints through `wchntConsole`;
+the host only reads lines. `Game::look` and `Game::move` own every word the
+player sees. Type `N`, `E`, `S`, or `W` to travel.
+
+Geography is two enums plus sparse maps. `LocationId` names rooms;
+`Direction` names exits. A missing key means no path — not an empty string.
+`WorldMap` holds the rooms so the class is not called `Map` (that name is
+the `{K:V}` collection). Exits store `LocationId`, not `Location`, so the
+graph does not have to be built as circular object references.
+`Game::move` uses a write-path so `worldMap` is kept and only `here` and
+`msg` are rewritten.
+
+## Schema
+
+```
+Game = WorldMap LocationId/here String/msg
+WorldMap = {LocationId : Location}/places
+Location = String/description {Direction : LocationId}/exits
+LocationId = "Village" | "NorthGate" | "Market" | "Tavern" | "Temple" | "ForestEdge" | "River" | "DeepForest" | "Cave" | "Hilltop"
+Direction = "N" | "E" | "S" | "W"
+```
+
+## Construction
+
+```
+village =    [:Location "Village Square" {Direction:LocationId N:NorthGate E:Market S:ForestEdge W:Tavern}].
+northGate =  [:Location "North Gate"    {Direction:LocationId N:Hilltop S:Village}].
+market =     [:Location "Market"        {Direction:LocationId E:Temple W:Village}].
+tavern =     [:Location "Tavern"        {Direction:LocationId E:Village}].
+temple =     [:Location "Temple"        {Direction:LocationId S:River W:Market}].
+forestEdge = [:Location "Forest Edge"   {Direction:LocationId N:Village E:River S:DeepForest}].
+river =      [:Location "River"         {Direction:LocationId N:Temple E:Cave W:ForestEdge}].
+deepForest = [:Location "Deep Forest"   {Direction:LocationId N:ForestEdge W:Cave}].
+cave =       [:Location "Cave"          {Direction:LocationId N:River E:DeepForest}].
+hilltop =    [:Location "Hilltop"       {Direction:LocationId S:NorthGate}].
+
+[:Game
+  [:WorldMap
+    {LocationId:Location
+      Village: village
+      NorthGate: northGate
+      Market: market
+      Tavern: tavern
+      Temple: temple
+      ForestEdge: forestEdge
+      River: river
+      DeepForest: deepForest
+      Cave: cave
+      Hilltop: hilltop
+    }]
+  Village
+  "You are in Village Square."
+]
+```
+
+## Methods
+
+```
+Game::look = {
+  places = worldMap.places.
+  room = places.get(here).
+  "You are in {place}.".tpl({String:String "place": room.description})
+}
+
+Game::move = { String/line |
+  places = worldMap.places.
+  loc = places.get(here).
+  exits = loc.exits.
+  isExit = if (line == "N") { exits.exists(N) }
+    else if (line == "E") { exits.exists(E) }
+    else if (line == "S") { exits.exists(S) }
+    else if (line == "W") { exits.exists(W) }
+    else { false }.
+  next = if (line == "N") { exits.get(N, here) }
+    else if (line == "E") { exits.get(E, here) }
+    else if (line == "S") { exits.get(S, here) }
+    else if (line == "W") { exits.get(W, here) }
+    else { here }.
+  room = places.get(next).
+  out = if (isExit) {
+    "You are in {place}.".tpl({String:String "place": room.description})
+  } else {
+    "You can't go that way."
+  }.
+  [:Game | here = next, msg = out]
+}
+```
+
+## Target
+
+```
+%cli
+
+%init
+var assemblage:Game;
+
+function init():Void {
+    assemblage = GameAssemblage.factory();
+    wchntConsole.println(assemblage.look());
+}
+
+%step
+function step(line:String):Void {
+    assemblage = assemblage.move(line);
+    wchntConsole.println(assemblage.msg);
+}
+```

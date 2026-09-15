@@ -1,0 +1,50 @@
+# Delegation: Student has-a BasePerson
+
+`+BasePerson` is an owned component. Construction nests it. Student is not a
+BasePerson for slot typing — add a sum if you want a shared type.
+
+Target talks to Student as if it had BasePerson's fields and methods:
+
+- `s.name` and `s.age` are promoted fields
+- `s.greet()` is the promoted BasePerson method
+- `s.rename` must be written on Student because BasePerson::rename returns a BasePerson
+
+## Schema
+
+```
+Student = String/id +BasePerson
+BasePerson = String/name Int/age
+
+```
+
+## Construction
+
+```
+[:Student "s17" [:BasePerson "Ada" 36]]
+```
+
+## Methods
+
+```
+BasePerson::greet = { "Hello {name}".tpl({String:String "name":name })}
+
+BasePerson::rename = { String/n | [:BasePerson n age] }
+
+Student::rename = { String/n | [:Student | name = n] }
+```
+
+## Target
+
+```
+%terminal
+
+%main
+public static function main():Void {
+    var s = StudentAssemblage.factory();
+    trace(s.name);
+    trace(s.greet());
+    var next = s.rename("Grace");
+    trace(next.name);
+    trace(next.id);
+}
+```

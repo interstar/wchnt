@@ -52,7 +52,7 @@ Game::update = {
 var assemblage:Game;
 
 function init():Void {
-    assemblage = gameFactory();
+    assemblage = GameAssemblage.factory();
 }
 
 %step

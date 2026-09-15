@@ -1,0 +1,46 @@
+# WCHNTMaths
+
+Host maths is a `WCHNTMaths` object, same lifecycle as `WCHNTGraphics`.
+A free name in an `@` slot is a factory argument. Target passes `wchntMaths`.
+
+Query methods return numbers, so one step can pull as many randoms as it
+needs. Void host methods (drawing) stay fluent.
+
+## Schema
+
+```
+Trio = Int/a Int/b Int/c
+Roll = @WCHNTMaths/maths
+```
+
+## Construction
+
+```
+[:Roll maths]
+```
+
+## Methods
+
+```
+Roll::once = {
+  r1 = maths.randInt(10).
+  r2 = maths.randInt(10).
+  r3 = maths.randInt(10).
+  [:Trio r1 r2 r3]
+}
+
+Roll::wave = { maths.sin(0) }
+```
+
+## Target
+
+```
+%terminal
+
+%main
+public static function main():Void {
+    var assemblage = RollAssemblage.factory(wchntMaths);
+    wchntConsole.println(assemblage.once());
+    wchntConsole.println(assemblage.wave());
+}
+```

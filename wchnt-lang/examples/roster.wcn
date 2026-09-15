@@ -22,7 +22,7 @@ Player = String/name Int/score
     ["Ada" 3]
     ["Cy" 5]
   ]
-  [:Map/{String:Int} "Ada":3 "Cy":5]
+  {String:Int "Ada":3 "Cy":5}
 ]
 ```
 
@@ -50,7 +50,7 @@ Team::addNamed = {n, s |
 
 Team::withDi = { this.addNamed("Di", 7) }
 
-Team::fresh = { [:Team name [:Array/Player] [:Map/{String:Int}]] }
+Team::fresh = { [:Team name [:Array/Player] {String:Int}] }
 
 Team::zeros = { 13.times({ i | i*1 }) }
 ```
@@ -62,7 +62,7 @@ Team::zeros = { 13.times({ i | i*1 }) }
 
 %main
 public static function main():Void {
-    var assemblage = teamFactory();
+    var assemblage = TeamAssemblage.factory();
     var helper = new WCHNTHelper();
     trace(assemblage.toConstruction(0, helper));
     trace("headline");

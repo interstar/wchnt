@@ -1,6 +1,10 @@
-# Moving shapes on OpenFL
+# Flying shapes (the box)
 
-Three concrete shapes in an `Array<Shape>`. Each frame `$Time` ticks; `Game::update` maps `Shape::step` across the array (polymorphic via the sum type). Positions wrap with `%` at the play-area width. `%step` calls `Shape::draw` with OpenFL `Graphics` (`@Graphics` — extrinsic, supplied by Target).
+An assemblage of moving shapes. Other pages may add new `Shape` implementers
+through `Game::addShape`. Circle, Square, and Triangle stay private; only the
+`Shape` contract, `make`, `addShape`, and `update` cross the membrane.
+
+`Shape::step` takes a width, not a `Rect`, so importers do not need A's layout.
 
 ## Schema
 
@@ -34,27 +38,37 @@ Time = Int/t
 ```
 Time::update = { [:Time (t + 1)] }
 
-Shape::step = { Rect/bounds | } -> Shape
+Shape::step = { Int/width | } -> Shape
 
-Circle::step = { Rect/bounds |
-  nx = (x + dx) % bounds.width.
+Circle::step = { Int/width |
+  nx = (x + dx) % width.
   [:Circle nx y radius dx]
 }
 
-Square::step = { Rect/bounds |
-  nx = (x + dx) % bounds.width.
+Square::step = { Int/width |
+  nx = (x + dx) % width.
   [:Square nx y side dx]
 }
 
-Triangle::step = { Rect/bounds |
-  nx = (x + dx) % bounds.width.
+Triangle::step = { Int/width |
+  nx = (x + dx) % width.
   [:Triangle nx y base height dx]
 }
 
+Game::addShape = { Shape/s |
+  [:Game playArea shapes.cons(s) time]
+}
+
 Game::update = {
-  moved = shapes.map({ Shape/s | s.step(playArea.rect) }).
+  moved = shapes.map({ Shape/s | s.step(playArea.rect.width) }).
   [:Game playArea moved time]
 }
+```
+
+## Public
+
+```
+Shape
 ```
 
 ## Target Methods

@@ -1,0 +1,86 @@
+# Write paths: a deep nested copy
+
+`[:Class | path = expr]` rebuilds only the objects on the path. This world is
+six composition levels down to the fountain, with an ocean sitting beside the
+continent so a deep write can prove siblings stay put.
+
+Construction is still the full positional picture. Methods use write-paths.
+
+## Schema
+
+```
+World = Continent Ocean
+Continent = Country
+Country = Capital
+Capital = Plaza
+Plaza = Fountain
+Fountain = Int/jets String/name
+Ocean = Int/depth
+```
+
+## Construction
+
+```
+[:World
+  [:Continent
+    [:Country
+      [:Capital
+        [:Plaza
+          [:Fountain 7 "Triton"]]]]]
+  [:Ocean 4000]
+]
+```
+
+## Methods
+
+```
+Fountain::rename = { String/n | [:Fountain | name = n] }
+
+World::moreJets = {
+  [:World | continent.country.capital.plaza.fountain.jets = (continent.country.capital.plaza.fountain.jets + 1)]
+}
+
+World::renameFountain = { String/n |
+  [:World | continent.country.capital.plaza.fountain.name = n]
+}
+
+World::deeperOcean = {
+  [:World | ocean.depth = (ocean.depth + 100)]
+}
+
+World::resize = {
+  [:World | continent.country.capital.plaza.fountain.jets = 12, ocean.depth = 5000]
+}
+
+World::boostFountain = { Fountain/f |
+  [:Fountain f | jets = (f.jets + 1)]
+}
+
+World::label = {
+  f = continent.country.capital.plaza.fountain.
+  jets = f.jets.
+  depth = ocean.depth.
+  "Fountain {name} has {jets} jets; ocean {depth} deep.".tpl({String:String "name": f.name, "jets": jets.str(), "depth": depth.str()})
+}
+```
+
+## Target
+
+```
+%terminal
+
+%main
+public static function main():Void {
+    var assemblage = WorldAssemblage.factory();
+    var helper = new WCHNTHelper();
+    trace(assemblage.toConstruction(0, helper));
+    trace("moreJets");
+    trace(assemblage.moreJets().toConstruction(0, helper));
+    trace("renameFountain");
+    trace(assemblage.renameFountain("Arethusa").toConstruction(0, helper));
+    trace("deeperOcean");
+    trace(assemblage.deeperOcean().toConstruction(0, helper));
+    trace("resize");
+    trace(assemblage.resize().toConstruction(0, helper));
+}
+```

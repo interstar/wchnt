@@ -1,0 +1,43 @@
+# Greyhold Chronicle
+
+Imports the Lost Chalice quest as an opaque handle. The chronicler never
+sees Party, Adventurer, or Hoard — only Public methods on Quest.
+
+## Import
+
+```
+[[importA]] as realm
+```
+
+## Schema
+
+```
+Chronicle = String/scribe @Quest
+```
+
+## Construction
+
+```
+[:Chronicle "Greyhold" realm.make("The Lost Chalice", "Andy the Adventurer", "Dodgy Dave")]
+```
+
+## Methods
+
+```
+Chronicle::report = { scribe.concat(" records ").concat(quest.headline()).concat(" — ").concat(quest.roster()) }
+
+Chronicle::purse = { quest.gold() }
+```
+
+## Target
+
+```
+%terminal
+
+%main
+public static function main():Void {
+    var chronicle = ChronicleAssemblage.factory();
+    trace(chronicle.report());
+    trace(chronicle.purse());
+}
+```

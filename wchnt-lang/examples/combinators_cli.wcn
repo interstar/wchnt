@@ -1,0 +1,70 @@
+# Combinators on the CLI console
+
+Same assemblage as `combinators.wcn`. Target prints through `wchntConsole`.
+`println` formats WCHNT objects, arrays, and maps — Target does not call
+`toConstruction` itself.
+
+## Schema
+
+```
+Team = [Player]/players {String : Int}/scores
+Player = String/name Int/score
+Summary = Int/total Int/count
+```
+
+## Construction
+
+```
+[:Team
+  [:Array/Player
+    ["Ada" 3]
+    ["Bob" 0]
+    ["Cy" 5]
+  ]
+  {String:Int "Ada":3 "Bob":0 "Cy":5}
+]
+```
+
+## Methods
+
+```
+Team::names = { players.map({ p | p.name }) }
+
+Team::scorers = { players.filter({ p | p.score > 0 }) }
+
+Team::total = { players.fold(0, { acc, p | acc + p.score }) }
+
+Team::boosted = { scores.map({ k, v | v + 1 }) }
+
+Team::hot = { scores.filter({ k, v | v > 0 }) }
+
+Team::sum = { scores.fold(0, { acc, k, v | acc + v }) }
+
+Team::stats = { players.fold([:Summary 0 0], { acc, p | [:Summary (acc.total + p.score) (acc.count + 1)] }) }
+
+Team::joined = { players.fold("", { acc, p | acc.concat(p.name) }) }
+```
+
+## Target
+
+```
+%cli
+
+%init
+var team:Team;
+
+function init():Void {
+    team = TeamAssemblage.factory();
+    wchntConsole.println("enter for names / scorers / total / stats / joined");
+}
+
+%step
+function step(line:String):Void {
+    wchntConsole.println(team.names());
+    wchntConsole.println(team.scorers());
+    wchntConsole.println(team.total());
+    wchntConsole.println(team.stats());
+    wchntConsole.println(team.joined());
+    wchntConsole.println(team.hot());
+}
+```

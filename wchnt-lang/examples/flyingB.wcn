@@ -1,0 +1,68 @@
+# Flying shapes (the host)
+
+Imports the flying-shapes box and adds a `Pentagon` that implements the published
+`Shape` interface. Construction asks the box for a `Game`, then `addShape`s the
+pentagon. Target ticks the imported game; field access there is the usual
+Target cheat.
+
+## Import
+
+```
+[[flyingA]] as flying
+```
+
+## Schema
+
+```
+Sky = @Game
+Pentagon : Shape = Int/x Int/y Int/side Int/dx
+```
+
+## Construction
+
+```
+[:Sky flying.factory().addShape([:Pentagon 640 90 36 4])]
+```
+
+## Methods
+
+```
+Pentagon::step = { Int/width |
+  nx = (x + dx) % width.
+  [:Pentagon nx y side dx]
+}
+```
+
+## Target Methods
+
+```
+Pentagon::draw = { @Graphics/g |
+  g.beginFill(10183653).moveTo(x, y).lineTo(x + side, y).lineTo(x + side, y + side).lineTo(x + (side / 2), y + side + (side / 2)).lineTo(x, y + side).lineTo(x, y).endFill()
+} -> Void
+```
+
+## Target
+
+```
+%openfl
+
+%init
+var assemblage:Sky;
+
+function init():Void {
+    assemblage = SkyAssemblage.factory();
+}
+
+%step
+function step():Void {
+    assemblage.game.time.update();
+    var r = assemblage.game.playArea.rect;
+    wchntGraphics.clear();
+    wchntGraphics.beginFill(0x1a1a2e);
+    wchntGraphics.drawRect(r.x, r.y, r.width, r.height);
+    wchntGraphics.endFill();
+    for (s in assemblage.game.shapes) {
+        s.draw(graphics);
+    }
+}
+```

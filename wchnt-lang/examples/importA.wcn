@@ -1,0 +1,58 @@
+# The Lost Chalice
+
+A published quest assemblage. Adventurers, party gold, and the hoard stay
+inside this box. Other pages may call only the names listed under Public.
+
+## Schema
+
+```
+Quest = String/title Party Hoard
+Party = Adventurer/hero Adventurer/companion
+Adventurer = String/name Int/level Int/gold
+Hoard = String/relic Int/value
+```
+
+## Construction
+
+```
+[:Quest
+  "The Lost Chalice"
+  [:Party [:Adventurer "Mira Oakenshield" 3 12] [:Adventurer "Thorn the Quiet" 2 8]]
+  [:Hoard "silver chalice" 400]
+]
+```
+
+## Methods
+
+```
+Quest::headline = { title }
+
+Quest::roster = { party.hero.name.concat(" and ").concat(party.companion.name) }
+
+Quest::gold = { party.hero.gold + party.companion.gold + hoard.value }
+```
+
+## Public
+
+```
+make = { String/title, String/heroName, String/companionName |
+  [:Quest
+    title
+    [:Party [:Adventurer heroName 3 12] [:Adventurer companionName 2 8]]
+    [:Hoard "silver chalice" 400]]
+}
+```
+
+## Target
+
+```
+%terminal
+
+%main
+public static function main():Void {
+    var quest = QuestAssemblage.factory();
+    trace(quest.headline());
+    trace(quest.roster());
+    trace(quest.gold());
+}
+```

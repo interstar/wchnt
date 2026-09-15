@@ -15,7 +15,7 @@ Config2 = {BuildType : String}/environments
 ## Construction
 
 ```
-[:App [:Config [:Map/{String:Int} "0":0 "1":1]] [:Config2 [:Map/{BuildType:String} Dev:"dev" Local:"local" Deploy:"deploy"]]]
+[:App [:Config {String:Int "0":0 "1":1}] [:Config2 {BuildType:String Dev:"dev" Local:"local" Deploy:"deploy"}]]
 ```
 
 ## Target
@@ -25,7 +25,7 @@ Config2 = {BuildType : String}/environments
 
 %main
 public static function main():Void {
-    var assemblage = appFactory();
+    var assemblage = AppAssemblage.factory();
     var helper = new WCHNTHelper();
     trace(assemblage.toConstruction(0, helper));
 }

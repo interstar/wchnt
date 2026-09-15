@@ -126,7 +126,7 @@ var assemblage:Game;
 var down:Map<Int, Bool> = new Map();
 
 function init():Void {
-    assemblage = gameFactory();
+    assemblage = GameAssemblage.factory();
     stage.addEventListener(KeyboardEvent.KEY_DOWN, function(e:KeyboardEvent) {
         down.set(e.keyCode, true);
     });
@@ -151,6 +151,7 @@ function step():Void {
     wchntGraphics.endFill();
     wchntGraphics.lineStyle(2, 0x00ff00);
     wchntGraphics.drawRect(r.x, r.y, r.width, r.height);
+    wchntGraphics.noStroke();
     for (o in assemblage.pollutants) {
         wchntGraphics.beginFill(0xff6464);
         wchntGraphics.drawCircle(o.x, o.y, o.rad);
