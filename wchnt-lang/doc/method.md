@@ -16,7 +16,7 @@ Schema `$` (observable / subscriber) is a different idea from the Methods sectio
 
 1. **Section name.** `## Methods`. Not Reaction, not Reactive.
 2. **Calls on self.** `this.move()`. Bare `move()` is not allowed for now. We may add it as shorthand later.
-3. **Argument types.** Parameters may be bare names (`px`), schema types (`Rect/bounds`), or external types (`@Graphics/g`). Return types may be annotated (`: Void`, `: Shape`). Inference still covers many cases; unknown names fail fast. A full WCHNT type checker is not v1.
+3. **Argument types.** Parameters may be bare names (`px`), schema types (`Rect/bounds`), or external types (`@Graphics/g`). Return types may be annotated after the block (`-> Void`, `-> Shape`). Inference still covers many cases; unknown names fail fast. A full WCHNT type checker is not v1.
 4. **Conditionals.** `if (cond) { … } else { … }` is an expression. Both branches are required. It transpiles to a Haxe `if` expression. `ifTrue` / `ifFalse` are not part of the language. `else if` chains are supported.
 5. **`$` and `update`.** `update` takes no arguments. When an observable finishes `update`, it calls `update()` on subscribers (sideways notify, not a tree walk). Naming a `$` field in a construction is a read; it does not tick that object again.
 6. **No automatic `update` of children.** Ordinary and `:context` children tick only if the parent writes `ball.update()` (or constructs a new child). Want automatic? Give that class its own `$` observable. Do not also call `ball.update()` from the parent or it ticks twice.
@@ -32,8 +32,8 @@ A method is a named block attached to a class from the schema:
 ClassName::methodName = { body }
 ClassName::methodName = { arg, arg | body }
 ClassName::methodName = { Type/arg | body }
-ClassName::methodName : ReturnType = { @HostType/arg | body }
-ClassName::methodName : ReturnType = { Type/arg | }
+ClassName::methodName = { @HostType/arg | body } -> ReturnType
+ClassName::methodName = { Type/arg | } -> ReturnType
 ```
 
 No parentheses on the method name. Braces are required. Arguments may be names, `Type/name`, or `@Type/name`. The value of the block is the value of its last statement (except `Void` methods — see below). The full stop is the statement separator.
@@ -51,9 +51,9 @@ Arithmetic, comparisons, `and` / `or` / `not`, returning a construction, and nam
 ```
 Rect::area = { width * height }
 
-Rect::doubleWidth = { [:Rect x y (width * 2) height] }
+Rect::doubleWidth = { [:Rect | width = (width * 2)] }
 
-Ball::move = { [:Ball (x + dx) (y + dy) dx dy rad] }
+Ball::move = { [:Ball | x = (x + dx), y = (y + dy)] }
 
 Ball::movingRight = { dx > 0 }
 
@@ -147,24 +147,27 @@ Ball::absDx = {
 
 `else if` is supported: `if (a) { x } else if (b) { y } else { z }` (nested `if`, same type on every branch).
 
-Arrays have `map`, `filter`, and `fold`. The block is a delayed function, evaluated per element. `fold` takes the seed first and the function last (`players.fold(0, { acc, p | … })`), like JS / Clojure / Python `reduce`. Haxe `Array` has no `fold`, so codegen emits `Lambda.fold` and swaps the lambda parameters (`(elem, acc)`).
+Arrays and maps have `map`, `filter`, and `fold`. The block is a delayed function. `fold` takes the seed first (`players.fold(0, { acc, p | … })`), like JS / Clojure / Python `reduce`. On an array the block sees one element. On a map it sees the key and the value; `map` keeps the keys and replaces the values. Haxe `Array` has no `fold`, so codegen emits `Lambda.fold` and swaps the lambda parameters (`(elem, acc)`). Haxe `Map` has none of the three, so codegen emits `WCHNTRuntime.mapMap` / `mapFilter` / `mapFold`.
 
 ```
 players.map({ p | p.name })
 players.filter({ p | p.score > 0 })
 players.fold(0, { acc, p | acc + p.score })
+scores.map({ k, v | v + 1 })
+scores.filter({ k, v | v > 0 })
+scores.fold(0, { acc, k, v | acc + v })
 ```
 
-**Done.** Unknown method or wrong block arity fails fast. `map` / `filter` / `fold` are only defined on arrays.
+**Done.** Unknown method or wrong block arity fails fast. `map` / `filter` / `fold` are only defined on arrays and maps. See `examples/combinators.wcn`.
 
-Strings have `length()` and `concat`. `concat` takes a string or number. Haxe `String.length` is a property, so codegen drops the `()`.
+Strings have `length()`, `concat`, `str`, `substring`, and `tpl`. `concat` takes a string or number. `str` is on `String`, `Int`, `Float`, and `Bool` (Haxe `Std.string`). `tpl` fills `{name}` holes from a `{String:String}` map; a missing name fails. Haxe `String.length` is a property, so codegen drops the `()`.
 
 ```
 name.length()
 name.concat(":").concat(score)
 ```
 
-Arrays also have `length()`, `cons` (prepend), `head`, and `tail`. `head` / `tail` of an empty array fail at runtime. Maps have `put`, `get`, and `remove`. `get` / `remove` of a missing key fail at runtime. Map writes copy the map; Target can later name a persistent or mutating store.
+Arrays also have `length()`, `cons` (prepend), `head`, and `tail`. `head` / `tail` of an empty array fail at runtime. Maps have `put`, `get`, `exists`, and `remove`. One-argument `get` / `remove` of a missing key fail at runtime. `get(key, fallback)` returns `fallback` (same value type) when the key is absent. `exists` is Bool. Map writes copy the map; Target can later name a persistent or mutating store.
 
 ```
 players.cons(p)
@@ -172,14 +175,16 @@ players.head()
 players.tail()
 scores.put(n, s)
 scores.get("Ada")
+scores.get("Di", 0)
+scores.exists("Ada")
 scores.remove("Ada")
 [:Array/Player]
-[:Map/{String:Int}]
+{String:Int}
 name.substring(0, 1)
 3.times({ i | i * 2 })
 ```
 
-`substring(start, end)` is a half-open range. `times` takes a one-argument block; the argument is the index from 0. Array `concat` and index sugar are later.
+`substring(start, end)` is a half-open range. `times` takes a one-argument block; the argument is the index from 0. A statement-ending `.` glued to an `Int` literal is parsed as a method call (`4.n` is wrong); bind first: `n = ((((…))). n.times({ i | … })`. Array `concat` and index sugar are later.
 
 ### 5. `update` (the one mutation) — Done
 
@@ -245,7 +250,7 @@ When an **observable** finishes its own `update`, it calls `update()` on each su
 
 ### 6. Arrays and maps inside methods
 
-Construction already builds arrays and maps. Methods can too, including empty collections. Arrays have `cons`, `head`, and `tail`. Maps have `put`, `get`, and `remove` (copy-on-write for now).
+Construction already builds arrays and maps. Methods can too, including empty collections. Arrays have `cons`, `head`, and `tail`. Maps have `put`, `get`, `exists`, and `remove` (copy-on-write for now). One-argument `get` fails if the key is missing; `get(key, fallback)` returns `fallback` of the value type. `exists` is Bool.
 
 ```
 Team::count = { players.length() }
@@ -258,10 +263,37 @@ Team::withScore = {n, s | scores.put(n, s) }
 
 Team::adaScore = { scores.get("Ada") }
 
-Team::fresh = { [:Team name [:Array/Player] [:Map/{String:Int}]] }
+Team::hasAda = { scores.exists("Ada") }
+
+Team::fresh = { [:Team name [:Array/Player] {String:Int}] }
 ```
 
 Plus `map` / `filter` / `fold` in §4. Indexing spelling is unset (`players.get(0)` vs `players.at(0)` vs something shorter).
+
+### Write paths (`[:Class | field = expr]`) — Done
+
+Positional `[:Ball x y dx dy rad]` still builds a new value from every field. A **with-construction** copies an existing object and writes only the named paths:
+
+```
+[:Rect | width = (width * 2)]
+[:Ball ball | x = nx, y = ny]
+[:Game | playArea.rect.width = 800]
+```
+
+- No source (`[:Rect | …]`) means `this`. The method’s class must be that class; otherwise name the source (`[:Ball ball | x = nx]`).
+- Dotted LHS paths rebuild ordinary objects along the path and leave sibling fields alone.
+- The form lowers to a full same-class construction, so `update` identity rules are unchanged: `$` / `>` slots that are not on the path stay the same reference; constructing the same identity class on a path still patches in place.
+- Methods only. Construction must still write the whole positional picture.
+
+```
+Time::update = { [:Time | t = (t + 1)] }
+
+Game::update = { [:Game | ball.x = (ball.x + ball.dx)] }
+
+Game::widen = { [:Game | playArea.rect.width = (playArea.rect.width * 2)] }
+```
+
+Unknown fields, a field plus a path under it (`playArea = …, playArea.rect.width = …`), or a path into an array or map fail fast. Do not auto-create missing structure. Deep nest: **`examples/writepaths.wcn`**. Live pair: **`live-examples/writepaths.wcn`** (`%cli-live`).
 
 ### 7. Target commands in a method — Done as expressions
 
@@ -284,18 +316,18 @@ Schema field names are often derived from types. Method arguments cannot use tha
 - a schema type (`Rect/bounds`, `Shape/s`) — required for field access and for `map` element types
 - an **external** type (`@Graphics/g`) — a host type not defined in Schema; Haxe assumes it exists in the namespace (OpenFL preamble imports `openfl.display.Graphics`)
 
-Return types may be annotated with `: Type`. Interface methods on a sum type are signatures with an empty body:
+Return types may be annotated with `-> Type` after the block. Interface methods on a sum type are signatures with an empty body:
 
 ```
-Shape::step : Shape = { Rect/bounds | }
-Shape::draw : Void = { @Graphics/g | }
+Shape::step = { Rect/bounds | } -> Shape
+Shape::draw = { @Graphics/g | } -> Void
 
-Circle::draw : Void = { @Graphics/g |
+Circle::draw = { @Graphics/g |
   g.beginFill(15316448).drawCircle(x, y, radius).endFill()
-}
+} -> Void
 ```
 
-Each implementer must match the interface (name, params, return). Target then calls through the interface (`s.draw(graphics)`) instead of `Std.isOfType` tests.
+Each implementer must match the interface (name, params, return). Target then calls through the interface (`s.draw(graphics)`) instead of `Std.isOfType` tests. A class on another page implements a **published** interface with `Pentagon : Shape = …` in Schema and matching methods (`examples/flyingB.wcn`).
 
 Methods are still **one expression** (optional `let`s before it). There is no statement list. Host APIs that look imperative (OpenFL `Graphics`) are written as a **single chained call**. OpenFL types those methods as `Void`, so codegen unrolls the chain onto the root receiver:
 
@@ -371,6 +403,7 @@ Each slice: an `examples/*.wcn` file, tests on Haxe strings, no Haxe compiler in
 4. **`if` / `else` as an expression, and `map` / `filter` / `fold` on arrays.** Done.
 5. **`update` rules.** Done. In-place rewrite of `this`, identity slots patch not replace, `$` notify with no args, no child percolation.
 6. **Array `concat` and index sugar.** `times`, `get`/`remove`, `head`/`tail`, and `substring` are done.
+6b. **Write paths.** Done. `[:Class | path = expr]` copies unspecified fields from `this` or a named source.
 7. **Target `%` expansion.** Done as expressions plus `%main` Haxe. Unknown `%name` fails. Methods are not auto-run.
 8. **Typed params, interface signatures, `@Type/name`.** Done. `shapes_openfl.wcn` is the example. Void host chains unroll in codegen.
 

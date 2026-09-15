@@ -5,6 +5,10 @@
 
 set -e  # Exit on any error
 
+# Run from this script's directory so `lein` finds project.clj.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
 echo "Building WCHNT Language Compiler..."
 
 # Check Leiningen version

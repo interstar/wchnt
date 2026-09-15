@@ -6,13 +6,18 @@ WCHNT (We CAN Have Nice Things) is a new object-oriented language for making cod
 
 WCHNT is based on the idea that we can express an entire assemblage of multiple interconnected classes at once in a single data-schema, using a Backus-Naur Format inspired grammar. Instead of defining classes one by one, we define the entire structure of our system in a declarative way. This gives us declarative rather than imperative data descriptions and construction. A single point where we can read and edit the shape of the assemblage of objects. 
 
-In fact "assemblage programming" turns the whole shape and ordering of an OO program inside-out. A WCHNT program is a literate markdown file with four core sections (plus optional **Import** and **Target Methods**). Each compile section is one code block demarcated with backtick fences.
+In fact "assemblage programming" turns the whole shape and ordering of an OO program inside-out. A WCHNT program is a literate markdown file whose compile sections are each one code block demarcated with backtick fences.
 
 The four core sections are:
 - Schema
 - Construction
 - Methods
 - Target
+
+Plus three optional sections:
+- **Import** (must come first)
+- **Public**
+- **Target Methods**
 
 ### Class relationships in the Schema
 
@@ -23,7 +28,7 @@ A simple example might be
 ```
 Game = PlayArea Ball Paddle/paddle1 Paddle/paddle2
 PlayArea = Rect
-Ball = Int/x Int/y Int/dx Int/dy Int/radius
+Ball = Int/x Int/y Int/dx Int/dy Int/rad
 Rect = Int/x Int/y Int/width Int/height
 Paddle = Rect
 ```
@@ -40,7 +45,7 @@ An ordinary component is an object of a general purpose class. Ie. a class which
 
 The instance variable representing the component gets, by default, the name of its class with lower-cased first letter. In other words inside the Game object, the PlayArea object is called playArea.
 
-However, it's possible to give an alternative name to a variable using the /altName This can be used anywhere, but MUST be used for disambiguation when there are two components of the same type. Eg. in our example, the Game has two GamePaddle objects, so they each need to be given unique names. The same is true throughout the schema for Ints.
+However, it's possible to give an alternative name to a variable using the /altName This can be used anywhere, but MUST be used for disambiguation when there are two components of the same type. Eg. in our example, the Game has two Paddle objects, so they each need to be given unique names. The same is true throughout the schema for Ints.
 
 #### Context Specific Component
 
@@ -78,9 +83,13 @@ class Engine {
 
 
 
+#### Delegate
+
+`+` marks an owned component whose fields and methods are promoted onto the parent. `Student = String/id +BasePerson` still constructs as `[:Student "s17" [:BasePerson "Ada" 36]]`. In Student methods, `name` is `basePerson.name`. Student is not a BasePerson for slot typing — use a sum if you need that. A method on BasePerson that returns a BasePerson must be written again on Student. See **`doc/schema.md`**.
+
 #### External 
 
-The second relationship is the "external". This uses the "@" sigil. 
+The next relationship is the "external". This uses the "@" sigil. 
 
 School = Address @Person/headteacher
 
@@ -89,15 +98,15 @@ In this case, we expect the Address is an ordinary component of the School. But 
 
 #### Reactive Dependencies
 
-The final relationship is reactive dependencies using an observable/subscriber pattern. The sigil here is $
+Reactive dependencies use an observable/subscriber pattern. The sigil here is $
 
 Take 
 
 Game = PlayArea Ball $Time
 
-In this context, while PlayArea and Ball are components of the Game, the Time is taken to be an external and changable value. It is visible anywhere within the Game object using the name time. 
+In this context, while PlayArea and Ball are components of the Game, the Time is taken to be an external and changeable value. It is visible anywhere within the Game object using the name time. 
 
-When a class is marked with the $ sigil, it becomes an "observable" class that maintains a list of subscribers. Like other classes in WCHNT, it only changes its value through its `update()` method. When the observable class updates itself, it automatically sends messages to all subscribers to call their own `update()` methods.
+When a slot is marked with the `$` sigil, its class becomes an "observable" class that maintains a list of subscribers. Like other classes in WCHNT, it only changes its value through its `update()` method. When the observable class updates itself, it automatically sends messages to all subscribers to call their own `update()` methods.
 
 This creates a reactive chain where changes in one object automatically propagate to dependent objects. `$` is live: factory subscribe, `update` rewrites `this` and notifies subscribers. Identity slots mutate in place — see **`doc/method.md` §5** and **`doc/schema.md`**. Examples: `examples/bounce_openfl_time.wcn`.
 
@@ -127,17 +136,17 @@ There are two standard collections, arrays (aka vectors, sequences, lists) and m
 
 In the schema these can be represented as
 
-Discipline = String/name @Person/teacher
-School = [Student]/students {String:Discipline}/disciplines
+Discipline = String/name Person/teacher
+School = [Person]/students {String:Discipline}/disciplines
 
-When compiled, the variable students will be an array of objects of class Student. While disciplines will be a map of strings to objects of class Discipline
+When compiled, the variable students will be an array of objects of class Person. While disciplines will be a map of strings to objects of class Discipline
 
 
 ### Constructions
 
-The next phase or section of a WCHNT program is the "contruction". Or we could say, the global construction.
+The next phase or section of a WCHNT program is the "construction". Or we could say, the global construction.
 
-A construction is a way to declare the initial values of an assemblage in one specific place. To make it visible and easy read and change. It's inspired by languages like Clojure which typically feature very plain, easy to read data-structure literals.
+A construction is a way to declare the initial values of an assemblage in one specific place. To make it visible and easy to read and change. It's inspired by languages like Clojure which typically feature very plain, easy to read data-structure literals.
 
 The full construction for the Game will look something like this
 
@@ -149,7 +158,7 @@ The full construction for the Game will look something like this
 
 Square brackets delimit objects. The first element is a label that indicates the class or type. The rest, the data values for the components, by position.
 
-In order to maximize readability in constructions, a) newlines are meaningless whitespace. b) labels which can be meaningfully infered from the context are optional.
+In order to maximize readability in constructions, a) newlines are meaningless whitespace. b) labels which can be meaningfully inferred from the context are optional.
 
 In other words, the Game construction could be as minimal as
 
@@ -170,48 +179,48 @@ For example
   [:Paddle [430 50 20 80]] ]
 
 
-In the target language, the construction section of the wchnt program compiles down to a big "factory" function that builds the entire assemblage.
+In the target language, the construction section of the WCHNT program compiles down to a big "factory" function that builds the entire assemblage.
 
 #### Collections
 
 Say we have 
 
 Person = String/name
-Discipline = String/name @Person/teacher
-School = [Student]/students {String:Discipline}/disciplines
+Discipline = String/name Person/teacher
+School = [Person]/students {String:Discipline}/disciplines
 
 A construction would look like
 
 [:School 
-  [:Array/Student
+  [:Array/Person
     [:Person "John Smith"]
     [:Person "Mary Doe"]] 
-  [:Map/{String:Discipline} 
-     "M1":[:Discipline "Maths 1":[:Person "Steve" ]],
-     "E3":[:Discipline "English 3" [:Person "Mike"] ]
-     ]  
+  {String:Discipline
+     "M1":[:Discipline "Maths 1" [:Person "Steve"]],
+     "E3":[:Discipline "English 3" [:Person "Mike"]]
+     }  
     ]
 
-As with the outermost class. The type labels of Arrays and Maps are NOT optional. The School construction could be reduced to 
+Like the outermost (root) class label, the type labels of Arrays and Maps are NOT optional. The School construction could be reduced to 
 
 [:School 
-  [:Array/Student
+  [:Array/Person
     ["John Smith"]
     ["Mary Doe"]] 
-  [:Map/{String:Discipline} 
-     "M1":["Maths 1":["Steve" ]],
-     "E3":["English 3":["Mike"]]
-     ]
+  {String:Discipline
+     "M1":["Maths 1" ["Steve"]],
+     "E3":["English 3" ["Mike"]]
+     }
     ]
 
-But no more. The other labels here are necessary.
+But no more. The other labels here can be inferred and dropped.
 
 #### Sum Types
 
 Sum types are also necessary in construction. Eg.
 
 Game = [Player]/players
-Player = Name Shape
+Player = String/name Shape
 Shape = Circle | Triangle
 Circle = Int/radius
 Triangle = Int/base Int/height
@@ -220,10 +229,10 @@ Construction looks like
 
 [:Game 
   [:Array/Player
-    ["John" [:Circle 5]
-    ["Alice" [:Triangle 4 8]]]]]
+    ["John" [:Circle 5]]
+    ["Alice" [:Triangle 4 8]]]]
 
-Note that class labales are not optional when the class can be one of several that instantiates the interface or sum-type.
+Note that class labels are not optional when the class can be one of several that instantiates the interface or sum-type.
 
 #### Multi-Statement Constructions
 
@@ -240,7 +249,7 @@ players = [:Array/Person ["John"...] ...].
 
 The name "players" is bound to an array of people once. It can not be updated. But can be referenced later in the construction.
 
-A single expression can get quite complex - it can include sub-expressions which are constructions, arithmetic and logic expressions, other method calls, and control structures like ifs and loops. These are all expressions themselves. Complex expressions that do a lot of work without the statement separator (full stop) are just single complex expressions rather than sequences of bindings.
+A single expression can get quite complex - it can include sub-expressions which are constructions, arithmetic and logic expressions, other method calls, and control structures like `if` and the collection combinators (`map`, `filter`, `fold`). These are all expressions themselves. Complex expressions that do a lot of work without the statement separator (full stop) are just single complex expressions rather than sequences of bindings.
 
 
 
@@ -248,7 +257,7 @@ A single expression can get quite complex - it can include sub-expressions which
 
 WCHNT is an OO language so behaviour is in the form of methods of classes which are invoked by sending messages to objects of those classes in a traditional way.
 
-The official section heading is **Methods**. (Informally we still say “reaction” for this expression language.) Mutation is handled through `update` constructions and identity slots, not a separate program phase.
+The official section heading is **Methods**. (Informally we still say "reaction" for this expression language.) Mutation is handled through `update` constructions and identity slots, not a separate program phase.
 
 In this section there is (almost) no mutation of objects. Methods are (almost) pure functions which return new data.
 
@@ -267,10 +276,10 @@ The area method of the Rect takes no arguments, but has access to the instance v
 Curly brackets delimit the code block in which we can put typical mathematical and logical expressions. And calls to other objects. But also constructions.
 
 Rect::doubleWidth = {
-   [:Rect x y (width * 2) height] 
+   [:Rect | width = (width * 2)]
 }
 
-This returns a new Rect object, double the width of the original. In fact, the construction section of the wchnt is nothing but a special global case of a code-block that delivers a construction. Constructions in methods follow the same rules as the construction section. Can include multi-statements and let bindings etc. Expressions are, in fact, available to use in the main construction.
+This returns a new Rect object, double the width of the original. `[:Rect | width = …]` is a write-path: unspecified fields are copied from `this`. The positional form `[:Rect x y (width * 2) height]` still works. In fact, the construction section of the WCHNT is nothing but a special global case of a code-block that delivers a construction. Constructions in methods follow the same rules as the construction section. Can include multi-statements and let bindings etc. Expressions are, in fact, available to use in the main construction.
 
 Calls on the current object are written `this.move()`. Bare `move()` is not allowed yet.
 
@@ -287,7 +296,9 @@ will evaluate to 43
 
 #### Blocks with arguments / lambdas
 
-A code block demarcated by { } is like a block in Smalltalk. It's a first class citizen of the language. And can take arguments, becoming a lambda expression. Arguments are names only (no types in v1). Schema often derives field names from types (`PlayArea` → `playArea`); method arguments cannot, so the names are always written.
+A code block demarcated by { } is like a block in Smalltalk. It's a first class citizen of the language. And can take arguments, becoming a lambda expression. Schema often derives field names from types (`PlayArea` → `playArea`); method arguments cannot, so the names are always written.
+
+Arguments may be a bare name (`y`), a schema type (`Rect/bounds`, `Shape/s`), or an external type (`@Graphics/g`). Return types may be annotated after the block (`-> Shape`, `-> Void`). Platform-coupled methods (those using `@Type/name` parameters) belong in the optional **Target Methods** section rather than **Methods**.
 
 {x | x * 2}
 
@@ -302,6 +313,8 @@ Booster::boost = {y | (x * y)}
 
 The boost method takes the argument y and multiplies it by the Booster's x field.
 
+Booster::widen = { Int/by | [:Booster (x + by)] }
+
 #### Control structures
 
 Conditionals are C-like `if`, and they are expressions. Both branches are required. The compiler emits a Haxe `if` expression.
@@ -310,15 +323,18 @@ Conditionals are C-like `if`, and they are expressions. Both branches are requir
 if (dx < 0) { -dx } else { dx }
 ```
 
-Collections use combinators: `map`, `filter`, `fold`. The block is a delayed function.
+Collections use combinators: `map`, `filter`, `fold`. The block is a delayed function. On a map the block sees key and value.
 
 ```
 players.map({ p | p.name })
 players.filter({ p | p.score > 0 })
 players.fold(0, { acc, p | acc + p.score })
+scores.map({ k, v | v + 1 })
+scores.filter({ k, v | v > 0 })
+scores.fold(0, { acc, k, v | acc + v })
 ```
 
-Strings have `length()`, `concat`, and `substring(start, end)`. Arrays have `cons` (prepend), `head`, and `tail`. Maps have `put`, `get`, and `remove`. Map writes copy; Target can later choose a persistent or mutating backing store. You can construct arrays and maps in a method the same way as in Construction, including empty ones: `[:Array/Player]`, `[:Map/{String:Int}]`.
+Strings have `length()`, `concat`, `str`, `substring(start, end)`, and `tpl` (`{name}` holes from `{String:String}`). Arrays have `cons` (prepend), `head`, and `tail`. Maps have `put`, `get`, `exists`, and `remove`. `get(key, fallback)` uses a fallback of the value type when the key is missing. Map writes copy; Target can later choose a persistent or mutating backing store. You can construct arrays and maps in a method the same way as in Construction, including empty ones: `[:Array/Player]`, `{String:Int}`.
 
 Ints have `times`: `3.times({ i | i * 2 })` returns an array. The block takes the index from 0.
 
@@ -326,11 +342,21 @@ Ints have `times`: `3.times({ i | i * 2 })` returns an array. The block takes th
 
 `update` is the one mutation of object identity. In source it looks like a construction of the same class, listing every field. Codegen rewrites `this` in place, then notifies subscribers if this object is observable, then returns `this`. Ordinary methods stay immutable (`return new Ball(...)`).
 
-`update` takes no arguments. `$Time` makes Time observable and Game a subscriber: when Time finishes `update`, it calls `Game.update()` with no arguments. Naming `time` in Game’s update picture is a read, not another tick.
+`update` takes no arguments. `$Time` makes Time observable and Game a subscriber: when Time finishes `update`, it calls `Game.update()` with no arguments. Naming `time` in Game's update picture is a read, not another tick.
 
 Children do not update automatically. A parent ticks a child only by writing `ball.update()` (or by constructing a new child). Give a class its own `$` if you want sideways notify instead.
 
-The first Target is a dumb loop that ticks the root’s `$` component(s). See `examples/bounce_loop.wcn`.
+The first Target is a dumb loop that ticks the root's `$` component(s). See `examples/bounce_loop.wcn`. For the schema
+
+```
+Game = PlayArea Ball $Time
+PlayArea = Rect
+Rect = Int/x Int/y Int/width Int/height
+Ball = Int/x Int/y Int/dx Int/dy Int/rad
+Time = Int/t
+```
+
+the update methods look like:
 
 ```
 Time::update = { [:Time (t + 1)] }
@@ -354,11 +380,29 @@ Hypothetically, in future, we may compile to a low level language like C. And th
 
 A more near term use of the Target section would be something like this. We may want to trace what's happening in our program. But in different situations or platforms, this might involve printing to stdout. Or logging to a particular logging infrastructure etc.
 
-We include the idea of Target Commands which are embedded in the construction and reaction language, but whose real meaning is confirmed in the target. These start with a percent sign.
+We include the idea of Target Commands which are embedded in the construction and methods language, but whose real meaning is confirmed in the target. These start with a percent sign.
 
 So in a method we might write
 
 %trace(x)
 
 The Target section binds `%trace` to a Haxe function that returns `x`, and `%main` is the Haxe entry (the loop, the dumps). Methods are not auto-run.
- 
+
+### Import and Public (between assemblages)
+
+Within one assemblage, classes are transparent to each other. Between assemblages, there is an opaque membrane: a page can only reuse what another page publishes. An assemblage with a **Public** section lists the names it exposes; another page imports it with an **Import** section:
+
+```
+[[flyingA]] as flying
+```
+
+Public contains static method definitions and bare interface names:
+
+```
+make = { ... }
+addShape = { ... }
+update = { ... }
+Shape
+```
+
+The importer sees only those names. Concrete classes stay hidden; a published interface (`Shape`) lets the importer implement it with `Pentagon : Shape = Int/x Int/y Int/side Int/dx`. Imported handles are stored in `@` slots and used like `flying.make().addShape([:Pentagon 640 90 36 4])`. See `doc/import.md` and `examples/flyingA.wcn` / `examples/flyingB.wcn`.

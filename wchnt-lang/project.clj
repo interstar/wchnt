@@ -30,9 +30,19 @@
                                           :compiler {:output-to "live/public/js/tests.js"
                                                      :main live.test-runner
                                                      :optimizations :simple
-                                                     :pretty-print true}}]}}
+                                                     :pretty-print true}}
+                                         {:id "live-advanced"
+                                          :source-paths ["src" "live/src"]
+                                          :compiler {:output-to "live/public/js/main.js"
+                                                     :main live.core
+                                                     :optimizations :advanced
+                                                     :pretty-print false
+                                                     :infer-externs true
+                                                     :externs ["externs.js"]}}]}}
              :uberjar {:aot :all}}
   :aliases {"live" ["do" ["run" "-m" "wchnt-lang.prepare-live"]
                     ["with-profile" "+live" "cljsbuild" "once" "live"]]
+             "live-advanced" ["do" ["run" "-m" "wchnt-lang.prepare-live"]
+                                ["with-profile" "+live" "cljsbuild" "once" "live-advanced"]]
              "live-test" ["do" ["run" "-m" "wchnt-lang.prepare-live"]
                           ["with-profile" "+live" "cljsbuild" "once" "live-tests"]]})

@@ -4,7 +4,9 @@ The Schema section declares **classes**, **types**, and **relationships** betwee
 
 This file is the working spec for Schema: design intent, what parses, what codegen does today, and what is specified but not yet implemented.
 
-**Background:** The ideas behind sigils and component types are developed at length in [`wchnt_dsl_relationships_and_reactive.md`](../../wchnt_dsl_relationships_and_reactive.md) (repo root). Philosophy and motivation also live in `intro.md`. Syntax primer: `language.md`. Construction: `construction_phase.md`. Methods (including `update` and interface signatures): **`method.md`**.
+**Current surface (2026-09):** five component sigils (`:` `@` `$` `+` and ordinary), mailbox `>` on the class name, sum types plus `Class : Interface =` for a **published** interface, and `## Import` / `## Public` for opaque reuse. `+` is delegation (has-a plus promotion), not inheritance. Read `Student = String/id +BasePerson` as: a Student is an id plus a BasePerson.
+
+**Background:** The ideas behind sigils and component types are developed at length in [`wchnt_dsl_relationships_and_reactive.md`](../../wchnt_dsl_relationships_and_reactive.md) (repo root). Philosophy and motivation also live in `intro.md`. Syntax primer: `language.md`. Construction: `construction_phase.md`. Methods (including `update` and interface signatures): **`method.md`**. Inter-page membrane: **`import.md`**.
 
 ---
 
@@ -51,12 +53,12 @@ A `.wcn` file is markdown prose plus optional compile sections. The compiler cla
 | Kind | Compile sections present | Result |
 |------|--------------------------|--------|
 | **Documentation** | none (prose only, or prose + ignored fences) | success, no IR |
-| **Library** | Schema (+ optional Methods / Target Methods), no Construction | Haxe classes, no `Main` / factory |
-| **Program** | Schema + Construction (+ Target for runnable hosts) | full compile |
+| **Library** | Schema (+ optional Methods / Public / Target Methods), no Construction | Haxe classes, no `Main` / factory |
+| **Program** | Schema + Construction (+ optional Import / Public / Target) | full compile |
 
 Prose headings like `## Notes` are ignored. Fenced blocks outside reserved sections are ignored.
 
-Optional **`## Import`** (must come first) lists sibling page names (plain or `[[Name]]`). The compiler merges imported Schema + Methods + Target Methods; Construction and Target stay on the current page. See `plan.md`.
+Optional **`## Import`** (must come first) lists sibling page names (plain or `[[Name]]`, optional `as alias`). Without **`## Public`** on the imported page, import fails. Importers see only Public methods and opaque handle slots — not Schema internals. See [Import, Public, and foreign implementers](#import-public-and-foreign-implementers) and **`doc/import.md`**.
 
 Wiki **`[[PageName]]`** links in prose are for navigation only (live browser); they do not import classes.
 
@@ -71,6 +73,8 @@ Game = PlayArea Ball Paddle/paddle1 Paddle/paddle2
 ```
 
 Each element is a **type** plus optional **field name** (`/altName`). Default field name: lower-case first letter of the type (`PlayArea` → `playArea`).
+
+A composition may also **implement** an interface: `Pentagon : Shape = Int/x …`. On the page that defines the sum, variants are listed with `|`. On an **importing** page, `: Shape` attaches a new local class to a **published** interface. See [Implementing a published interface](#implementing-a-published-interface).
 
 **Generated Haxe (sketch):**
 
@@ -105,7 +109,7 @@ App = {String:Int}/scores
 Config = {BuildType:String}/labels
 ```
 
-Schema: `{KeyType:ValType}` → Haxe `Map<KeyType, ValType>`. String **enums** (below) are often used as map keys.
+Schema: `{KeyType:ValType}` → Haxe `Map<KeyType, ValType>`. Construction: `{KeyType:ValType …}`. String **enums** (below) are often used as map keys.
 
 ### Sum types (disjunctions)
 
@@ -117,6 +121,7 @@ Circle = Int/x Int/y Int/radius Int/dx
 - One line, all disjunction — do not mix `|` with ordinary composition on the same line.
 - Codegen: Haxe `interface Shape`, concrete classes implement it.
 - **Interface methods** (callable through a `Shape` reference) are declared in **Methods**, not Schema. See **`method.md`**, `examples/shapes_openfl.wcn`.
+- An importer may implement a **published** interface with `Pentagon : Shape = Int/x …`. Local sums still list variants with `|`. See [Implementing a published interface](#implementing-a-published-interface) and `examples/flyingA.wcn` / `examples/flyingB.wcn`.
 
 ### String enums
 
@@ -132,7 +137,61 @@ Grammar allows `_` (internal `_Empty`) for future slot/tree shapes. Unused in v1
 
 ---
 
-## Component relationships: three dimensions, four sigils
+## Import, Public, and foreign implementers
+
+Reuse **between** assemblages is a membrane. Inside one page, classes are transparent to each other. Across pages, nothing is visible unless the imported page publishes it.
+
+### `## Import`
+
+Must be the first compile section. Each line is a sibling page, optionally aliased:
+
+```
+[[importA]] as realm
+[[flyingA]] as flying
+```
+
+`[[Name]]` or a bare page name both work. The alias (`realm`, `flying`) is a **module**, not a class. Construction and Methods may call `realm.make(...)` for a Public introducer that does not use `this`. Nested Import is forbidden. Wiki `[[links]]` in prose still do not import.
+
+The imported page **must** have `## Public`. Otherwise compile fails.
+
+### `## Public`
+
+A list of **references**, not bodies. Bodies stay in Methods / Target Methods.
+
+```
+make = { ... }
+```
+
+or, when publishing a sum type for foreign implementers:
+
+```
+make = { ... }
+Shape
+```
+
+- A Public method must already exist in Methods (or Target Methods).
+- A bare **interface name** (`Shape`) publishes that sum so another page may implement it.
+- The class itself is **not** published. The importer cannot write `PlayArea = Rect`, `[:Rect 0 0 400 400]`, or `rect.width`.
+- A Public receiver (`Quest`, `Game`) is an **opaque handle** in the importer. Store it only as an `@` slot (`Chronicle = String/scribe @Quest`). Call only Public methods on it.
+- A construction always provides the implicit `factory` operation. Additional Public methods are static operations on the generated assemblage class.
+
+Examples: `examples/importA.wcn` + `examples/importB.wcn` (handle + Public methods). `examples/flyingA.wcn` + `examples/flyingB.wcn` (published `Shape`).
+
+### Implementing a published interface
+
+On the **importing** page, a composition line may name a published interface after the class:
+
+```
+Pentagon : Shape = Int/x Int/y Int/side Int/dx
+```
+
+That is **not** inheritance and **not** delegation. It means: this local class implements the imported sum. Methods on the importer must match the interface signatures (`Pentagon::step`, and `Pentagon::draw` in Target Methods if `Shape::draw` is published that way). Local sums still list their own variants with `|` on the defining page.
+
+Construction may pass a local implementer into a Public method: `flying.make().addShape([:Pentagon 640 90 36 4])`.
+
+---
+
+## Component relationships: three dimensions, five sigils
 
 Relationships between classes were originally analysed on **three axes** (see relationships doc):
 
@@ -142,7 +201,7 @@ Relationships between classes were originally analysed on **three axes** (see re
 | **Context-specific vs generic** | Must the child know *this* parent assemblage? |
 | **Reactive vs non-reactive** | Should changes propagate automatically to dependents? |
 
-Not all 2³ combinations are exposed in the language. They **collapse** to four **sigils** on composition lines:
+Not all 2³ combinations are exposed in the language. They **collapse** to five **sigils** on composition lines:
 
 | Sigil | Name | IR tag | Collapsed idea |
 |-------|------|--------|----------------|
@@ -150,8 +209,9 @@ Not all 2³ combinations are exposed in the language. They **collapse** to four 
 | `:` | **context-specific** | `:context-specific` | **Component** tied to parent; child sees assemblage |
 | `@` | **external** | `:external` | Generic **associate** — reference from outside the assemblage |
 | `$` | **reactive** | `:reactive` | Observable/subscriber slot on the parent |
+| `+` | **delegate** | `:delegate` | Owned component whose fields and methods are promoted |
 
-Sigils apply to **single schema class types** (`:Engine`, `$Time`, `@Db`). They are not combined with `[Array]` or `{Map}` in the current grammar.
+Sigils apply to **single schema class types** (`:Engine`, `$Time`, `@Db`, `+BasePerson`). They are not combined with `[Array]` or `{Map}` in the current grammar.
 
 **Intentionally omitted:** *context-specific association* — if something is not owned by the parent, it should not need a parent back-reference (`theCar`-style). That case is `@`, not `:`.
 
@@ -180,6 +240,39 @@ Game = PlayArea Ball
 **Codegen today:** Public field + constructor parameter. **Working.**
 
 **Examples:** `construction_simple.wcn`, `bounce_openfl.wcn`, `shapes_openfl.wcn`.
+
+---
+
+### Delegate components (`+`)
+
+**Purpose:** The child is an ordinary owned component *and* the parent promotes its fields and methods. Read the line as addition: a Student is an **id plus a BasePerson**. Construction still nests the inner object, in schema order. The parent is **not** a subtype of the delegate class — a `BasePerson` slot does not accept a `Student`. If you want a shared type, write an explicit sum.
+
+```wchnt
+Person = BasePerson | Student
+BasePerson = String/name Int/age
+Student = String/id +BasePerson
+```
+
+```
+[:Student "s17" [:BasePerson "Ada" 36]]
+```
+
+`+` is a Schema sigil only (same split as `$`). Methods still use `+` for integer addition. Write `+BasePerson` with no space after the sigil, like `:Engine` and `$Time`.
+
+**Promotion (Methods):** inside `Student` methods, `name` and `age` mean `basePerson.name` and `basePerson.age`. `this.greet()` is `BasePerson::greet` unless `Student` defines `greet`. Write-paths follow the same names: `[:Student | name = n]` patches the inner person.
+
+**Not a subtype.** `School = [BasePerson]/people` rejects a Student. List Student on a sum (`Person = BasePerson | Student`) if a slot should hold either.
+
+**Compile errors:**
+
+- A field on Student that matches a promoted field (`String/name` while `BasePerson` has `name`).
+- A method on Student whose name matches a promoted *field*.
+- Two delegates that share a field name or a method name.
+- A method on the delegate whose return type is exactly that delegate class, if the wrapper does not define the same method (`BasePerson::rename -> BasePerson` requires `Student::rename`). Collections (`-> [BasePerson]`) and interface types (`-> Person`) do not force an override.
+
+Method override is allowed (`Student::greet` may hide `BasePerson::greet`). The must-override check is immediate: `GradStudent = +Student` looks at `Student` methods, not through to `BasePerson`.
+
+**Codegen today:** Composition. Methods IR rewrites promoted names to paths through the slot. Haxe also emits getters and forwarding methods so Target can use `student.name` and `student.greet()`. No `extends`. **Working** — see `examples/test_delegate.wcn`.
 
 ---
 
@@ -275,9 +368,11 @@ Circle = Int/x Int/y Int/radius Int/dx @Graphics
 
 Putting `@Graphics` on `Game` as a schema field is **not** how the working example does it.
 
+**Construction of `@` slots:** the slot is never born in this `let`. It must be either a **call** (`flying.make()`) or a **free name**. A free name is a factory parameter: first appearance in the Construction AST (lets, then the final expression; arguments left to right) becomes an argument of `RootAssemblage.factory(...)`. The same name is one parameter; two types for one name fail. Constructing `[:Pen …]` in an `@` slot fails. Do not use `_`.
+
 **Status today:**
 
-- **Schema `@` fields** (`View = @Model`): parsed, stored as `:external` in IR, **no distinct construction/codegen** — they still behave like ordinary fields.
+- **Schema `@` fields** (`View = @Model`): parsed, stored as `:external` in IR. A free name in Construction becomes a factory argument; a call fills an imported handle. See `examples/factory_args.wcn` (`@Pen`) and `examples/maths.wcn` (`@WCHNTMaths`).
 - **Methods `@Type/name`**: working. Registers the type as external, emits Haxe of that name, passes host method calls through. OpenFL `Void` chains unroll to statements. See **`method.md`** and `examples/shapes_openfl.wcn`.
 
 **Examples:** Schema `@` story in `intro.md`; compiling Methods `@` in `examples/shapes_openfl.wcn`.
@@ -380,8 +475,9 @@ Haxe codegen emits field assignments on `this.slot.field`; the live interpreter 
 ## What Schema does *not* include
 
 - **Method bodies and interface signatures** — `## Methods` (**`method.md`**).
+- **Which methods and interfaces cross the page membrane** — `## Public` (this file and **`import.md`**).
 - **Initial values and wiring order** — `## Construction`.
-- **Platform loops, imports, `%init`** — `## Target` (`target.md`).
+- **Platform loops, host imports, `%init`** — `## Target` (`target.md`).
 
 Schema may **name** extern types (future `@` / extern story); **implementing** platform APIs remains Target’s job.
 
@@ -395,7 +491,7 @@ Schema text → schema grammar → schema IR → Haxe classes / interfaces / enu
 
 Key IR (`ast_to_ir.cljc`, `schema.cljc`):
 
-- `:relationship` per component — `:ordinary`, `:context-specific`, `:external`, `:reactive`
+- `:relationship` per component — `:ordinary`, `:context-specific`, `:external`, `:reactive`, `:delegate`
 - `:interfaces`, `:interface-implementers` — sum types
 - `:observable-classes`, `:subscriber-classes` — from `$` slots
 - `:mailbox-classes` — from `>Name` definees
@@ -408,13 +504,16 @@ Key IR (`ast_to_ir.cljc`, `schema.cljc`):
 | Topic | Example |
 |-------|---------|
 | Ordinary | `construction_simple.wcn`, `shapes_openfl.wcn` |
+| `+` delegate | `test_delegate.wcn` |
 | `:context` | `test_sigil.wcn`, `test_context.wcn` |
 | `$` reactive | `test_reactive.wcn`, `bounce_openfl_time.wcn`, `shapes_openfl.wcn` |
 | `>` mailbox | `square_openfl.wcn`, `square_canvas.wcn` |
 | Sum types + interface methods | `shapes_openfl.wcn`, `test.wcn` |
 | Arrays / maps / enums | `construction_arrays.wcn`, `test_dict.wcn` |
-| `@` external (schema field) | *(specified; IR only — no distinct codegen)* |
+| `@` external (schema field) | `factory_args.wcn`, `maths.wcn` / live `factory_args`, `maths` |
 | `@` external (method param) | `shapes_openfl.wcn` |
+| `@` handle + `## Import` / `## Public` | `importA.wcn` + `importB.wcn` |
+| Published interface + `Class : Shape =` | `flyingA.wcn` + `flyingB.wcn` |
 
 ---
 
@@ -424,11 +523,14 @@ Key IR (`ast_to_ir.cljc`, `schema.cljc`):
 |---------|--------|
 | Composition, primitives, arrays, maps, enums, sum types | **Working** |
 | Ordinary components | **Working** |
+| `+` — delegate; field/method promotion; must-override | **Working** (`test_delegate.wcn`) |
 | `:context` — `theParent`, `setContext` | **Working** (factory calls `setContext` on first build) |
 | `$` — subscribe / notify / `update` contract | **Working** |
 | `$` / `>` — identity slots patch in place in `update` | **Working** (Haxe + interpreter) |
 | `>` — mailbox class; Target `inject` then `update` | **Working** (`square_openfl.wcn`, `square_canvas.wcn`) |
-| `@` — schema field extrinsic semantics | **Specified; IR only** |
+| `## Import` / `## Public` — opaque handles, published interfaces | **Working** (`importA.wcn` / `importB.wcn`, `flyingA.wcn` / `flyingB.wcn`) |
+| `Class : Interface =` — implement a published sum | **Working** (`flyingB.wcn`) |
+| `@` — schema field factory parameter or import call | **Working** (`factory_args.wcn`; not `_`, not in-place construction) |
 | `@Type/name` on Methods params | **Working** (`shapes_openfl.wcn`) |
 | Extern types without local class definition | **Working** as Methods `@` params; not as Schema-only names |
 | Platform injection via `@` | **Working** as a method argument from Target, not a stored field |

@@ -12,6 +12,7 @@ echo
 
 # Get the directory where this script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
 EXAMPLES_DIR="$SCRIPT_DIR/examples"
 
 # Check if examples directory exists
@@ -42,10 +43,10 @@ for file in $WCN_FILES; do
     CURRENT=$((CURRENT + 1))
     filename=$(basename "$file")
 
-    if grep -qE '^%openfl[[:space:]]*$|^%canvas[[:space:]]*$' "$file"; then
+    if grep -qE '^%openfl[[:space:]]*$|^%canvas[[:space:]]*$|^%cli[[:space:]]*$|^%cli-live[[:space:]]*$' "$file"; then
         echo "=========================================="
-        echo "[$CURRENT/$TOTAL_FILES] Skipping windowed host: $filename"
-        echo "OpenFL: ./go.sh $file   Canvas: live interpreter (doc/live.md)"
+        echo "[$CURRENT/$TOTAL_FILES] Skipping interactive/windowed host: $filename"
+        echo "OpenFL: ./go.sh $file   Canvas: live interpreter (doc/live.md)   CLI: ./go.sh $file (interactive)"
         echo "=========================================="
         echo
         continue

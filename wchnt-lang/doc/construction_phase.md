@@ -124,7 +124,7 @@ Then we have to write something like
 
 [:Game 
   [:Array/Ball [:Ball 10 10 1 1 5] [:Ball 50 50 1 -1 5] [:Ball 100 100 -1 -1 5]]
-  [:Map/{int:Direction} {38:Up, 40:Down, 37:Left, 39:Right}]
+  {Int:Direction 38:Up, 40:Down, 37:Left, 39:Right}
 ] 
 
 

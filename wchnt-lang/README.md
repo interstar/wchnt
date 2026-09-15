@@ -11,9 +11,9 @@ Create a file called `game.wcn` with this content:
 ```wchnt
 Game = PlayArea Ball Paddle/paddle1 Paddle/paddle2
 PlayArea = Rect
-Ball = int/x int/y int/dx int/dy int/rad
-Paddle = int/x int/y
-Rect = int/x int/y int/width int/height
+Ball = Int/x Int/y Int/dx Int/dy Int/rad
+Paddle = Int/x Int/y
+Rect = Int/x Int/y Int/width Int/height
 ```
 
 Then compile it:
@@ -110,8 +110,8 @@ Run these from this directory (`wchnt-lang/`). Prerequisites: `lein`, `haxe`, `n
 | `./rebuild_all.sh` | Rebuild everything: JVM compiler (via `build.sh`), live bundles, and `website/_site/`. |
 | `lein test` | Run the Clojure unit test suite. |
 | `./run_examples.sh` | Compile **every** `examples/*.wcn` to Haxe and print the output. WCHNT → Haxe only; no JS compile or execution. Prints ✓/✗ per file. |
-| `./go.sh <file.wcn>` | Full pipeline for **one** file: WCHNT → Haxe → JS → `node`. `%openfl` files instead write `project.xml` and launch `lime`. |
-| `./go_all_examples.sh` | Full pipeline for every **terminal** example (skips `%openfl` and `%canvas`). |
+| `./go.sh <file.wcn>` | Full pipeline for **one** file: WCHNT → Haxe → JS → `node`. `%cli` compiles to neko and reads stdin. `%openfl` files write `project.xml` and launch `lime`. |
+| `./go_all_examples.sh` | Full pipeline for every **terminal** example (skips `%openfl`, `%canvas`, `%cli`, `%cli-live`). |
 
 ### Running examples
 
@@ -123,7 +123,7 @@ lein test                            # unit tests
 ./go.sh examples/shapes_openfl.wcn   # one OpenFL window (needs lime + openfl)
 ```
 
-`go_all_examples.sh` skips `%openfl` (use `./go.sh` for those) and `%canvas` (browser-only). Windowed: `bounce_openfl.wcn`, `shapes_openfl.wcn`, `square_openfl.wcn`, `pollution_openfl.wcn`, `pong_openfl.wcn`. Live canvas pairs in `live-examples/`: bounce, square, pollution, pong, shapes.
+`go_all_examples.sh` skips `%openfl` (use `./go.sh` for those), `%cli` (interactive stdin), and `%canvas` / `%cli-live` (browser-only). Windowed: `bounce_openfl.wcn`, `shapes_openfl.wcn`, `square_openfl.wcn`, `pollution_openfl.wcn`, `pong_openfl.wcn`. Live pairs in `live-examples/`: bounce, square, pollution, pong, shapes, adventure.
 
 **Generated artifacts:** `go.sh` and `go_all_examples.sh` write `Main.hx` and `<name>.js` into the repo root. On success these are deleted automatically; on failure they are left in place for debugging (the WCHNT compile error ends up in `Main.hx`).
 
@@ -135,10 +135,12 @@ lein live-test   # copy examples/seed, rebuild live/public/js/tests.js
 ```
 
 Both aliases first run `wchnt-lang.prepare-live`, which copies `live-examples/*.wcn` →
-`live/public/test-examples/` (loaded by `tests.html`) and `seed-pages/*` →
-`live/public/seed/` (fetched to seed the wiki on first visit; never overwrites user data).
+`live/public/test-examples/` (loaded by `tests.html`) and composes `live/public/seed/`
+from `live-examples/seed-map.txt` via `seed-from-live.sh` (fetched to seed
+the wiki on first visit; never overwrites user data). The live page reads
+`seed/index.txt`, so adding a seed page does not require a cljs rebuild.
 
-Then serve `live/public/` (e.g. `cd live/public && python3 -m http.server 8080`) and open `index.html` (or `tests.html` for the browser test runner). CodeMirror + 800×600 canvas; default buffer is `examples/bounce_canvas.wcn`. Static HTML + JS — no Node. Watch mode: `lein with-profile +live cljsbuild auto`. Details: [live/README.md](live/README.md), [doc/live.md](doc/live.md).
+Then serve `live/public/` (e.g. `cd live/public && python3 -m http.server 8080`) and open `index.html` (or `tests.html` for the browser test runner). The same `live/public/` tree is the **PWA** (installable on https/localhost; see [doc/pwa.md](doc/pwa.md)) and the **Electron** app (`cd live/electron && npm install && npm start`). CodeMirror + canvas; static HTML + JS. Watch mode: `lein with-profile +live cljsbuild auto`. Details: [live/README.md](live/README.md), [doc/live.md](doc/live.md).
 
 ### Rebuild everything
 
@@ -171,7 +173,7 @@ public class Example {
         WchntAPI api = new WchntAPI();
         
         // Compile WCHNT to Haxe
-        String wchntSource = "Game = PlayArea Ball\nPlayArea = Rect\nRect = int/x int/y int/width int/height";
+        String wchntSource = "Game = PlayArea Ball\nPlayArea = Rect\nRect = Int/x Int/y Int/width Int/height";
         List<String> haxeClasses = api.compileToHaxe(wchntSource);
         
         for (String haxeClass : haxeClasses) {

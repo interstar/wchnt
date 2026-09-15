@@ -1,198 +1,462 @@
 # WCHNT Language Guide
 
-This guide covers the complete syntax and features of the WCHNT language. WCHNT uses a simple syntax inspired by Backus-Naur Format and Haskell types to define object assemblages.
+WCHNT (We CAN Have Nice Things) is an object-oriented language organised around
+**assemblages**: a group of tightly-coupled classes whose structure and
+relationships are declared together in one place. Instead of defining classes
+one by one and wiring them in imperative code, you write one declarative map of
+the object network.
 
-## Basic Syntax
+This guide is the up-to-date summary of the language. The precise working specs
+are `doc/schema.md`, `doc/method.md`, `doc/target.md`, and `doc/import.md`; the
+runnable examples are in `examples/`. If they disagree, the compiler and the
+examples win.
 
-To start with, a WCHNT source file is actually embedded in a Markdown file. This is a "literate programming" 
+---
 
-Each line in WCHNT defines a class and its components:
+## The file format
 
-```
-ClassName = Component1 Component2/altName Component3
-```
+A WCHNT program is a **markdown file** (`.wcn`). Code lives in fenced code
+blocks under reserved `##` headings. Prose, hyperlinks, and unrelated fences
+are ignored. This is literate programming: the document is the program.
 
-### Syntax Rules
+The sections, in order:
 
-- **ClassName**: The name of the class to generate (must start with uppercase letter)
-- **Component1**: A component of type `Component1` (default field name: `component1`)
-- **Component2/altName**: A component of type `Component2` with custom field name `altName`
-- Multiple components are separated by spaces
-- Each line must end without a semicolon
+| Section | Required | Purpose |
+|---------|----------|---------|
+| `## Import` | optional, must be first | bind sibling pages by their Public surface |
+| `## Schema` | yes (for code) | declare classes, types, and relationships |
+| `## Construction` | for programs | build the initial object graph |
+| `## Methods` | optional | pure-ish behaviour as expressions |
+| `## Public` | optional | list of methods and interfaces other pages may use |
+| `## Target Methods` | optional | methods taking platform types (`@Type/name`) |
+| `## Target` | for programs | name the host and its entry points |
 
-## Type System
+Each section appears at most once. A page may be:
 
-### Basic Types
+- **documentation** — no compile sections; compiles to nothing,
+- **library** — Schema (+ Methods / Public), no Construction; emits Haxe classes
+  but no factory,
+- **program** — Schema + Construction (+ optional Import / Public / Target).
 
-WCHNT assumes any type which is not explicitly declared is available from the underlying platform.
+Wiki `[[PageName]]` links in prose are navigation only — they do not import
+classes. Class reuse is `## Import`. The class name `Main` is reserved (the
+compiler generates `class Main` as the program entry).
 
-```wchnt
-Person = String/name Int/age Bool/isActive Float/height
-```
+---
 
-**Primitive types from Haxe :**
-- `String` - Text strings
-- `Int` - Integer numbers
-- `Float` - Decimal numbers
-- `Bool` - Boolean values (true/false)
+## Schema
 
-### Array Types
+The Schema is the heart of assemblage programming: one flat map of the object
+network. Each line defines a class, an interface, or an enum.
 
-Use square brackets `[Type]` to define arrays:
-
-```wchnt
-Person = String/name [Address]/addresses
-Address = String/street String/city String/zipCode
-```
-
-This creates a `Person` class with a `name` field and an `addresses` field that is an array of `Address` objects.
-
-### Interface Disjunctions (Unions)
-
-Use the pipe operator `|` to define interface relationships. **Important**: A line must be either all composition OR all disjunction - you cannot mix them.
-
-```wchnt
-Shape = Triangle | Circle
-Triangle = Int/base Int/height
-Circle = Int/radius
-```
-
-This creates a `Shape` interface that can be either a `Triangle` or a `Circle`.
-
-## Examples
-
-### Basic Game Structure
+### Composition
 
 ```wchnt
 Game = PlayArea Ball Paddle/paddle1 Paddle/paddle2
 PlayArea = Rect
-Ball = Int/x Int/y Int/dx Int/dy Int/rad
-Paddle = Int/x Int/y
 Rect = Int/x Int/y Int/width Int/height
 ```
 
-**Generated classes:**
-- `Game` with fields: `playArea`, `ball`, `paddle1`, `paddle2`
-- `PlayArea` with field: `rect`
-- `Ball` with fields: `x`, `y`, `dx`, `dy`, `rad`
-- `Paddle` with fields: `x`, `y`
-- `Rect` with fields: `x`, `y`, `width`, `height`
+- `PlayArea Ball` are **components** (instance variables) of `Game`.
+- The default field name is the type name with a lower-cased first letter:
+  `PlayArea` → `playArea`.
+- `/name` overrides the field name, and is **required** when a class has two
+  components of the same type (the two `Paddle`s).
+- `Int`, `Float`, `String`, `Bool` are **primitives** supplied by the host
+  platform. Any type not defined in the Schema is assumed to come from the
+  platform.
 
-### Person with Addresses
+### Collections
 
 ```wchnt
-Person = String/name [Address]/addresses
-Address = String/street String/city String/zipCode
+Team = String/name [Player]/players
+School = {String:Discipline}/disciplines
 ```
 
-**Generated classes:**
-- `Person` with fields: `name` (String), `addresses` (Array<Address>)
-- `Address` with fields: `street`, `city`, `zipCode`
+- `[Player]` is an array of players → Haxe `Array<Player>`.
+- `{String:Discipline}` is a map keyed by string → Haxe `Map<String, Discipline>`.
+- Arrays and maps need an **explicit** field name — there is no sensible
+  default derived from `Array<Player>`.
 
-### Shape Hierarchy
+### Sum types (interfaces)
 
 ```wchnt
-Shape = Triangle | Circle
-Triangle = Int/base Int/height
+Shape = Circle | Triangle
 Circle = Int/radius
+Triangle = Int/base Int/height
 ```
 
-**Generated classes:**
-- `Shape` Interface
-- `Triangle` implementing `Shape` with fields: `base`, `height`
-- `Circle` implementing `Shape` with field: `radius`
+A line that is all `|` defines an **interface** (`Shape`) implemented by the
+classes on the right. Do not mix `|` with ordinary composition on the same
+line. Interface *methods* are declared in Methods (empty body after `|`), not
+in Schema.
 
-## Naming Conventions
-
-### Class Names
-- Must start with an uppercase letter
-- Use PascalCase (e.g., `GameObject`, `PlayerCharacter`)
-
-### Field Names
-- Default field names are lowercase versions of the type name
-- Custom field names can be specified after the `/`
-- Use camelCase for custom names (e.g., `playerName`, `gameScore`)
-
-### Type Names
-- Primitive types: `String`, `Int`, `Float`, `Bool`
-- Array types: `[TypeName]`
-- Union types: `Type1 | Type2`
-
-## Best Practices
-
-### 1. Order of Definitions
-Define classes in dependency order - define components before the classes that use them:
+### Enums
 
 ```wchnt
-# Good: Define Rect before PlayArea
-Rect = Int/x Int/y Int/width Int/height
-PlayArea = Rect
-Game = PlayArea Ball
-
-# Bad: PlayArea references Rect before it's defined
-PlayArea = Rect
-Rect = Int/x Int/y Int/width Int/height
+Action = "Run" | "Jump" | "Duck" | "Shoot"
 ```
 
-### 2. Meaningful Names
-Use descriptive names for classes and fields:
+A line of string literals defines a Haxe-style **enum**.
+
+### Relationship sigils
+
+A sigil on a component changes the *kind* of relationship, not the field's
+type. Sigils attach to a single class type (`:Engine`, `$Time`, `@Db`,
+`+BasePerson`), not to `[Array]` or `{Map}`.
+
+| Sigil | Name | Meaning |
+|-------|------|---------|
+| *(none)* | ordinary | owned by the parent; built alongside it |
+| `:` | context-specific | child belongs to this parent; gets a back-reference |
+| `+` | delegate | owned child whose fields and methods are promoted onto the parent |
+| `@` | external | borrowed from outside; across pages, an opaque handle |
+| `$` | reactive | observable / subscriber (see update) |
 
 ```wchnt
-# Good
-Player = String/playerName Int/playerScore
-
-# Less clear
-Player = String/n Int/s
+Car = :Engine String/model
+Engine = Int/cylinders
+Game = PlayArea Ball $Time
+Student = String/id +BasePerson
+Chronicle = String/scribe @Quest
 ```
 
-### 3. Consistent Structure
-Group related classes together and use consistent naming patterns:
+#### Ordinary (no sigil)
+
+The default: the parent owns the child, they are built together, and share a
+lifecycle. The child's type stays generic — `Rect` does not know it lives
+inside this particular `Game`.
+
+#### Context-specific (`:`)
+
+`Car = :Engine` means an `Engine` exists only inside its `Car`. The compiler
+gives `Engine` a back-reference field — `theCar` — so Engine methods can reach
+the rest of the assemblage (intra-assemblage transparency):
 
 ```wchnt
-# Game entities
-Player = String/name Int/score
-Enemy = String/type Int/health
-GameObject = Int/x Int/y
-
-# UI components
-Button = String/text Bool/enabled
-Label = String/content
+Engine::carModel = { theCar.model }
 ```
 
-## Common Patterns
+The factory wires `theCar` (via `setContext`) when the assemblage is built.
 
-### 1. Configuration Objects
+#### Delegate (`+`)
+
+`+` is composition with promotion. Read `Student = String/id +BasePerson` as:
+a Student is an **id plus a BasePerson**. Construction nests the inner object,
+in schema order:
+
 ```wchnt
-GameConfig = Int/maxPlayers Int/roundTime String/gameMode
-PlayerConfig = String/name String/color Bool/isAI
+Student = String/id +BasePerson
+[:Student "s17" [:BasePerson "Ada" 36]]
 ```
 
-### 2. Data Transfer Objects
+Inside Student methods, `name` and `age` mean `basePerson.name` and
+`basePerson.age`; `this.greet()` calls `BasePerson::greet` unless Student
+defines its own `greet`. Write-paths promote too (`[:Student | name = n]`).
+
+Student is **not** a BasePerson for slot typing — write a sum
+(`Person = BasePerson | Student`) if a slot should hold either. A method on the
+delegate that returns the delegate class must be written again on the wrapper.
+`+` here is a Schema sigil; in Methods `+` is integer addition.
+
+#### External (`@`)
+
+An `@` component is **borrowed**: its lifecycle belongs elsewhere, and it is
+passed in at construction rather than built by this assemblage.
+
+- As a **Schema field** (`Chronicle = String/scribe @Quest`), the Construction
+  slot is filled either by a **call** (an imported handle, `realm.make(...)`)
+  or by a **free name**, which becomes a parameter of the generated factory
+  (first appearance, left to right). It is never `_` and never an in-place
+  `[:Type …]` construction. See `examples/factory_args.wcn`.
+- As a **Methods parameter** (`@Graphics/g`), it is a host type not defined in
+  Schema. These methods belong in `## Target Methods`. See
+  `examples/shapes_openfl.wcn`.
+
+#### Reactive (`$`)
+
+`Game = PlayArea Ball $Time` declares that `Time` is **observable** and `Game`
+**subscribes** to it. When `Time.update()` finishes, it notifies `Game`, which
+runs its own `update()` (no arguments). Reading `time` in `Game::update` is a
+read, not another tick. The `$` slot type must be a schema class.
+
+### Mailbox (`>`)
+
+A leading `>` on the **class name** (not a component sigil) marks a **mailbox**:
+
 ```wchnt
-UserData = String/username String/email [String]/roles
-ProfileData = String/bio String/avatarUrl Int/joinDate
+>Keys = Bool/left Bool/right Bool/up Bool/down
+Game = PlayArea Square $Keys
 ```
 
-### 3. State Management
+A mailbox is in the assemblage (Schema defines it, Construction births it), but
+the **Target** is allowed to fill it. Target calls `keys.inject(...)` (schema
+field order), which writes the fields then runs `Keys::update`. Methods cannot
+define or call `inject`. A mailbox class must define `update`.
+
+Mailbox (`>`) and observable (`$`) objects are **identity objects**: they are
+mutated in place and never replaced.
+
+---
+
+## Construction
+
+Construction is the initial data, written as a nested literal inspired by
+Clojure's hiccup. The first element of a bracket is the class name; the rest
+are arguments **by position** (schema component order).
+
 ```wchnt
-AppState = UserData/currentUser [String]/messages Bool/isLoading
+[:Game
+  [:PlayArea [0 0 800 600]]
+  [:Ball 200 150 6 5 16]]
 ```
 
-## Error Handling
+- Class labels may be omitted where the compiler can infer them from the
+  schema (`[:PlayArea [0 0 800 600]]` needs no `:Rect` on the inner list).
+  Bracket structure is never collapsed.
+- Arrays: `[:Array/Player [:Player "Ada"] [:Player "Bob"]]`.
+- Maps: `{String:Int "Ada": 42}` (empty: `{String:Int}`).
+- Sum types must always be tagged: `[:Circle 5]` vs `[:Triangle 4 8]`.
+- A construction block may bind intermediate values with `=` before the final
+  expression; statements are separated by a full stop `.`:
 
-The WCHNT compiler will report errors for:
+```wchnt
+players = [:Array/Player [:Player "Ada"] [:Player "Bob"]].
+[:Team "Aces" players]
+```
 
-- **Undefined types**: Referencing a class that isn't defined
-- **Circular dependencies**: Classes that reference each other in a loop
-- **Invalid syntax**: Malformed lines or invalid characters
-- **Mixed composition/disjunction**: Using both `|` and regular composition on the same line
+The top-level Construction section is fully **positional**; write-paths
+(`[:Ball | x = nx]`) are Methods-only.
 
-## Output
+Externals are the exception to "build everything here": an `@` slot takes a
+free name (a factory argument) or a call. Example — `Pen` comes from the host:
 
-WCHNT generates immutable Haxe classes with:
-- Public fields for all components
-- Constructor that takes all fields as parameters
-- Proper type annotations
-- Interface implementations for union types
+```wchnt
+Pen = String/ink
+Sketch = String/name @Pen
+[:Sketch "star" pen]
+```
 
-The generated code is ready to use in Haxe projects and can be easily integrated with existing codebases. 
+`pen` is a free name, so the generated factory is `SketchAssemblage.factory(pen: Pen)`.
+Target passes it: `SketchAssemblage.factory(pen)`.
+
+---
+
+## Methods
+
+A method is `ClassName::methodName = { body }`. The body is an expression; its
+value is the return value.
+
+```wchnt
+Rect::area = { width * height }
+
+Ball::move = { Rect/bounds |
+  [:Ball (x + dx) (y + dy) dx dy rad]
+}
+```
+
+- Arguments go before a `|` in a block.
+- Parameters may be bare names (`px`) or typed (`Rect/bounds`) — a type is
+  needed for field access. External host types are `@Type/name` and must live
+  in `## Target Methods`.
+- Return types may be annotated after the block: `-> Void`, `-> Shape`.
+- Interface methods use an empty body: `Shape::step = { Int/width | } -> Shape`.
+- Fields of `this` are bare names (`width`, `dx`); calls on the receiver use
+  `this.move()`. Bare `move()` is not allowed.
+- Constructor arguments that are expressions need parentheses:
+  `(x + dx)`, not `x + dx`.
+
+### Statements and lets
+
+A block is a sequence of statements separated by `.` (a full stop). Earlier
+statements are `let`-style bindings (immutable); the last is the result.
+
+```wchnt
+Ball::move = {
+  nx = x + dx.
+  ny = y + dy.
+  [:Ball nx ny dx dy rad]
+}
+```
+
+### Expressions
+
+- Arithmetic: `+ - * / %` (`%` is modulo)
+- Comparison: `== != < <= > >=`
+- Logic: `and`, `or`, `not`
+- `if` / `else` is an expression; both branches are required (`else if` chains work)
+- Field paths: `ball.x`, `playArea.rect.width` (no spaces around dots)
+- Method calls: `this.move()`, `ball.step(playArea.rect)`, `a.b.c()`
+- Constructing: `[:Ball 1 2 3 4 5]`, arrays and maps as in Construction
+- Lambdas: `{ x | x * 2 }`
+- Target commands: `%trace(x)` — an expression, bound in Target
+
+### Collections and strings
+
+Arrays have `length()`, `cons` (prepend), `head`, `tail`, plus the combinators
+`map`, `filter`, `fold`. Maps have the same three combinators (the block sees
+key and value; `map` keeps the keys) plus `put`, `get`, `exists`, `remove`.
+
+```wchnt
+players.map({ p | p.name })
+players.filter({ p | p.score > 0 })
+players.fold(0, { acc, p | acc + p.score })
+scores.map({ k, v | v + 1 })
+scores.get("Ada")
+scores.get("Di", 0)
+```
+
+`get(key, fallback)` returns the fallback when the key is missing; one-argument
+`get` fails on a missing key.
+
+Ints have `times`: `3.times({ i | i * 2 })`.
+
+Strings have `length()`, `concat`, `str`, `substring(start, end)`, and **`tpl`**.
+`+` does **not** concatenate strings — use `.concat` or a template.
+
+### Template strings (`tpl`)
+
+`tpl` fills `{name}` holes from a `{String:String}` map. A missing name fails;
+non-string values need `.str()` first.
+
+```wchnt
+"You are in {place}.".tpl({String:String "place": room.description})
+```
+
+### Write-paths
+
+`[:Class | field = expr]` copies an existing object and writes only the named
+paths. No source means `this`; otherwise name the source (`[:Ball ball | …]`).
+Dotted paths rebuild ordinary objects along the path and leave siblings alone.
+
+```wchnt
+[:Rect | width = (width * 2)]
+[:Ball ball | x = nx, y = ny]
+[:Game | playArea.rect.width = 800]
+[:Student | name = n]
+```
+
+Unknown fields, a field plus a path under it, or a path into an array or map
+fail fast.
+
+### `update` and reactive dependencies
+
+Ordinary methods are pure and return new objects. **`update`** is the one piece
+of mutation: it rewrites `this` in place and — if the object is observable —
+notifies its subscribers.
+
+```wchnt
+Time::update = { [:Time (t + 1)] }
+
+Game::update = {
+  moved = [:Ball (ball.x + ball.dx) (ball.y + ball.dy) ball.dx ball.dy ball.rad].
+  [:Game playArea moved time]
+}
+```
+
+`$Time` on `Game` means: when `Time.update()` finishes, `Game.update()` runs
+automatically (sideways notify, not a tree walk). Ordinary children do **not**
+update automatically — a parent ticks a child by writing `ball.update()` or
+constructing a new value.
+
+Identity objects (`$` observables and `>` mailboxes) mutate in place, never
+replaced. In any `update` construction, naming the slot (`time`, `keys`) keeps
+the reference; constructing the same class (`[:Time (t + 1)]`, `[:Keys …]`)
+patches its fields on the existing instance; constructing a different class in
+that slot is a compile error.
+
+### Target commands
+
+`%name(...)` is a call to a function defined in Target, usable as an
+expression. `%trace(x)` yields `x`. Unknown `%name` fails until Target binds it.
+
+---
+
+## Target
+
+Target names the outer environment — the layer that changes when you move
+platform. Schema, Construction, and Methods stay identical across hosts; only
+Target changes.
+
+| Host | Entry points | Notes |
+|------|--------------|-------|
+| `%terminal` | `%main` | Haxe; `go.sh` compiles and runs it |
+| `%cli` | `%init` + `%step(line)` | Haxe / Neko text loop; `wchntConsole` |
+| `%cli-live` | `%init` + `%step(line)` | browser transcript; same Methods as `%cli` |
+| `%openfl` | `%init` + `%step` | Haxe, windowed (Lime/OpenFL) |
+| `%canvas` | `%init` + `%step` | JavaScript; what the live Play page runs |
+
+The first line of a non-empty `## Target` must name a host. There is no
+default.
+
+- **`%name` helpers** bind functions callable from Methods (e.g. `%trace`).
+- **`wchntGraphics`** is the portable drawing surface (`clear`, `beginFill`,
+  `drawRect`, `drawCircle`, `endFill`, `lineStyle`, `moveTo`, `lineTo`, …).
+- **`wchntConsole`** is the text output object (`print` / `println`).
+- **`wchntMaths`** is the maths handle (`randInt`, `sin`, `cos`, `hsv`, …),
+  stored in an `@` slot and passed into the factory.
+
+### Inject-then-tick
+
+For a game needing both held input and a clock, Target follows a fixed order
+each frame:
+
+1. **Inject** the full snapshot into every `>` mailbox (schema field order),
+   including all-false when nothing is held.
+2. **Tick** `$Time` once with `time.update()`.
+
+Do **not** put `$Keys` on Game if you also tick `$Time`, or Game updates twice
+per frame — inject into the mailbox (no `$` on that slot), then tick Time, and
+read `keys.left` etc. inside `Game::update`. See `examples/pollution_openfl.wcn`.
+
+---
+
+## Import and Public
+
+Assemblages are **opaque** unless they have `## Public`. Importing a page
+without Public fails. The importer never sees the other page's Schema
+internals.
+
+**Publisher** lists static method bodies and bare
+interface names:
+
+```
+make = { ... }
+addShape = { ... }
+update = { ... }
+Shape
+```
+
+The class itself is not published: the importer cannot write `[:Adventurer …]`
+or read `quest.party.hero`. A bare interface name (`Shape`) lets another page
+add a new implementer.
+
+**Importer**:
+
+```
+## Import
+[[importA]] as realm
+
+## Schema
+Chronicle = String/scribe @Quest
+
+## Construction
+[:Chronicle "Greyhold" realm.make("The Lost Chalice", "Andy", "Dave")]
+```
+
+`realm` is a module alias; `realm.make(...)` is a Construction **call** that
+returns an already-wired handle. Store handles only in `@` slots, and call only
+Public methods (`quest.headline()`). A published interface may be implemented
+locally with `Pentagon : Shape = …` (not inheritance, not `+`), and a local
+implementer may be passed into a Public method. See `examples/importA.wcn` /
+`importB.wcn` and `examples/flyingA.wcn` / `flyingB.wcn`.
+
+---
+
+## Where the detail lives
+
+- Schema, sigils, Import / Public: `doc/schema.md`, `doc/import.md`
+- Methods, `update`, write-paths, `tpl`: `doc/method.md`
+- Target hosts, inject-then-tick: `doc/target.md`
+- The live interpreter: `doc/live.md`
+- Runnable programs: `examples/` (and `live-examples/` for the browser)

@@ -24,10 +24,10 @@ Far term this is the Smalltalk-like live system. v1 is a page: editor, canvas, R
 2. **Backend:** interpret IR in Clojure/ClojureScript. Do **not** JIT WCHNT → JavaScript in v1. A JS codegen would fork from Haxe the moment Methods grow. Speed: Clojure maps first; `deftype` only if the frame loop is too slow.
 3. **Target:** new host **`%canvas`**, same lifecycle as OpenFL (`%init` / `%step`), bodies are **JavaScript**. Custom Target per platform. Same `.wcn` will not run on both hosts. Ideal: only Target differs; sometimes Methods must differ too.
 4. **Editor:** CodeMirror 5 as a vendored script tag (CM6 is npm/ESM-only). One buffer. Highlight from the Instaparse AST later (debounced). Token regex only if AST walk is actually too slow.
-5. **Layout:** `wchnt-lang/live/` in this repo. CLJS compiles against `src/` with **lein-cljsbuild** (`lein live`). Runtime is static HTML + JS; no Node server.
+5. **Layout:** `wchnt-lang/live/` in this repo. CLJS compiles against `src/` with **lein-cljsbuild** (`lein live`). Runtime is static HTML + JS in `live/public/` — served as the website Play page, as a PWA, and inside Electron. No Node server for the web app.
 6. **Out of scope for v1:** debugger/stepper, REPL, Neh-Thalggu wiring, sound.
 
-**Wiki (2026-09):** the live page stores `.wcn` pages in **localStorage**. **New Page** creates a sibling page; **Load example** copies `bounce_canvas`, `square_canvas`, or `pollution_canvas`. Prose may contain **`[[PageName]]`** links — click to navigate (navigation only; class reuse is **`## Import`**). On first visit the wiki is seeded from `live/public/seed/` (`welcome`, `pollution`) — a seed page is written only if no page of that name exists, so existing user data is never overwritten. Run on a documentation page reports “nothing to run”; on a library page it is a schema/methods check pass.
+**Wiki (2026-09):** the live page stores `.wcn` pages in **localStorage**. **New Page** creates a sibling page; **Load example** copies canvas/cli demos including `origin_canvas` and `maths_cli`. Prose may contain **`[[PageName]]`** links — click to navigate (navigation only; class reuse is **`## Import`**). On first visit the wiki is seeded from `live/public/seed/` (`welcome`, `bounce`, `shapes`, `square`, `pollution`, `pong`, `adventure`, `writepaths`, `flyingA`, `flyingB`, `factory_args`, `combinators`, `maths`, `origin`) — a seed page is written only if no page of that name exists, so existing user data is never overwritten. Run on a documentation page reports “nothing to run”; on a library page it is a schema/methods check pass.
 
 **Target Methods:** methods with `@Type/name` parameters live in **`## Target Methods`**. See **`method.md`**.
 
@@ -56,15 +56,23 @@ Rule: if a language change needs a new IR node, **both** backends wait on that n
 | Lifecycle | `%init` `%step` | `%init` `%step` (same names, same roles) |
 | Body language | Haxe | JavaScript |
 | Frame loop | Lime / `ENTER_FRAME` | JS harness / `requestAnimationFrame` |
-| Factory | generated `gameFactory()` | interpreter `gameFactory()` exposed to JS |
-| `graphics` | OpenFL `Graphics` on the Sprite | JS object with the same method names bounce uses |
+| Factory | generated `GameAssemblage.factory()` | generated assemblage wrapper exposed to JS |
+| `wchntGraphics` | OpenFL wrapper on the Sprite | JS object with the same draw names |
+
+| | CLI (neko) | CLI live |
+|---|---|---|
+| Host | `%cli` | `%cli-live` |
+| Lifecycle | `%init` `%step(line)` | `%init` `%step(line)` |
+| Body language | Haxe | JavaScript |
+| Read loop | generated `Sys.stdin` / neko | transcript + Enter in the run modal |
+| `wchntConsole` | `Sys.print` / `Sys.println` | append to the transcript |
 
 Bounce Target today (Haxe):
 
 ```
 %openfl
 %init
-assemblage = gameFactory();
+assemblage = GameAssemblage.factory();
 %step
 assemblage = assemblage.step();
 graphics.clear();
@@ -73,9 +81,9 @@ graphics.drawRect(...);
 graphics.drawCircle(...);
 ```
 
-Canvas Target should be the same shape in JS (`function init` / `function step`, `gameFactory`, `assemblage.step()`, `graphics.*`). That is the isomorphism: **not** one file, **the same Target protocol**.
+Canvas Target should be the same shape in JS (`function init` / `function step`, `GameAssemblage.factory()`, `assemblage.step()`, `graphics.*`). That is the isomorphism: **not** one file, **the same Target protocol**.
 
-v1 Graphics subset (what bounce needs): `clear`, `beginFill`, `endFill`, `drawRect`, `drawCircle`, `lineStyle`, `fillText`. `moveTo` / `lineTo` when we port shapes.
+`wchntGraphics` (shared API, OpenFL + canvas): `background`, `clear`, `beginFill`, `endFill`, `lineStyle`, `noStroke`, `moveTo`, `lineTo`, `drawLine`, `drawRect`, `drawCircle`, `drawEllipse`, `fillText`. Filled/stroked shapes follow Processing-style state; `moveTo`/`lineTo`…`endFill` fills+strokes a path. Parity example: `graphics_canvas.wcn` / `graphics_openfl.wcn`.
 
 ### Inject-then-tick
 
@@ -89,7 +97,7 @@ Build the test bundle and copy examples:
 lein live-test
 ```
 
-`lein live-test` runs `wchnt-lang.prepare-live` first: it copies `live-examples/*.wcn` → `live/public/test-examples/` and `seed-pages/*` → `live/public/seed/`, then builds `tests.js`. Serve `live/public/` with any static server and open `tests.html`; the browser tests fetch examples from `test-examples/*.wcn`. The same cases run on the JVM as `lein test wchnt-lang.semantics-test`.
+`lein live-test` runs `wchnt-lang.prepare-live` first: it copies `live-examples/*.wcn` → `live/public/test-examples/` and composes `live/public/seed/` from `live-examples/seed-map.txt` (via `seed-from-live.sh`, which also writes `seed/index.txt`), then builds `tests.js`. Serve `live/public/` with any static server and open `tests.html`; the browser tests fetch examples from `test-examples/*.wcn`. The same cases run on the JVM as `lein test wchnt-lang.semantics-test`.
 
 ---
 
@@ -105,9 +113,14 @@ lein live-test
 
 `graphics` is **not** an interpreter object. It is the harness object, injected into the JS scope of `%init` / `%step` (same role as OpenFL’s Sprite `graphics`).
 
-`input` is the other harness object. `input.keys` is a held snapshot (`ArrowLeft` / `ArrowRight` / `ArrowUp` / `ArrowDown`). Target writes it into a `>` mailbox with `inject` each frame (`examples/square_canvas.wcn`). Click the canvas first so arrows do not go to the editor.
+`input` is the other harness object. `input.keys` is a held snapshot (`ArrowLeft` /
+`ArrowRight` / `ArrowUp` / `ArrowDown`, plus `Shift`). `input.mouse` is `{x, y}` in
+`0..1` relative to the canvas (updated on mousemove). Target writes keys and/or
+mouse into `>` mailboxes with `inject` each frame (`examples/square_canvas.wcn`,
+`live-examples/origin_canvas.wcn`). Click the canvas first so keys do not go to
+the editor.
 
-`gameFactory` is a JS function the live page puts in that scope; it runs Construction IR and returns a wrapped root.
+`GameAssemblage.factory` is supplied by the live page; it runs Construction IR and returns a wrapped root.
 
 If wrapping gets awkward, fall back to an explicit runtime API (`WCHNT.call(obj, "step")`). Prefer the property/method view so Target JS stays visually next to Target Haxe.
 
@@ -132,16 +145,18 @@ Instaparse and Malli already work on CLJS. `core.clj` / `api.clj` stay JVM (lein
 ```
 live/
   src/          CLJS: editor, run/stop, wrap interpreter
-  public/       index.html, canvas harness JS, vendored CodeMirror 5
-                (generated by prepare-live: js/, test-examples/, seed/)
-  README.md     lein live / live-test, then open index.html
+  public/       the static app (web + PWA + Electron UI)
+                index.html, harness, vendored CodeMirror, manifest, sw.js, icons
+                (generated: js/, test-examples/, seed/)
+  electron/     thin Electron window over public/ (`npm start`)
+  README.md     lein live, then serve public/ or npm start in electron/
 ```
 
 Page: CodeMirror (full `.wcn` markdown), error line, canvas (800×600 to match OpenFL window), Run / Stop.
 
 **Harness (plain JS, v1):** own the `<canvas>`, 2D context, `graphics` object, `requestAnimationFrame` loop that calls `init` once and `step` each frame. No WCHNT knowledge.
 
-**CLJS:** parse → IR → interpret Construction; install `gameFactory` + wrapped root into the harness scope; `eval` or `new Function` the Target JS bodies with that scope. Parse errors from the cargo; runtime errors from the interpreter.
+**CLJS:** parse → IR → interpret Construction; install the generated assemblage wrapper into the harness scope; `eval` or `new Function` the Target JS bodies with that scope. Parse errors come from the cargo; runtime errors from the interpreter.
 
 **Highlighting:** on idle (250ms), parse schema + construction + methods with the existing grammars (not the whole markdown). Walk Instaparse trees to CodeMirror marks (class names, types, sigils, keywords, strings, numbers, methods). Hidden keywords (`if` / `or` / …) are located inside the node span. Failures: keep last good highlights, mark the error span.
 
@@ -180,7 +195,7 @@ Each slice: tests on the JVM interpreter first; browser only when that slice nee
 3. **Interpreter: Construction + read-only field paths.** Done. Maps with `:wchnt/class`. `examples/bounce_canvas.wcn` heap matches schema fields.
 4. **Interpreter: Methods.** Done for bounce. Lets, `if`, arith, paths, `this.method()`, construct. `Game::step` moves the ball and reverses `dx` at the right wall. See `wchnt-lang.interpret` / `interpret_test`.
 5. **JS view + `%canvas` eval.** Done on the JVM. `js-view` wraps objects (`assemblage.step()`, `ball.x`). `target-js` evaluates the bounce Target subset (not a full JS engine). `canvas/run-file` records `graphics` draws. The live page uses real `js/Function`.
-6. **`live/` shell.** Done. `lein live` (cljsbuild), CodeMirror 5, canvas harness (`clear` / `beginFill` / `drawRect` / `drawCircle` / `endFill`), Run / Stop. Default buffer: bounce canvas. Browser Target uses real `js/Function`; objects are Proxies over `js-view`. Static `index.html` + JS.
+6. **`live/` shell.** Done. `lein live` (cljsbuild), CodeMirror 5, canvas harness (full `wchntGraphics` set incl. `drawLine` / `drawEllipse` / `noStroke` / `background`), Run / Stop. Default buffer: bounce canvas. Browser Target uses real `js/Function`; objects are Proxies over `js-view`. Static `index.html` + JS.
 7. **Instaparse highlighting.** Done. Debounced 250ms. Schema / Construction / Methods from the existing grammars; Target is left alone. Failed section keeps last good marks and underlines the error span.
 8. **Stop / restart.** Done with the page. Tear down rAF; next Run rebuilds the heap from Construction (no hot patch of methods mid-frame in v1).
 

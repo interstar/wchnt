@@ -1,0 +1,7 @@
+# Generated website output (built by website/build.py)
+website/_site/
+attic/
+neo4j/
+.lsp/
+.cursorrules
+.clj-kondo/

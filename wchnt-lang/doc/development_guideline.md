@@ -2,7 +2,7 @@
 
 Notes for people working on the WCHNT **compiler, interpreter, and test suite** — not for authors of `.wcn` programs.
 
-Language semantics live in `intro.md`, `schema.md`, `method.md`, and `target.md`. Pipeline architecture: `plan.md`. Live interpreter: `live.md`.
+Language semantics live in `intro.md`, `schema.md`, `method.md`, `import.md`, and `target.md`. Pipeline architecture: `plan.md`. Live interpreter: `live.md`.
 
 This file collects **implementation gotchas**: places where the two backends (Haxe codegen and the Clojure interpreter) look different under the hood, but should behave the same when WCHNT’s public rules are followed.
 
@@ -138,9 +138,9 @@ Every non-empty `## Target` must name a **host** before lifecycle blocks:
 public static function main():Void { … }
 ```
 
-Valid hosts: `%terminal`, `%openfl`, `%canvas`. There is **no default** — omitting the host line fails fast with a clear error.
+Valid hosts: `%terminal`, `%cli`, `%cli-live`, `%openfl`, `%canvas`. There is **no default** — omitting the host line fails fast with a clear error.
 
-Frame hosts (`%openfl`, `%canvas`) use `%init` / `%step` instead of `%main`.
+Init/step hosts (`%openfl`, `%canvas`, `%cli`, `%cli-live`) use `%init` / `%step` instead of `%main`.
 
 ---
 
@@ -169,3 +169,67 @@ The open design question is whether Methods needs **`do { … }`** for sequentia
 `wchnt_lang.WchntAPI` exposes `getConstructionParser(String schema)` and `getConstructionGrammarAsString(String schema)` with a **schema parameter that is ignored**. Construction uses one unified grammar (`grammars/parse-construction`), not a per-schema generated parser.
 
 That signature is **legacy compatibility** for the Neh-Thalggu plugin wrapper, which expected schema-driven construction grammars from an older WCHNT design. New callers should treat the schema argument as documentation-only and rely on the unified grammar. Removing the parameter would break the published Java interface without a coordinated Neh-Thalggu release.
+
+---
+
+## Schema `+` vs Methods `+`
+
+Schema and Methods are **two grammars**. The same character is a different token in each.
+
+| Place | `+` means |
+|-------|-----------|
+| Schema | Delegate sigil: `Student = String/id +BasePerson` |
+| Methods / Construction expressions | Integer addition: `score + 1` |
+
+Do not “unify” them. `$` already works the same way (reactive slot in Schema; not an expression operator).
+
+**Instaparse:** the Schema rule must keep the sigil **quoted** — `Sigil = ':' / '@' / '$' / '+'`. An unquoted `+` is “one or more.” Tests that parse `Student = String/id +BasePerson` will fail if that quote is dropped.
+
+Write `+BasePerson` with no space after the sigil, same as `:Engine` and `$Time`.
+
+---
+
+## Delegation is composition, never `extends`
+
+`+` is **has-a plus promotion**, not inheritance.
+
+- IR tag is `:delegate` on a component. There is no parent-class field on the assemblage.
+- Haxe emits an owned field (`basePerson`) plus getters and forwarding methods. **Never** `class Student extends BasePerson`.
+- Methods IR rewrites promoted names to paths through the slot (`name` → `basePerson.name`). Write-paths expand the same way (`[:Student | name = n]`).
+- Student is **not** a BasePerson for slot typing. Shared type is an explicit sum (`Person = BasePerson | Student`).
+- Must-override: if the immediate delegate `D` has a stored `:return-type` of exactly `D`, the wrapper must define that method. Collections and interface/sum returns do not force it. Check is immediate (GradStudent looks at Student, not through to BasePerson).
+
+Never hardcode `Student` / `BasePerson` (or any class name) in compiler logic. Derive slots from schema IR. If the class cannot be determined, fail fast.
+
+Example and tests: `examples/test_delegate.wcn`, `test/wchnt_lang/delegate_test.clj`.
+
+---
+
+## Import membrane (WCHNT source only)
+
+`## Import` + `## Public` is a **compile-time** membrane (`pages.cljc`, `reaction.cljc`). Interpreter maps, Haxe `public var`, and `js-view` still expose fields. Target of the importer may cheat (`assemblage.game.playArea`). That is v1.
+
+When touching import:
+
+- Do **not** flatten-merge A’s Schema into B. Keep origin on classes and methods.
+- Importer Schema stores a handle only as `@Quest` / `@Game`.
+- Construction may contain a call leaf (`realm.make(...)`). Flatten / factory / `eval-construction-arg` must treat that as an already-wired object, not a nested `:object`.
+- `Class : Interface =` on the importer implements a **published** sum. It is not `+` and not `extends`.
+
+See `doc/import.md`, `examples/importA.wcn` / `importB.wcn`, `examples/flyingA.wcn` / `flyingB.wcn`.
+
+---
+
+## `String::tpl`
+
+`tpl` fills `{name}` holes from a `{String:String}` map. Shared expander: `src/wchnt_lang/template.cljc` (interpreter + compile-time hole check). Haxe uses `WCHNTRuntime.tpl`.
+
+- Hole names are `[A-Za-z_][A-Za-z0-9_]*`. Unmatched `{` / `}` and illegal names fail.
+- A missing key fails. Extra keys are ignored.
+- If the receiver is a **string literal**, compile-time checks that every hole appears in the map literal.
+- Values that are not strings must be converted first (`score.str()`).
+- `+` does **not** concatenate strings. Use `.concat` or `tpl`.
+
+```
+"Hello {name}".tpl({String:String "name": name})
+```

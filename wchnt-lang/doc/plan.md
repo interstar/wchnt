@@ -28,7 +28,7 @@ Success for the *idea* is other OO languages adopting assemblage programming. WC
 
 - **Cargo pipeline** (`pipeline.cljc`). Compiler bugs throw. Bad user input fails the cargo. Stash intermediate results.
 - **Two grammars** (`grammars.cljc`): one schema grammar, one unified construction/expression grammar. Construction is *not* a grammar generated from the schema.
-- **Markdown mainfile** with ordered sections. Prose around the fences is optional. Reserved sections: `Import`, `Schema`, `Construction`, `Methods`, `Target Methods`, `Target`. Pages without compile sections are **documentation** (ignored by the compiler). Schema-only pages are **libraries** (Haxe classes, no `Main`). **`## Import`** merges sibling libraries; **`[[links]]`** in prose are wiki navigation (live only).
+- **Markdown mainfile** with ordered sections. Prose around the fences is optional. Reserved sections: `Import`, `Schema`, `Construction`, `Methods`, `Public`, `Target Methods`, `Target`. Pages without compile sections are **documentation** (ignored by the compiler). Schema-only pages are **libraries** (Haxe classes, no `Main`). **`## Import`** loads sibling assemblages through their `## Public` list (`doc/import.md`). **`[[links]]`** in prose are wiki navigation (live only).
 - **One IR.** Schema IR is maps of assemblages, components, and relationship sigils. Construction IR is objects to allocate, assignments, and wiring. Haxe is a backend. We are not inserting extra IR layers between flatten and codegen.
 - **Flattening as a construction problem**, not a second architecture: nested literals become an ordered list of object creations. Finish that so codegen sees values and variable names, not leftover AST — or stop pretending and call it a decorated AST. Prefer finishing flatten.
 - **Examples in `examples/`** are the language spec. Unit tests of abandoned APIs are not.
@@ -96,7 +96,7 @@ First useful form: a `%` with no Haxe body.
 
 %main
 public static function main():Void {
-    var assemblage = gameFactory();
+    var assemblage = GameAssemblage.factory();
     ...
 }
 ```
@@ -110,7 +110,7 @@ public static function main():Void {
 var assemblage:Game;
 
 function init():Void {
-    assemblage = gameFactory();
+    assemblage = GameAssemblage.factory();
 }
 
 %step

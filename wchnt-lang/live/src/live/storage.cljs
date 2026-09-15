@@ -6,6 +6,7 @@
 
 (def pages-key "wchnt.wiki.pages")
 (def current-key "wchnt.wiki.current")
+(def recents-key "wchnt.wiki.recents")
 
 (defn storage-available?
   "True when localStorage accepts read/write (file:// and private mode may block it)."
@@ -127,7 +128,8 @@
   "Clear wiki storage. Useful if localStorage was corrupted."
   []
   (.removeItem js/localStorage pages-key)
-  (.removeItem js/localStorage current-key))
+  (.removeItem js/localStorage current-key)
+  (.removeItem js/localStorage recents-key))
 
 (defn all-pages-map
   "Return {page-name content} for every stored page (including _index)."

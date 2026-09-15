@@ -1,0 +1,13 @@
+{
+  "name": "wchnt-live",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Electron shell for the WCHNT live wiki (loads ../public)",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron --no-sandbox ."
+  },
+  "devDependencies": {
+    "electron": "^33.2.1"
+  }
+}
