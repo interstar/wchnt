@@ -62,3 +62,33 @@
           merged (highlight/preserve ok now)]
       (is (seq (:errors now)))
       (is (= (:spans ok) (:spans merged))))))
+
+(defn- schema-page
+  [schema]
+  (str "# t\n## Schema\n\n```\n" schema "\n```\n"))
+
+(defn- kind-of
+  [src spans token]
+  (:kind (first (filter #(= token (subs src (:start %) (:end %))) spans))))
+
+(deftest schema-relationship-colours
+  (testing "sigil and type share a relationship kind; mailbox colours the definee"
+    (let [src (schema-page
+               (str ">Keys = Bool/left\n"
+                    "Car = :Motor @Store $Clock +Person PlayArea\n"
+                    "Motor = Int/n\n"
+                    "Person = String/name\n"))
+          {:keys [spans errors]} (highlight/highlight src)]
+      (is (empty? errors) (pr-str errors))
+      (is (= :rel-mailbox (kind-of src spans ">")))
+      (is (= :rel-mailbox (kind-of src spans "Keys")))
+      (is (= :rel-context (kind-of src spans ":")))
+      (is (= :rel-context (kind-of src spans "Motor")))
+      (is (= :rel-external (kind-of src spans "@")))
+      (is (= :rel-external (kind-of src spans "Store")))
+      (is (= :rel-reactive (kind-of src spans "$")))
+      (is (= :rel-reactive (kind-of src spans "Clock")))
+      (is (= :rel-delegate (kind-of src spans "+")))
+      (is (= :rel-delegate (kind-of src spans "Person")))
+      (is (= :type (kind-of src spans "PlayArea")))
+      (is (= :class (kind-of src spans "Car"))))))

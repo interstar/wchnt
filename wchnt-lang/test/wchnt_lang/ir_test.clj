@@ -30,6 +30,26 @@
       (is (ir/needs-context? schema-ir "Engine"))
       (is (= "Car" (ir/get-context-parent schema-ir "Engine"))))))
 
+(deftest construction-order-waits-for-named-assignments
+  (testing "a map extracted before the objects it names is built after them"
+    (let [objects {"obj1" {:type :map
+                           :class-name "Map<String, Location>"
+                           :index 0
+                           :args [{:type :primitive :value "Village Square"}
+                                  {:type :variable :value "village"}]}
+                   "obj2" {:type :object
+                           :class-name "Location"
+                           :index 1
+                           :args [{:type :primitive :value "Village Square"}]}
+                   "obj3" {:type :object
+                           :class-name "Game"
+                           :index 2
+                           :args [{:type :variable :value "obj1"}]}}
+          ordered (mapv first (ir/objects-in-construction-order
+                               objects
+                               {"village" "obj2"}))]
+      (is (= ["obj2" "obj1" "obj3"] ordered)))))
+
 (deftest test-reactive-components
   (testing "reactive-components returns $ fields for a subscriber class"
     (let [schema-ir {:assemblages [{:name "Game"

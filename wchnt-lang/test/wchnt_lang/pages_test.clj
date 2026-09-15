@@ -37,7 +37,7 @@ Game = Rect
 %terminal
 
 %main
-var g = gameFactory();
+var g = GameAssemblage.factory();
 ```")
 
 (deftest resolve-import-order-finds-siblings
@@ -46,15 +46,13 @@ var g = gameFactory();
           ["shapes-lib"]
           (fn [n] (when (= n "shapes-lib") shapes-lib))))))
 
-(deftest compile-with-import-merges-schema
+(deftest compile-with-import-requires-public
   (let [cargo (compiler/compile-to-ir
                game-using-lib
                {:resolve-page (fn [n]
                                 (when (= n "shapes-lib") shapes-lib))})]
-    (is (:success cargo))
-    (let [schema-ir (get-in cargo [:stash :schema-ir])]
-      (is (some #(= "Rect" (:name %)) (:assemblages schema-ir)))
-      (is (some #(= "Game" (:name %)) (:assemblages schema-ir))))))
+    (is (not (:success cargo)))
+    (is (re-find #"Public|alias" (first (:errors cargo))))))
 
 (deftest target-methods-at-in-methods-fails
   (let [content "## Schema

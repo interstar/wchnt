@@ -28,7 +28,7 @@ Ball = Int/x Int/y Int/rad
 
 %main
 public static function main():Void {
-    var assemblage = gameFactory();
+    var assemblage = GameAssemblage.factory();
     var helper = new WCHNTHelper();
     trace(assemblage.toConstruction(0, helper));
 }
@@ -42,8 +42,8 @@ public static function main():Void {
         (is (str/includes? haxe-code "class PlayArea"))
         (is (str/includes? haxe-code "class Rect"))
         (is (str/includes? haxe-code "class Ball"))
-        (is (str/includes? haxe-code "public static function gameFactory()"))
-        (is (str/includes? haxe-code "var assemblage = gameFactory()"))))))
+        (is (str/includes? haxe-code "public static function factory()"))
+        (is (str/includes? haxe-code "var assemblage = GameAssemblage.factory()"))))))
 
 (deftest test-compile-to-haxe-schema-only
   (testing "compileToHaxe handles schema-only content"

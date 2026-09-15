@@ -35,6 +35,14 @@
       (is (= "Time" (:type-name result)))
       (is (= :reactive (:relationship result))))))
 
+(deftest test-process-element-to-component-with-delegate-sigil
+  (testing "process-element-to-component should mark + as delegate"
+    (let [result (ast-to-ir/process-element-to-component
+                  {:sigil "+" :type "BasePerson" :optional-name nil :name "basePerson"})]
+      (is (= "basePerson" (:component-name result)))
+      (is (= "BasePerson" (:type-name result)))
+      (is (= :delegate (:relationship result))))))
+
 (deftest test-build-observable-and-subscriber-classes
   (testing "Game = $Time records Time as observable and Game as subscriber"
     (let [cargo (parser/schema-wchnt->schema-ast "Game = $Time\nTime = Int/t\n")
@@ -324,7 +332,7 @@
       ;; First, validate that the result conforms to the schema
       (is (schema/valid-construction-ir? result) "Generated construction IR should conform to schema")
       (is (= "Game" (:root-class result)))
-      (is (= "gameFactory" (:factory-name result)))
+      (is (= "factory" (:factory-name result)))
       (is (contains? result :objects))
       (is (contains? result :return-object))
       (is (contains? result :statements))

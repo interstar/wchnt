@@ -157,6 +157,35 @@
          (is (some #{[:draw-circle 80 120 24]} (canvas/graphics-log g)))
          (is (some #{[:end-fill]} (canvas/graphics-log g)))))))
 
+#?(:clj
+   (deftest writepaths-more-jets-keeps-ocean
+     (testing "deep write-path increments fountain jets and leaves ocean alone"
+       (let [{:keys [schema-ir methods-ir root]} (load-example "writepaths")
+             walk (fn [obj fields] (reduce interpret/get-field obj fields))
+             path ["continent" "country" "capital" "plaza" "fountain"]
+             next (interpret/call schema-ir methods-ir root "moreJets" [])]
+         (is (= 8 (interpret/get-field (walk next path) "jets")))
+         (is (= "Triton" (interpret/get-field (walk next path) "name")))
+         (is (= 4000 (interpret/get-field (interpret/get-field next "ocean") "depth")))
+         (is (= "Fountain Triton has 8 jets; ocean 4000 deep."
+                (interpret/call schema-ir methods-ir next "label" [])))))))
+
+#?(:cljs
+   (deftest writepaths-more-jets-keeps-ocean
+     (async done
+       (load-example-async
+        "writepaths"
+        (fn [{:keys [schema-ir methods-ir root]}]
+          (let [walk (fn [obj fields] (reduce interpret/get-field obj fields))
+                path ["continent" "country" "capital" "plaza" "fountain"]
+                next (interpret/call schema-ir methods-ir root "moreJets" [])]
+            (is (= 8 (interpret/get-field (walk next path) "jets")))
+            (is (= 4000 (interpret/get-field (interpret/get-field next "ocean") "depth")))
+            (is (= "Fountain Triton has 8 jets; ocean 4000 deep."
+                   (interpret/call schema-ir methods-ir next "label" []))))
+          (done))
+        (fn [e] (is (nil? e) (str e)) (done))))))
+
 (deftest else-if-expression
   (testing "else if chains evaluate the matching branch"
     (let [schema "Rect = Int/x Int/y Int/width Int/height

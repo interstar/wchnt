@@ -258,6 +258,9 @@
       ;; Should generate setContext method for PlayArea
       (is (str/includes? result "public function setContext(c: Game)"))
       (is (str/includes? result "this.theGame = c;"))
+
+      ;; Every `new Game(...)` wires the context child — including method constructions
+      (is (str/includes? result "this.playArea.setContext(this);"))
       
       ;; Should NOT generate context field for Game (it's the parent)
       (is (not (str/includes? result "class Game {public var theGame: Game;")))
@@ -403,7 +406,7 @@
 (deftest test-generate-construction-factory
   (testing "generates basic factory function from construction IR"
     (let [construction-ir {:root-class "Game"
-                           :factory-name "gameFactory"
+                           :factory-name "factory"
                            :return-object "obj1"
                            :objects {"obj1" {:type :object
                                             :class-name "Game"
@@ -411,12 +414,12 @@
                                             :index 0}}}
           schema-ir {:assemblages [] :interfaces [] :enums []}
           result (ir-to-haxe/generate-construction-factory construction-ir schema-ir)]
-      (is (str/includes? result "public static function gameFactory(): Game"))
+      (is (str/includes? result "public static function factory(): Game"))
       (is (str/includes? result "return obj1;"))))
   
   (testing "generates factory with object arguments"
     (let [construction-ir {:root-class "Game"
-                           :factory-name "gameFactory"
+                           :factory-name "factory"
                            :return-object "obj3"
                            :objects {"obj1" {:type :object
                                             :class-name "Player"
@@ -446,7 +449,7 @@
 (deftest test-generate-construction-factory-subscribes-reactive-fields
   (testing "factory calls subscribe on each $ component after objects exist"
     (let [construction-ir {:root-class "Game"
-                           :factory-name "gameFactory"
+                           :factory-name "factory"
                            :return-object "obj2"
                            :objects {"obj1" {:type :object
                                             :class-name "Time"
@@ -481,7 +484,7 @@ Config = {Direction : String}/moves
 ## Construction
 
 ```
-controls = [:Map/{Direction:String} Up:\"jump\", Down:\"crouch\", Left:\"left\" Right:\"right\"].
+controls = {Direction:String Up:\"jump\", Down:\"crouch\", Left:\"left\" Right:\"right\"}.
 [:App \"Hello\" [:Config controls]]
 ```
 
@@ -492,7 +495,7 @@ controls = [:Map/{Direction:String} Up:\"jump\", Down:\"crouch\", Left:\"left\" 
 
 %main
 public static function main():Void {
-    var assemblage = appFactory();
+    var assemblage = AppAssemblage.factory();
     var helper = new WCHNTHelper();
     trace(assemblage.toConstruction(0, helper));
 }
@@ -506,7 +509,8 @@ public static function main():Void {
           (is (str/includes? (:classes result) "class App"))
           (is (str/includes? (:classes result) "class Config"))
           (is (str/includes? (:classes result) "enum Direction"))
-          (is (str/includes? (:factory result) "appFactory")))
+          (is (str/includes? (:classes result) "class AppAssemblage"))
+          (is (str/includes? (:classes result) "public static function factory")))
         (do
           (println "Map construction failed:")
           (println "Error:" (:error cargo-result))
@@ -519,7 +523,7 @@ public static function main():Void {
       (is (p/is-cargo? cargo-result))
       (if (:success cargo-result)
         (let [result (:value cargo-result)
-              factory (:factory result)]
+              factory (:classes result)]
           (is (schema/valid-full-program? result))
           (is (str/includes? factory "new Config([\"0\" => 0, \"1\" => 1])"))
           (is (str/includes? factory "new Config2([Dev => \"dev\", Local => \"local\", Deploy => \"deploy\"])")))
@@ -536,7 +540,7 @@ public static function main():Void {
       (is (:success cargo-result))
       (let [result (:value cargo-result)
             classes (:classes result)
-            factory (:factory result)]
+            factory (:classes result)]
         (is (str/includes? classes "class Time"))
         (is (str/includes? classes "public function subscribe(subscriber: Dynamic): Void"))
         (is (str/includes? factory ".time.subscribe("))
@@ -546,7 +550,7 @@ public static function main():Void {
   (testing "test.wcn maps ps to an object id and infers nested Player, not String"
     (let [cargo-result (compiler/compile (slurp "examples/test.wcn"))]
       (is (:success cargo-result))
-      (let [factory (get-in cargo-result [:value :factory])
+      (let [factory (get-in cargo-result [:value :classes])
             classes (get-in cargo-result [:value :classes])]
         (is (not (re-find #"[^a-zA-Z]ps[^a-zA-Z]" factory)))
         (is (str/includes? factory "new Player(40, 90, \"Bob\")"))
@@ -557,9 +561,9 @@ public static function main():Void {
   (testing "shared Time is subscribed by both World and Scene, Time built first"
     (let [cargo-result (compiler/compile (slurp "examples/test_reactive_two_subscribers.wcn"))]
       (is (:success cargo-result))
-      (let [factory (get-in cargo-result [:value :factory])]
+      (let [factory (get-in cargo-result [:value :classes])]
         (is (re-find #"\.time\.subscribe\(" factory))
-        (is (= 2 (count (re-seq #"\.time\.subscribe\(" factory))))
+        (is (= 4 (count (re-seq #"\.time\.subscribe\(" factory))))
         (is (re-find #"(?s)new Time\(0\).*new Scene\(" factory))))))
 
 (deftest mailbox-class-emits-inject
@@ -576,6 +580,40 @@ public static function main():Void {
   (testing "construction false is Haxe false, not an empty constructor argument"
     (let [cargo (compiler/compile (slurp "examples/square_openfl.wcn"))]
       (is (:success cargo) (first (:errors cargo)))
-      (let [factory (get-in cargo [:value :factory])]
+      (let [factory (get-in cargo [:value :classes])]
         (is (str/includes? factory "new Keys(false, false, false, false)"))
         (is (not (str/includes? factory "new Keys(,")))))))
+
+(deftest constructor-applies-construction-magic
+  (testing "Haxe constructors wire context children and $ subscriptions"
+    (let [context-src (str "## Schema\n\n```\n"
+                           "Game = PlayArea :Ball $Time\n"
+                           "PlayArea = Rect\n"
+                           "Rect = Int/x Int/y Int/width Int/height\n"
+                           "Ball = Int/x Int/y Int/dx Int/dy Int/rad\n"
+                           "Time = Int/t\n```\n\n"
+                           "## Construction\n\n```\n"
+                           "[:Game [:PlayArea [0 0 800 600]] [:Ball 1 2 3 4 5] [:Time 0]]\n```\n\n"
+                           "## Methods\n\n```\n"
+                           "Time::update = { [:Time t] }\n"
+                           "Game::update = { [:Game playArea ball time] }\n"
+                           "Game::step = {\n"
+                           "  [:Game playArea [:Ball (ball.x + 1) ball.y ball.dx ball.dy ball.rad] [:Time (time.t + 1)]]\n"
+                           "}\n```\n\n"
+                           "## Target\n\n```\n%terminal\n\n%main\nfunction main() {}\n```\n")
+          cargo (compiler/compile context-src)]
+      (is (:success cargo) (first (:errors cargo)))
+      (let [classes (get-in cargo [:value :classes])]
+        (is (str/includes? classes "this.ball.setContext(this);")
+            "every new Game(...) must setContext, not just the factory")
+        (is (str/includes? classes "this.time.subscribe(this);")
+            "every new Game(...) must subscribe to $Time")))))
+
+(deftest delegate-forwards-fields-and-methods
+  (testing "Student Haxe exposes promoted name and greet"
+    (let [cargo (compiler/compile (slurp "examples/test_delegate.wcn"))]
+      (is (:success cargo) (first (:errors cargo)))
+      (let [classes (get-in cargo [:value :classes])]
+        (is (str/includes? classes "public var name(get, never): String;"))
+        (is (str/includes? classes "return this.basePerson.name;"))
+        (is (str/includes? classes "return this.basePerson.greet();"))))))

@@ -130,6 +130,18 @@
     (is (not (insta/failure?
               (parse-reaction "Booster::boost = {y | (x * y)}"))))))
 
+(deftest return-annotation-is-postfix
+  (testing "return type sits after the block as -> Type, not before ="
+    (let [ast (assert-parses parse-reaction "Shape::step = { Rect/bounds | } -> Shape")
+          method (second ast)]
+      (is (= [:ClassName "Shape"] (second method)))
+      (is (= [:MethodName "step"] (nth method 2)))
+      (is (= :BlockOrLambda (first (nth method 3))))
+      (is (= [:ReturnAnn [:Type "Shape"]] (nth method 4))))
+    (is (insta/failure? (parse-reaction "Shape::step : Shape = { Rect/bounds | }")))
+    (is (not (insta/failure?
+              (parse-reaction "Circle::draw = { @Graphics/g | g.endFill() } -> Void"))))))
+
 (deftest field-paths
   (testing "dotted field access parses as FieldPath, not a method call"
     (is (= [:FieldPath "ball" "x"]
@@ -180,6 +192,14 @@
            (first (inner-expr (assert-parses parse-construction
                                              "\"Ada\".concat(\":\")")))))))
 
+(deftest tpl-map-arg-parses
+  (testing "tpl takes a brace map, not a block, including field-path values"
+    (let [call (inner-expr (assert-parses parse-construction
+                                          "\"You are in {place}.\".tpl({String:String \"place\": room.description})"))]
+      (is (= :MethodCall (first call)))
+      (is (some #{:MapConstruction}
+                (map first (tree-seq vector? rest call)))))))
+
 (deftest cons-and-put-parse
   (testing "cons and put are ordinary method calls"
     (is (= :MethodCall
@@ -196,7 +216,31 @@
                                              "[:Array/Player]")))))
     (is (= :MapConstruction
            (first (inner-expr (assert-parses parse-construction
-                                             "[:Map/{String:Int}]")))))))
+                                             "{String:Int}")))))))
+
+(deftest brace-map-literals-parse
+  (testing "{Key:Val ...} is the map literal"
+    (is (= :MapConstruction
+           (first (inner-expr (assert-parses parse-construction
+                                             "{String:Int \"Ada\":3 \"Cy\":5}")))))
+    (is (= :MapConstruction
+           (first (inner-expr (assert-parses parse-construction
+                                             "{String:Int \"Ada\" 3}")))))
+    (let [arg-list (construction-arg-list
+                    (assert-parses parse-construction
+                                   "[:Team name [:Array/Player] {String:Int}]"))]
+      (is (= :MapConstruction (first (nth arg-list 3))))))
+
+  (testing "the old [:Map/{Key:Val} ...] tag does not parse"
+    (is (insta/failure? (parse-construction "[:Map/{String:Int}]"))))
+
+  (testing "braces that are blocks or lambdas are not stolen as maps"
+    (is (= :Lambda
+           (first (second (inner-expr (assert-parses parse-construction
+                                                     "{ i | i }"))))))
+    (is (not (insta/failure?
+              (parse-reaction
+               "Game::pick = { if (n == 0) { 10 } else { 20 } }"))))))
 
 (deftest method-call-in-construction-args-parses
   (testing "cons and put can be construction arguments"
@@ -211,6 +255,8 @@
     (is (= :MethodCall (first (inner-expr (assert-parses parse-construction "players.head()")))))
     (is (= :MethodCall (first (inner-expr (assert-parses parse-construction "players.tail()")))))
     (is (= :MethodCall (first (inner-expr (assert-parses parse-construction "scores.get(n)")))))
+    (is (= :MethodCall (first (inner-expr (assert-parses parse-construction "scores.get(n, 0)")))))
+    (is (= :MethodCall (first (inner-expr (assert-parses parse-construction "scores.exists(n)")))))
     (is (= :MethodCall (first (inner-expr (assert-parses parse-construction "scores.remove(n)")))))
     (is (= :MethodCall (first (inner-expr (assert-parses parse-construction "name.substring(0, 1)")))))
     (is (= :MethodCall (first (inner-expr (assert-parses parse-construction "3.times({ i | i })")))))))
@@ -234,11 +280,44 @@
       (is (some #{:Inlet}
                 (map first (tree-seq vector? rest ast)))))))
 
-(deftest else-if-expression-parses
-  (testing "else if chains parse in method bodies"
+(deftest schema-implements-clause
+  (testing "Pentagon : Shape = ... records an Implements node"
+    (let [ast (grammars/parse-schema "Pentagon : Shape = Int/x Int/y Int/side Int/dx\n")]
+      (is (not (insta/failure? ast)) (pr-str ast))
+      (is (some #(and (vector? %) (= :Implements (first %)) (= "Shape" (second %)))
+                (tree-seq vector? rest ast))))))
+
+(deftest schema-delegate-sigil
+  (testing "+BasePerson is a Sigil on a composition element"
+    (let [ast (grammars/parse-schema "Student = String/id +BasePerson\n")]
+      (is (not (insta/failure? ast)) (pr-str ast))
+      (is (some #(and (vector? %) (= :Sigil (first %)) (= "+" (second %)))
+                (tree-seq vector? rest ast))))))
+
+(deftest with-construction-parses
+  (testing "[:Class | field = expr] is a WithConstruction, not positional args"
+    (let [node (inner-expr (assert-parses parse-construction "[:Ball | x = 1]"))]
+      (is (= :WithConstruction (first node)))
+      (is (= [:ClassName "Ball"] (second node)))
+      (is (= :WithAssignList (first (nth node 2))))))
+
+  (testing "optional source before | and dotted write-paths"
+    (let [node (inner-expr (assert-parses parse-construction
+                                         "[:Ball ball | x = nx, y = ny]"))]
+      (is (= :WithConstruction (first node)))
+      (is (some #(and (vector? %) (= :VariableRef (first %)) (= "ball" (second %)))
+                (tree-seq vector? rest node))))
+    (let [node (inner-expr (assert-parses parse-construction
+                                         "[:Game | playArea.rect.width = 800]"))]
+      (is (= :WithConstruction (first node)))
+      (is (some #(and (vector? %) (= :FieldPath (first %)) (= ["playArea" "rect" "width"] (rest %)))
+                (tree-seq vector? rest node)))))
+
+  (testing "positional constructions still parse"
+    (is (= :ObjectConstruction
+           (first (inner-expr (assert-parses parse-construction "[:Ball 1 2 3 4 5]")))))
     (is (not (insta/failure?
-              (parse-reaction
-               "Game::pick = { if (n == 0) { 10 } else if (n == 1) { 20 } else { 30 } }"))))))
+              (parse-reaction "Rect::doubleWidth = { [:Rect | width = (width * 2)] }"))))))
 
 (deftest parse-failure-is-readable
   (testing "failure-in-text->string reports line, snippet, and expected tokens"

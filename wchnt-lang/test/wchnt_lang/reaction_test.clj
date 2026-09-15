@@ -67,6 +67,24 @@ Ball = Int/x Int/y Int/dx Int/dy Int/rad")
     (is (thrown-with-msg? Exception #"Unknown name"
                           (methods-ir rect-ball-schema "Rect::area = { banana * height }")))))
 
+(def enum-map-schema
+  "Config = {Move : Int}/moves
+Move = \"Up\" | \"Down\"")
+
+(deftest enum-ctor-in-method-ir
+  (testing "bare enum constructors are map keys, not unknown names"
+    (let [m (first (methods-ir enum-map-schema "Config::jump = { moves.get(Up) }"))]
+      (is (= "Int" (:return-type m)))
+      (is (= :enum (get-in m [:body :args 0 :expr])))
+      (is (= "Up" (get-in m [:body :args 0 :name])))
+      (is (= "Move" (get-in m [:body :args 0 :type]))))))
+
+(deftest ambiguous-enum-ctor-fails
+  (testing "a constructor that belongs to two enums fails fast"
+    (is (thrown-with-msg? Exception #"more than one enum"
+                          (methods-ir "A = \"X\" | \"Y\"\nB = \"X\" | \"Z\"\nC = String/s"
+                                      "C::m = { X }")))))
+
 (deftest let-bindings-in-method-ir
   (testing "Ball::move binds nx and ny then constructs"
     (let [move (first (methods-ir rect-ball-schema
@@ -168,7 +186,9 @@ Ball = Int/x Int/y Int/dx Int/dy Int/rad")
         (is (str/includes? classes "public function doubleWidth(): Rect"))
         (is (str/includes? classes "new Rect(this.x, this.y, this.width * 2, this.height)"))
         (is (str/includes? classes "public function move(): Ball"))
-        (is (str/includes? classes "new Ball(this.x + this.dx, this.y + this.dy, this.dx, this.dy, this.rad)"))))))
+        (is (str/includes? classes "new Ball(this.x + this.dx, this.y + this.dy, this.dx, this.dy, this.rad)"))
+        (is (str/includes? classes "public function widen(): Game"))
+        (is (str/includes? classes "new PlayArea(new Rect(this.playArea.rect.x, this.playArea.rect.y, this.playArea.rect.width * 2, this.playArea.rect.height))"))))))
 
 (deftest logic-example-emits-methods
   (testing "test_reaction_logic.wcn puts movingRight and contains on generated classes"
@@ -408,6 +428,10 @@ Game::bad = { playArea.area() }")))))
   "Team = [Player]/players
 Player = String/name Int/score")
 
+(def roster-schema
+  "Team = String/name [Player]/players {String : Int}/scores
+Player = String/name Int/score")
+
 (deftest map-ir
   (testing "Array map takes a one-arg block and returns Array of the body type"
     (let [m (first (methods-ir team-schema
@@ -434,11 +458,64 @@ Player = String/name Int/score")
       (is (= :int (get-in m [:body :args 0 :expr])))
       (is (= :lambda (get-in m [:body :args 1 :expr]))))))
 
+(def fold-seed-schema
+  "Team = [Player]/players
+Player = String/name Int/score
+Summary = Int/total Int/count")
+
+(deftest fold-infers-class-and-string-seed
+  (testing "fold types acc from a constructed class seed and from a string seed"
+    (let [stats (first (methods-ir fold-seed-schema
+                                   "Team::stats = { players.fold([:Summary 0 0], { acc, p | [:Summary (acc.total + p.score) (acc.count + 1)] }) }"))
+          joined (first (methods-ir fold-seed-schema
+                                    "Team::joined = { players.fold(\"\", { acc, p | acc.concat(p.name) }) }"))]
+      (is (= "Summary" (:return-type stats)))
+      (is (= :construct (get-in stats [:body :args 0 :expr])))
+      (is (= "Summary" (get-in stats [:body :args 0 :class-name])))
+      (is (= [{:name "acc" :type "Summary"} {:name "p" :type "Player"}]
+             (get-in stats [:body :args 1 :params])))
+      (is (= "String" (:return-type joined)))
+      (is (= :string (get-in joined [:body :args 0 :expr])))
+      (is (= [{:name "acc" :type "String"} {:name "p" :type "Player"}]
+             (get-in joined [:body :args 1 :params]))))))
+
 (deftest map-on-non-array-fails
-  (testing "map is only for arrays"
+  (testing "map is only for arrays and maps"
     (is (thrown-with-msg? Exception #"array"
                           (methods-ir rect-ball-schema
                                       "Ball::bad = { dx.map({ n | n }) }")))))
+
+(deftest map-map-ir
+  (testing "Map map takes key and value and returns Map of the body type"
+    (let [m (first (methods-ir roster-schema
+                               "Team::boosted = { scores.map({ k, v | v + 1 }) }"))]
+      (is (= "Map<String, Int>" (:return-type m)))
+      (is (= "map" (get-in m [:body :method])))
+      (is (= "Map" (get-in m [:body :on])))
+      (is (= ["k" "v"] (mapv :name (get-in m [:body :args 0 :params])))))))
+
+(deftest map-filter-ir
+  (testing "Map filter keeps the map type"
+    (let [m (first (methods-ir roster-schema
+                               "Team::hot = { scores.filter({ k, v | v > 0 }) }"))]
+      (is (= "Map<String, Int>" (:return-type m)))
+      (is (= "filter" (get-in m [:body :method])))
+      (is (= "Map" (get-in m [:body :on]))))))
+
+(deftest map-fold-ir
+  (testing "Map fold takes a seed and a three-arg block"
+    (let [m (first (methods-ir roster-schema
+                               "Team::sum = { scores.fold(0, { acc, k, v | acc + v }) }"))]
+      (is (= "Int" (:return-type m)))
+      (is (= "fold" (get-in m [:body :method])))
+      (is (= "Map" (get-in m [:body :on])))
+      (is (= ["acc" "k" "v"] (mapv :name (get-in m [:body :args 1 :params])))))))
+
+(deftest map-map-one-arg-fails
+  (testing "Map::map rejects an array-style one-arg block"
+    (is (thrown-with-msg? Exception #"2 arguments"
+                          (methods-ir roster-schema
+                                      "Team::bad = { scores.map({ v | v }) }")))))
 
 (deftest emit-collection-haxe
   (testing "map filter fold emit Haxe Array methods and Lambda.fold"
@@ -456,6 +533,23 @@ Team::total = { players.fold(0, { acc, p | acc + p.score }) }")
       (is (str/includes? total-haxe "Lambda.fold(this.players"))
       (is (str/includes? total-haxe "function(p:Player, acc:Int):Int")))))
 
+(deftest emit-map-collection-haxe
+  (testing "map filter fold on maps emit WCHNTRuntime helpers"
+    (let [methods (methods-ir roster-schema
+                              "Team::boosted = { scores.map({ k, v | v + 1 }) }
+Team::hot = { scores.filter({ k, v | v > 0 }) }
+Team::sum = { scores.fold(0, { acc, k, v | acc + v }) }")
+          by-name (into {} (map (juxt :method-name identity) methods))
+          map-haxe (ir-to-haxe/generate-method (by-name "boosted"))
+          filter-haxe (ir-to-haxe/generate-method (by-name "hot"))
+          fold-haxe (ir-to-haxe/generate-method (by-name "sum"))]
+      (is (str/includes? map-haxe "WCHNTRuntime.mapMap(this.scores"))
+      (is (str/includes? map-haxe "new Map<String, Int>()"))
+      (is (str/includes? map-haxe "function(k:String, v:Int):Int"))
+      (is (str/includes? filter-haxe "WCHNTRuntime.mapFilter(this.scores"))
+      (is (str/includes? fold-haxe "WCHNTRuntime.mapFold(this.scores"))
+      (is (str/includes? fold-haxe "function(acc:Int, k:String, v:Int):Int")))))
+
 (deftest collections-example-emits-methods
   (testing "test_reaction_collections.wcn compiles map filter fold"
     (let [cargo (compiler/compile (slurp "examples/test_reaction_collections.wcn"))]
@@ -467,10 +561,6 @@ Team::total = { players.fold(0, { acc, p | acc + p.score }) }")
 
 (def player-schema
   "Player = String/name Int/score")
-
-(def roster-schema
-  "Team = String/name [Player]/players {String : Int}/scores
-Player = String/name Int/score")
 
 (deftest string-length-ir
   (testing "String::length is a no-arg method returning Int"
@@ -484,6 +574,44 @@ Player = String/name Int/score")
                                "Player::tag = { name.concat(\":\").concat(score) }"))]
       (is (= "String" (:return-type m)))
       (is (= "concat" (get-in m [:body :method]))))))
+
+(deftest primitive-str-ir
+  (testing "str is String on Int, String, and int literals"
+    (let [methods (methods-ir player-schema
+                              "Player::n = { score.str() }
+Player::s = { name.str() }
+Player::four = { 4.str() }")
+          by-name (into {} (map (juxt :method-name identity) methods))]
+      (is (= "String" (:return-type (by-name "n"))))
+      (is (= "str" (get-in (by-name "n") [:body :method])))
+      (is (= "String" (:return-type (by-name "s"))))
+      (is (= "String" (:return-type (by-name "four")))))))
+
+(deftest str-on-array-fails
+  (testing "str is only for primitives"
+    (is (thrown-with-msg? Exception #"str"
+                          (methods-ir roster-schema
+                                      "Team::bad = { players.str() }")))))
+
+(deftest string-tpl-ir
+  (testing "tpl takes Map<String, String> and returns String"
+    (let [m (first (methods-ir player-schema
+                               "Player::hi = { \"hi {who}.\".tpl({String:String \"who\": name}) }"))]
+      (is (= "String" (:return-type m)))
+      (is (= "tpl" (get-in m [:body :method])))
+      (is (= 1 (count (get-in m [:body :args])))))))
+
+(deftest tpl-missing-literal-hole-fails
+  (testing "a string literal with a hole missing from the map fails at compile"
+    (is (thrown-with-msg? Exception #"missing 'who'"
+                          (methods-ir player-schema
+                                      "Player::bad = { \"hi {who}.\".tpl({String:String}) }")))))
+
+(deftest tpl-wrong-map-fails
+  (testing "tpl rejects a map that is not String to String"
+    (is (thrown-with-msg? Exception #"String::tpl"
+                          (methods-ir roster-schema
+                                      "Team::bad = { \"x {n}.\".tpl(scores) }")))))
 
 (deftest cons-ir
   (testing "cons prepends an element and keeps the array type"
@@ -508,12 +636,19 @@ Player = String/name Int/score")
       (is (= [] (get-in m [:body :items]))))))
 
 (deftest map-literal-ir
-  (testing "[:Map/{String:Int}] is an empty typed map"
+  (testing "{String:Int} is an empty typed map"
     (let [m (first (methods-ir roster-schema
-                               "Team::blank = { [:Map/{String:Int}] }"))]
+                               "Team::blank = { {String:Int} }"))]
       (is (= "Map<String, Int>" (:return-type m)))
       (is (= :map (get-in m [:body :expr])))
       (is (= [] (get-in m [:body :pairs]))))))
+
+(deftest brace-map-literal-pairs-ir
+  (testing "{String:Int k v} pairs type-check"
+    (let [m (first (methods-ir roster-schema
+                               "Team::scoresOf = { {String:Int \"Ada\":3} }"))]
+      (is (= "Map<String, Int>" (:return-type m)))
+      (is (= 1 (count (get-in m [:body :pairs])))))))
 
 (deftest cons-wrong-elem-fails
   (testing "cons rejects an element of the wrong type"
@@ -548,6 +683,29 @@ Team::noAda = { scores.remove(\"Ada\") }")
       (is (= "get" (get-in (by-name "adaScore") [:body :method])))
       (is (= "Map<String, Int>" (:return-type (by-name "noAda"))))
       (is (= "remove" (get-in (by-name "noAda") [:body :method]))))))
+
+(deftest map-exists-and-get-default-ir
+  (testing "exists is Bool; get(key, fallback) is the value type"
+    (let [methods (methods-ir roster-schema
+                              "Team::hasAda = { scores.exists(\"Ada\") }
+Team::adaOrZero = { scores.get(\"Ada\", 0) }")
+          by-name (into {} (map (juxt :method-name identity) methods))]
+      (is (= "Bool" (:return-type (by-name "hasAda"))))
+      (is (= "exists" (get-in (by-name "hasAda") [:body :method])))
+      (is (= "Int" (:return-type (by-name "adaOrZero"))))
+      (is (= 2 (count (get-in (by-name "adaOrZero") [:body :args])))))))
+
+(deftest get-default-wrong-type-fails
+  (testing "get fallback must be the map value type"
+    (is (thrown-with-msg? Exception #"Map::get"
+                          (methods-ir roster-schema
+                                      "Team::bad = { scores.get(\"Ada\", name) }")))))
+
+(deftest exists-on-array-fails
+  (testing "exists is only for maps"
+    (is (thrown-with-msg? Exception #"exists"
+                          (methods-ir roster-schema
+                                      "Team::bad = { players.exists(\"Ada\") }")))))
 
 (deftest substring-ir
   (testing "substring takes two Ints and returns String"
@@ -589,7 +747,7 @@ Player::tag = { name.concat(\":\").concat(score) }
 Team::withP = {p | players.cons(p) }
 Team::withScore = {n, s | scores.put(n, s) }
 Team::none = { [:Array/Player] }
-Team::blank = { [:Map/{String:Int}] }")
+Team::blank = { {String:Int} }")
           by-name (into {} (map (juxt :method-name identity) methods))
           len-haxe (ir-to-haxe/generate-method (by-name "nameLen"))
           tag-haxe (ir-to-haxe/generate-method (by-name "tag"))
@@ -612,6 +770,8 @@ Team::blank = { [:Map/{String:Int}] }")
 Team::captain = { players.head() }
 Team::bench = { players.tail() }
 Team::adaScore = { scores.get(\"Ada\") }
+Team::hasAda = { scores.exists(\"Ada\") }
+Team::adaOrZero = { scores.get(\"Ada\", 0) }
 Team::noAda = { scores.remove(\"Ada\") }
 Team::zeros = { 3.times({ i | 0 }) }")
           by-name (into {} (map (juxt :method-name identity) methods))]
@@ -621,12 +781,27 @@ Team::zeros = { 3.times({ i | 0 }) }")
                          "WCHNTRuntime.arrayTail(this.players)"))
       (is (str/includes? (ir-to-haxe/generate-method (by-name "adaScore"))
                          "WCHNTRuntime.mapGet(this.scores, \"Ada\")"))
+      (is (str/includes? (ir-to-haxe/generate-method (by-name "hasAda"))
+                         "WCHNTRuntime.mapExists(this.scores, \"Ada\")"))
+      (is (str/includes? (ir-to-haxe/generate-method (by-name "adaOrZero"))
+                         "WCHNTRuntime.mapGetDefault(this.scores, \"Ada\", 0)"))
       (is (str/includes? (ir-to-haxe/generate-method (by-name "noAda"))
                          "WCHNTRuntime.mapRemove(this.scores, \"Ada\")"))
       (is (str/includes? (ir-to-haxe/generate-method (by-name "initial"))
                          "WCHNTRuntime.substring(this.name, 0, 1)"))
       (is (str/includes? (ir-to-haxe/generate-method (by-name "zeros"))
                          "WCHNTRuntime.times(3")))))
+
+(deftest emit-str-tpl-haxe
+  (testing "str is Std.string; tpl is WCHNTRuntime.tpl"
+    (let [methods (methods-ir player-schema
+                              "Player::n = { score.str() }
+Player::hi = { \"hi {who}.\".tpl({String:String \"who\": name}) }")
+          by-name (into {} (map (juxt :method-name identity) methods))]
+      (is (str/includes? (ir-to-haxe/generate-method (by-name "n"))
+                         "Std.string(this.score)"))
+      (is (str/includes? (ir-to-haxe/generate-method (by-name "hi"))
+                         "WCHNTRuntime.tpl")))))
 
 (def tick-schema
   "Game = PlayArea Ball $Time
@@ -675,6 +850,126 @@ Game::update = { [:Game playArea ball time] }")
       (is (not (str/includes? game-haxe "this.time = this.time;")))
       (is (not (str/includes? game-haxe "notifySubscribers"))))))
 
+(def game-rect-schema
+  "Game = PlayArea Ball
+PlayArea = Rect
+Rect = Int/x Int/y Int/width Int/height
+Ball = Int/x Int/y Int/dx Int/dy Int/rad")
+
+(deftest with-construction-lowers-to-construct
+  (testing "[:Rect | width = (width * 2)] copies the other Rect fields from this"
+    (let [m (first (methods-ir rect-ball-schema
+                               "Rect::doubleWidth = { [:Rect | width = (width * 2)] }"))
+          args (get-in m [:body :args])]
+      (is (= :construct (get-in m [:body :expr])))
+      (is (= "Rect" (get-in m [:body :class-name])))
+      (is (= 4 (count args)))
+      (is (= :field (:expr (nth args 0))))
+      (is (= "x" (:name (nth args 0))))
+      (is (= :arith (:expr (nth args 2))))
+      (is (= :field (:expr (nth args 3))))
+      (is (= "height" (:name (nth args 3)))))))
+
+(deftest with-construction-nested-path
+  (testing "[:Game | playArea.rect.width = 800] rebuilds PlayArea and Rect"
+    (let [m (first (methods-ir game-rect-schema
+                               "Game::widen = { [:Game | playArea.rect.width = 800] }"))
+          args (get-in m [:body :args])
+          play-area (first args)
+          rect (first (:args play-area))]
+      (is (= :construct (:expr play-area)))
+      (is (= "PlayArea" (:class-name play-area)))
+      (is (= :construct (:expr rect)))
+      (is (= "Rect" (:class-name rect)))
+      (is (= :int (:expr (nth (:args rect) 2))))
+      (is (= 800 (:value (nth (:args rect) 2))))
+      (is (= :field (:expr (second args))))
+      (is (= "ball" (:name (second args)))))))
+
+(deftest with-construction-named-source
+  (testing "[:Ball ball | x = nx] reads remaining fields from the source"
+    (let [m (first (methods-ir game-rect-schema
+                               "Game::nudge = { Ball/ball, Int/nx | [:Ball ball | x = nx] }"))
+          args (get-in m [:body :args])]
+      (is (= :param (:expr (first args))))
+      (is (= "nx" (:name (first args))))
+      (is (= :path (:expr (second args))))
+      (is (= ["y"] (:fields (second args)))))))
+
+(deftest with-construction-emits-haxe
+  (testing "lowered write-paths emit the same new Class(...) as a full construction"
+    (let [methods (methods-ir game-rect-schema
+                              (str "Rect::doubleWidth = { [:Rect | width = (width * 2)] }\n"
+                                   "Game::widen = { [:Game | playArea.rect.width = 800] }"))
+          by-name (into {} (map (juxt :method-name identity) methods))
+          dw (ir-to-haxe/generate-method (by-name "doubleWidth"))
+          widen (ir-to-haxe/generate-method (by-name "widen"))]
+      (is (str/includes? dw "new Rect(this.x, this.y, this.width * 2, this.height)"))
+      (is (str/includes? widen "new PlayArea(new Rect(this.playArea.rect.x, this.playArea.rect.y, 800, this.playArea.rect.height))"))
+      (is (str/includes? widen "this.ball")))))
+
+(deftest with-update-ticks-time
+  (testing "Time::update may use [:Time | t = (t + 1)]"
+    (let [methods (methods-ir tick-schema
+                              (str "Time::update = { [:Time | t = (t + 1)] }\n"
+                                   "Game::update = { [:Game | ball.x = (ball.x + ball.dx)] }"))
+          time-up (first (filter #(= "Time" (:class %)) methods))
+          game-up (first (filter #(= "Game" (:class %)) methods))
+          sir (schema-ir tick-schema)
+          time-haxe (ir-to-haxe/generate-method
+                     time-up
+                     {:components (mapv #(select-keys % [:component-name :type-name])
+                                        [{:component-name "t" :type-name "Int"}])
+                      :observable? true
+                      :schema-ir sir
+                      :class-name "Time"})
+          game-haxe (ir-to-haxe/generate-method
+                     game-up
+                     {:components [{:component-name "playArea" :type-name "PlayArea"}
+                                   {:component-name "ball" :type-name "Ball"}
+                                   {:component-name "time" :type-name "Time"}]
+                      :observable? false
+                      :schema-ir sir
+                      :class-name "Game"})]
+      (is (str/includes? time-haxe "this.t = this.t + 1;"))
+      (is (str/includes? game-haxe "this.ball = new Ball("))
+      (is (not (str/includes? game-haxe "this.time = "))))))
+
+(deftest with-construction-needs-source
+  (testing "implicit this must be the constructed class"
+    (is (thrown-with-msg? Exception #"needs a source"
+                          (methods-ir game-rect-schema
+                                      "Game::nudge = { [:Ball | x = 1] }")))))
+
+(deftest with-construction-unknown-field-fails
+  (testing "write-path field must exist on the class"
+    (is (thrown-with-msg? Exception #"Unknown field"
+                          (methods-ir rect-ball-schema
+                                      "Rect::bad = { [:Rect | banana = 1] }")))))
+
+(deftest with-construction-conflict-fails
+  (testing "cannot assign a field and also a path under it"
+    (is (thrown-with-msg? Exception #"path under"
+                          (methods-ir game-rect-schema
+                                      "Game::bad = { [:Game | playArea = playArea, playArea.rect.width = 800] }")))))
+
+(deftest with-construction-rejects-collection-path
+  (testing "cannot walk into an array with a write-path"
+    (is (thrown-with-msg? Exception #"collection"
+                          (methods-ir
+                           "Team = String/name [Player]/players\nPlayer = String/name Int/score"
+                           "Team::bad = { [:Team | players.name = \"Ada\"] }")))))
+
+(deftest construction-rejects-with-form
+  (testing "[:Class | ...] is Methods-only"
+    (let [cargo (compiler/compile
+                 (str "# x\n\n## Schema\n\n```\nBall = Int/x Int/y\n```\n\n"
+                      "## Construction\n\n```\n[:Ball | x = 1]\n```\n\n"
+                      "## Target\n\n```\n%terminal\n\n%main\n"
+                      "public static function main():Void {}\n```\n"))]
+      (is (not (:success cargo)))
+      (is (re-find #"Methods" (or (first (:errors cargo)) ""))))))
+
 (deftest update-must-construct-self
   (testing "update that does not construct its class fails"
     (is (thrown-with-msg? Exception #"update"
@@ -708,13 +1003,14 @@ Game::update = { [:Game playArea ball] }")))))
                                       "Time::update = {n | [:Time (t + n)] }
 Game::update = { [:Game playArea ball time] }")))))
 
-(deftest construction-without-target-fails
-  (testing "a construction program without Target host fails rather than inventing Main"
+(deftest construction-without-target-emits-assemblage
+  (testing "a construction program without Target emits the assemblage but no Main"
     (let [cargo (compiler/compile
                  (str "# x\n\n## Schema\n\n```\nRect = Int/x Int/y Int/width Int/height\n```\n\n"
                       "## Construction\n\n```\n[:Rect 0 0 1 1]\n```\n"))]
-      (is (not (:success cargo)))
-      (is (re-find #"host" (or (first (:errors cargo)) ""))))))
+      (is (:success cargo) (first (:errors cargo)))
+      (is (str/includes? (get-in cargo [:value :classes]) "RectAssemblage"))
+      (is (str/blank? (get-in cargo [:value :main-class] ""))))))
 
 (deftest schema-class-named-main-fails
   (testing "a schema class called Main fails rather than colliding with the generated entry"
@@ -731,7 +1027,7 @@ Game::update = { [:Game playArea ball time] }")))))
                  (str "# x\n\n## Schema\n\n```\nRect = Int/x Int/y Int/width Int/height\n```\n\n"
                       "## Construction\n\n```\n[:Rect 0 0 1 1]\n```\n\n"
                       "## Target\n\n```\n%openfl\n\n"
-                      "%init\nvar assemblage:Rect;\nfunction init():Void { assemblage = rectFactory(); }\n\n"
+                      "%init\nvar assemblage:Rect;\nfunction init():Void { assemblage = RectAssemblage.factory(); }\n\n"
                       "%step\nfunction step():Void { graphics.clear(); }\n```\n"))]
       (is (:success cargo) (first (:errors cargo)))
       (let [main-class (get-in cargo [:value :main-class])
@@ -742,7 +1038,7 @@ Game::update = { [:Game playArea ball time] }")))))
         (is (str/includes? main-class "function init"))
         (is (str/includes? main-class "function step"))
         (is (str/includes? main-class "Event.ENTER_FRAME"))
-        (is (str/includes? main-class "rectFactory"))))))
+        (is (str/includes? main-class "RectAssemblage.factory"))))))
 
 (deftest dollar-without-methods-fails
   (testing "schema $ with no Methods section still requires update"
@@ -816,9 +1112,9 @@ Circle = Int/radius")
       (is (= [{:name "b" :type "Ball"}] (:parameters m))))))
 
 (deftest interface-signature-ir
-  (testing "Shape::area : Int = { | } declares an interface signature"
+  (testing "Shape::area = { | } -> Int declares an interface signature"
     (let [methods (methods-ir shape-schema
-                              "Shape::area : Int = { | }
+                              "Shape::area = { | } -> Int
 Triangle::area = { base * height }
 Circle::area = { radius * radius }")
           m (first (filter #(= "Shape" (:class %)) methods))]
@@ -831,7 +1127,7 @@ Circle::area = { radius * radius }")
 (deftest interface-signature-with-params
   (testing "interface parameters must be typed"
     (let [methods (methods-ir shape-schema
-                              "Shape::scale : Int = { Int/factor | }
+                              "Shape::scale = { Int/factor | } -> Int
 Triangle::scale = { Int/factor | base * factor }
 Circle::scale = { Int/factor | radius * factor }")
           m (first (filter #(= "Shape" (:class %)) methods))]
@@ -842,9 +1138,9 @@ Circle::scale = { Int/factor | radius * factor }")
   (testing "each implementer must match the interface signature"
     (is (thrown-with-msg? Exception #"must implement Shape::area"
                           (methods-ir shape-schema
-                                      "Shape::area : Int = { | }")))
+                                      "Shape::area = { | } -> Int")))
     (let [methods (methods-ir shape-schema
-                              "Shape::area : Int = { | }
+                              "Shape::area = { | } -> Int
 Triangle::area = { base * height }
 Circle::area = { radius * radius }")
           by-name (into {} (map (juxt :method-name identity)
@@ -855,7 +1151,7 @@ Circle::area = { radius * radius }")
   (testing "interface methods appear on generated Haxe interface"
     (let [schema (schema-ir shape-schema)
           methods (methods-ir shape-schema
-                            "Shape::area : Int = { | }
+                            "Shape::area = { | } -> Int
 Triangle::area = { base * height }
 Circle::area = { radius * radius }")
           haxe (ir-to-haxe/schema-ir-to-haxe schema methods)]
@@ -867,9 +1163,9 @@ Circle::area = { radius * radius }")
 (deftest external-type-at-lambda-param
   (testing "@Graphics/g registers Graphics as external and types the parameter"
     (let [schema-text "Circle = Int/x Int/y Int/radius"
-          reaction-text "Circle::draw : Void = { @Graphics/g |
+          reaction-text "Circle::draw = { @Graphics/g |
   g.beginFill(16711680).drawCircle(x, y, radius).endFill()
-}"
+} -> Void"
           methods (methods-ir schema-text reaction-text)
           draw (first methods)]
       (is (= [{:name "g" :type "Graphics"}] (:parameters draw)))
@@ -885,7 +1181,7 @@ Circle::area = { radius * radius }")
   (testing "Graphics/g without @ is not registered as external; calls on g fail"
     (is (thrown-with-msg? Exception #"Unknown method 'drawCircle' on Graphics"
                           (methods-ir "Circle = Int/x Int/y Int/radius"
-                                      "Circle::draw : Void = { Graphics/g | g.drawCircle(x, y, radius) }")))))
+                                      "Circle::draw = { Graphics/g | g.drawCircle(x, y, radius) } -> Void")))))
 
 (deftest inject-method-is-reserved
   (testing "Methods cannot define inject; that name is for Target"

@@ -66,7 +66,7 @@ Ball = Int/x Int/y Int/rad
 
 %main
 public static function main():Void {
-    var assemblage = gameFactory();
+    var assemblage = GameAssemblage.factory();
     var helper = new WCHNTHelper();
     trace(assemblage.toConstruction(0, helper));
 }
@@ -75,14 +75,14 @@ public static function main():Void {
               result (:value cargo-result)]
           (is (schema/valid-full-program? result))
           (let [classes (:classes result)
-                factory (:factory result)
+                factory (:classes result)
                 main (:main result)]
             (is (str/includes? result "class Game"))
             (is (str/includes? result "class PlayArea"))
             (is (str/includes? result "class Rect"))
             (is (str/includes? result "class Ball"))
-            (is (str/includes? factory "public static function gameFactory("))
-            (is (str/includes? main "var assemblage = gameFactory()"))))))))
+            (is (str/includes? factory "public static function factory("))
+            (is (str/includes? main "var assemblage = GameAssemblage.factory()"))))))))
 
 (deftest test-compile-wchnt-complex
   (testing "Compile complex WCHNT with arrays and disjunctions"
@@ -111,7 +111,7 @@ players = [:Array/Player [:Player \"Alice\" 100] [:Player \"Bob\" 85]] .
 
 %main
 public static function main():Void {
-    var assemblage = gameFactory();
+    var assemblage = GameAssemblage.factory();
     var helper = new WCHNTHelper();
     trace(assemblage.toConstruction(0, helper));
 }
@@ -121,7 +121,7 @@ public static function main():Void {
       (is (:success cargo-result))
       (is (schema/valid-full-program? result))
       (let [classes (:classes result)
-            factory (:factory result)
+            factory (:classes result)
             main (:main result)]
         
         (is (str/includes? classes "interface Shape"))
@@ -219,7 +219,7 @@ Book = String/title
 
 %main
 public static function main():Void {
-    var assemblage = dBFactory();
+    var assemblage = DBAssemblage.factory();
     var helper = new WCHNTHelper();
     trace(assemblage.toConstruction(0, helper));
 }
@@ -240,11 +240,11 @@ public static function main():Void {
         (do
           (is (schema/valid-full-program? result))
           (let [classes (:classes result)
-                factory (:factory result)]
+                factory (:classes result)]
             (is (str/includes? classes "class DB"))
             (is (str/includes? classes "class Book"))
             (is (str/includes? classes "public var books: Array<Book>"))
-            (is (str/includes? factory "public static function dBFactory("))))))))
+            (is (str/includes? factory "public static function factory("))))))))
 
 
 

@@ -13,7 +13,7 @@
 
 %main
     public static function main():Void {
-        var assemblage = gameFactory();
+        var assemblage = GameAssemblage.factory();
         for (i in 0...10) {
             assemblage.time.update();
         }
@@ -79,7 +79,7 @@
   (testing "%openfl names the OpenFL host and takes %init and %step"
     (let [ir (target/parse-target
               (str "%openfl\n\n"
-                   "%init\nvar assemblage:Game;\nfunction init():Void { assemblage = gameFactory(); }\n\n"
+                   "%init\nvar assemblage:Game;\nfunction init():Void { assemblage = GameAssemblage.factory(); }\n\n"
                    "%step\nfunction step():Void { assemblage = assemblage.step(); }\n"))]
       (is (= "openfl" (:host ir)))
       (is (nil? (:main ir)))
@@ -140,7 +140,7 @@
   (testing "%canvas uses the same %init/%step lifecycle as OpenFL"
     (let [ir (target/parse-target
               (str "%canvas\n\n"
-                   "%init\nvar assemblage;\nfunction init() { assemblage = gameFactory(); }\n\n"
+                   "%init\nvar assemblage;\nfunction init() { assemblage = GameAssemblage.factory(); }\n\n"
                    "%step\nfunction step() { assemblage = assemblage.step(); }\n"))]
       (is (= "canvas" (:host ir)))
       (is (nil? (:main ir)))
@@ -155,3 +155,49 @@
     (is (thrown-with-msg? Exception #"%step"
                           (target/parse-target
                            "%canvas\n\n%init\nfunction init() {}\n")))))
+
+(deftest parse-target-host-cli
+  (testing "%cli uses the same %init/%step lifecycle as OpenFL"
+    (let [ir (target/parse-target
+              (str "%cli\n\n"
+                   "%init\nvar assemblage:Game;\nfunction init():Void { assemblage = GameAssemblage.factory(); }\n\n"
+                   "%step\nfunction step(line:String):Void { assemblage = assemblage.move(line); }\n"))]
+      (is (= "cli" (:host ir)))
+      (is (nil? (:main ir)))
+      (is (re-find #"function init" (get-in ir [:init :haxe])))
+      (is (re-find #"function step" (get-in ir [:step :haxe]))))))
+
+(deftest parse-target-cli-requires-init-and-step
+  (testing "%cli without %init/%step fails"
+    (is (thrown-with-msg? Exception #"%init"
+                          (target/parse-target
+                           "%cli\n\n%step\nfunction step(line:String):Void {}\n")))
+    (is (thrown-with-msg? Exception #"%step"
+                          (target/parse-target
+                           "%cli\n\n%init\nfunction init():Void {}\n")))))
+
+(deftest parse-target-cli-rejects-main
+  (testing "%cli does not take %main"
+    (is (thrown-with-msg? Exception #"%main"
+                          (target/parse-target
+                           "%cli\n\n%main\nfunction main():Void {}\n%init\nfunction init():Void {}\n%step\nfunction step(line:String):Void {}\n")))))
+
+(deftest parse-target-host-cli-live
+  (testing "%cli-live is the browser twin of %cli"
+    (let [ir (target/parse-target
+              (str "%cli-live\n\n"
+                   "%init\nvar assemblage;\nfunction init() { assemblage = GameAssemblage.factory(); }\n\n"
+                   "%step\nfunction step(line) { assemblage = assemblage.move(line); }\n"))]
+      (is (= "cli-live" (:host ir)))
+      (is (nil? (:main ir)))
+      (is (re-find #"function init" (get-in ir [:init :haxe])))
+      (is (re-find #"function step" (get-in ir [:step :haxe]))))))
+
+(deftest parse-target-cli-live-requires-init-and-step
+  (testing "%cli-live without %init/%step fails"
+    (is (thrown-with-msg? Exception #"%init"
+                          (target/parse-target
+                           "%cli-live\n\n%step\nfunction step(line) {}\n")))
+    (is (thrown-with-msg? Exception #"%step"
+                          (target/parse-target
+                           "%cli-live\n\n%init\nfunction init() {}\n")))))

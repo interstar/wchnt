@@ -5,6 +5,8 @@
             [clojure.string :as str]
             [clojure.test :refer :all]
             [wchnt-lang.compiler :as compiler]
+            [wchnt-lang.interpret :as interpret]
+            [wchnt-lang.pages :as pages]
             [wchnt-lang.pipeline :as p]))
 
 (defn- example-files
@@ -14,9 +16,12 @@
        (filter #(str/ends-with? (.getName %) ".wcn"))
        (sort-by #(.getName %))))
 
+(def example-opts
+  {:resolve-page (pages/sibling-resolve "examples")})
+
 (defn- compile-example
   [filename]
-  (compiler/compile (slurp (str "examples/" filename))))
+  (compiler/compile (slurp (str "examples/" filename)) example-opts))
 
 (defn- assert-compiles
   [filename]
@@ -28,7 +33,7 @@
 
 (defn- factory
   [cargo]
-  (get-in cargo [:value :factory] ""))
+  (get-in cargo [:value :classes] ""))
 
 (defn- classes
   [cargo]
@@ -53,20 +58,29 @@
       (doseq [file files]
         (let [name (.getName file)
               text (slurp file)]
-          (if (re-find #"(?m)^%canvas\s*$" text)
-            (let [cargo (compiler/compile-to-ir text)]
+          (if (re-find #"(?m)^%(canvas|cli-live)\s*$" text)
+            (let [cargo (compiler/compile-to-ir text example-opts)]
               (is (:success cargo)
-                  (str name " %canvas should compile to IR: " (first (:errors cargo))))
-              (is (= "canvas" (get-in cargo [:stash :target-ir :host]))))
-            (let [cargo (compiler/compile text)]
+                  (str name " live host should compile to IR: " (first (:errors cargo))))
+              (is (#{"canvas" "cli-live"} (get-in cargo [:stash :target-ir :host]))))
+            (let [cargo (compiler/compile text example-opts)]
               (is (:success cargo)
                   (str name " should compile: " (first (:errors cargo))))
               (when (get-in cargo [:value :has-construction?])
-                (is (str/includes? (factory cargo) "Factory")
+                (is (str/includes? (factory cargo) "Assemblage")
                     (str name " with construction should emit a factory"))
                 (is (str/includes? text "## Target")
                     (str name " with construction should have a Target section"))
-                (if (= "openfl" (host cargo))
+                (is (str/includes? (get-in cargo [:value :preamble] "") "class WCHNTConsole")
+                    (str name " Haxe host should emit WCHNTConsole"))
+                (is (str/includes? (get-in cargo [:value :preamble] "") "class WCHNTMaths")
+                    (str name " Haxe host should emit WCHNTMaths"))
+                (is (str/includes? (main-class cargo) "wchntConsole")
+                    (str name " Haxe host should bind wchntConsole"))
+                (is (str/includes? (main-class cargo) "wchntMaths")
+                    (str name " Haxe host should bind wchntMaths"))
+                (cond
+                  (= "openfl" (host cargo))
                   (do
                     (is (str/includes? (main-class cargo) "extends Sprite")
                         (str name " OpenFL Target should emit Main extends Sprite"))
@@ -74,6 +88,19 @@
                         (str name " should emit %init"))
                     (is (str/includes? (main-class cargo) "function step")
                         (str name " should emit %step")))
+
+                  (= "cli" (host cargo))
+                  (do
+                    (is (str/includes? (main-class cargo) "Sys.stdin")
+                        (str name " %cli Target should read stdin"))
+                    (is (str/includes? (main-class cargo) "function init")
+                        (str name " should emit %init"))
+                    (is (str/includes? (main-class cargo) "function step")
+                        (str name " should emit %step"))
+                    (is (str/includes? (main-class cargo) "function main")
+                        (str name " should emit a main loop")))
+
+                  :else
                   (is (str/includes? (main cargo) "function main")
                       (str name " should emit %main from Target")))))))))))
 
@@ -152,7 +179,7 @@
   (testing "test_spaces is schema-only and camel-cases spaced enum labels"
     (let [cargo (assert-compiles "test_spaces.wcn")
           cls (classes cargo)]
-      (is (str/blank? (factory cargo)))
+      (is (not (str/includes? cls "Assemblage")))
       (is (str/includes? cls "enum GameState"))
       (is (str/includes? cls "NotStarted;"))
       (is (str/includes? cls "InProgress;"))
@@ -162,7 +189,7 @@
   (testing "test_dict_minimal is schema-only Map<String, Int>"
     (let [cargo (assert-compiles "test_dict_minimal.wcn")
           cls (classes cargo)]
-      (is (str/blank? (factory cargo)))
+      (is (not (str/includes? cls "Assemblage")))
       (is (str/includes? cls "class Config"))
       (is (str/includes? cls "Map<String, Int>")))))
 
@@ -198,7 +225,7 @@
 (deftest two-subscribers-share-one-time
   (testing "test_reactive_two_subscribers builds Time first, both subscribe"
     (let [f (factory (assert-compiles "test_reactive_two_subscribers.wcn"))]
-      (is (= 2 (count (re-seq #"\.time\.subscribe\(" f))))
+      (is (= 4 (count (re-seq #"\.time\.subscribe\(" f))))
       (is (re-find #"(?s)new Time\(0\).*new Scene\(" f)))))
 
 (deftest complex-game-bindings-and-sum-types
@@ -218,6 +245,7 @@
       (is (str/includes? classes "public function area(): Int"))
       (is (str/includes? classes "public function doubleWidth(): Rect"))
       (is (str/includes? classes "public function move(): Ball"))
+      (is (str/includes? classes "public function widen(): Game"))
       (is (str/includes? classes "this.x % this.width")))))
 
 (deftest reaction-logic-methods
@@ -282,6 +310,9 @@
       (is (= "openfl" (host cargo)))
       (is (str/includes? classes "this.bounceDx()"))
       (is (str/includes? preamble "openfl.display.Sprite"))
+      (is (str/includes? preamble "class WCHNTConsole"))
+      (is (str/includes? preamble "#if sys"))
+      (is (str/includes? main-class "wchntConsole"))
       (is (str/includes? main-class "extends Sprite"))
       (is (str/includes? main-class "function init"))
       (is (str/includes? main-class "function step"))
@@ -390,6 +421,95 @@
       (is (not (str/includes? main "assemblage.update();")))
       (is (not (str/includes? main "assemblage.bounceDx"))))))
 
+(deftest combinators-cli-example
+  (testing "combinators_cli.wcn println's WCHNT values; console owns toConstruction"
+    (let [cargo (assert-compiles "combinators_cli.wcn")
+          preamble (get-in cargo [:value :preamble] "")
+          main-class (main-class cargo)]
+      (is (= "cli" (host cargo)))
+      (is (str/includes? preamble "public function format(value:Dynamic):String"))
+      (is (str/includes? preamble "toConstruction(0, helper)"))
+      (is (str/includes? preamble "arrayToConstruction"))
+      (is (str/includes? preamble "mapToConstruction"))
+      (is (str/includes? main-class "wchntConsole.println(team.names())"))
+      (is (str/includes? main-class "wchntConsole.println(team.stats())"))
+      (is (not (str/includes? main-class "toConstruction(0, helper)")))
+      (is (not (str/includes? main-class "arrayToConstruction"))))))
+
+(deftest maths-example
+  (testing "maths.wcn injects wchntMaths; Target does not call randInt itself"
+    (let [cargo (assert-compiles "maths.wcn")
+          preamble (get-in cargo [:value :preamble] "")
+          main-class (main-class cargo)
+          factory (factory cargo)]
+      (is (= "terminal" (host cargo)))
+      (is (str/includes? preamble "class WCHNTMaths"))
+      (is (str/includes? factory "factory(maths: WCHNTMaths)"))
+      (is (str/includes? main-class "RollAssemblage.factory(wchntMaths)"))
+      (is (str/includes? main-class "wchntConsole.println(assemblage.once())"))
+      (is (not (str/includes? (main cargo) "Math.random"))))))
+
+(deftest maths-cli-live-example
+  (testing "live-examples/maths_cli.wcn is IR-only; Haxe rejects %cli-live"
+    (let [text (slurp "live-examples/maths_cli.wcn")
+          ir (compiler/compile-to-ir text)
+          haxe (compiler/compile text)]
+      (is (:success ir) (str (first (:errors ir))))
+      (is (= "cli-live" (get-in ir [:stash :target-ir :host])))
+      (is (not (:success haxe)))
+      (is (re-find #"%cli-live" (or (first (:errors haxe)) ""))))))
+
+(deftest combinators-cli-live-example
+  (testing "live-examples/combinators_cli.wcn is IR-only; Haxe rejects %cli-live"
+    (let [text (slurp "live-examples/combinators_cli.wcn")
+          ir (compiler/compile-to-ir text)
+          haxe (compiler/compile text)]
+      (is (:success ir) (str (first (:errors ir))))
+      (is (= "cli-live" (get-in ir [:stash :target-ir :host])))
+      (is (not (:success haxe)))
+      (is (re-find #"%cli-live" (or (first (:errors haxe)) ""))))))
+
+(deftest adventure-cli-example
+  (testing "adventure.wcn is a %cli host that prints through wchntConsole"
+    (let [cargo (assert-compiles "adventure.wcn")
+          classes (classes cargo)
+          main-class (main-class cargo)
+          preamble (get-in cargo [:value :preamble] "")]
+      (is (= "cli" (host cargo)))
+      (is (str/includes? classes "class WorldMap"))
+      (is (str/includes? classes "class Location"))
+      (is (str/includes? classes "enum LocationId"))
+      (is (str/includes? classes "enum Direction"))
+      (is (str/includes? classes "Map<LocationId, Location>"))
+      (is (str/includes? classes "Map<Direction, LocationId>"))
+      (is (str/includes? classes "this.worldMap"))
+      (is (str/includes? classes "WCHNTRuntime.mapExists"))
+      (is (str/includes? classes "WCHNTRuntime.mapGetDefault"))
+      (is (str/includes? classes "WCHNTRuntime.tpl"))
+      (is (str/includes? classes "You are in {place}."))
+      (is (str/includes? classes "You can't go that way."))
+      (is (not (str/includes? classes "Map<String, Location>")))
+      (is (not (str/includes? classes "this.world;")))
+      (is (str/includes? preamble "class WCHNTConsole"))
+      (is (str/includes? main-class "wchntConsole"))
+      (is (str/includes? main-class "wchntConsole.println"))
+      (is (not (str/includes? main-class "Sys.println")))
+      (is (str/includes? main-class "Sys.stdin"))
+      (is (str/includes? main-class "app.step(line)"))
+      (is (str/includes? main-class "function init"))
+      (is (str/includes? main-class "function step")))))
+
+(deftest adventure-cli-live-example
+  (testing "adventure_cli.wcn is IR-only; Haxe backend rejects %cli-live"
+    (let [text (slurp "live-examples/adventure_cli.wcn")
+          ir (compiler/compile-to-ir text)
+          haxe (compiler/compile text)]
+      (is (:success ir) (str (first (:errors ir))))
+      (is (= "cli-live" (get-in ir [:stash :target-ir :host])))
+      (is (get-in ir [:stash :construction-ir]))
+      (is (not (:success haxe)))
+      (is (re-find #"%cli-live" (or (first (:errors haxe)) ""))))))
+
 (deftest target-trace-example
   (testing "test_target_trace.wcn binds %trace in Target and calls it from Methods"
     (let [cargo (assert-compiles "test_target_trace.wcn")
@@ -400,6 +520,36 @@
       (is (str/includes? main-class "function wchnt_trace"))
       (is (str/includes? main "assemblage.area()"))
       (is (str/includes? main "function main")))))
+
+(deftest combinators-example
+  (testing "combinators.wcn println's through wchntConsole; Target skips helpers"
+    (let [cargo (assert-compiles "combinators.wcn")
+          classes (classes cargo)
+          main (main cargo)
+          main-class (main-class cargo)
+          preamble (get-in cargo [:value :preamble] "")]
+      (is (= "terminal" (host cargo)))
+      (is (str/includes? preamble "class WCHNTConsole"))
+      (is (str/includes? preamble "#if sys"))
+      (is (str/includes? preamble "haxe.Log.trace"))
+      (is (str/includes? main-class "public static var wchntConsole"))
+      (is (str/includes? main "wchntConsole.println(assemblage.names())"))
+      (is (str/includes? main "wchntConsole.println(assemblage.stats())"))
+      (is (str/includes? main "wchntConsole.println(assemblage.hot())"))
+      (is (not (str/includes? main "arrayToConstruction")))
+      (is (not (str/includes? main "mapToConstruction")))
+      (is (not (str/includes? main "toConstruction(0, helper)")))
+      (is (str/includes? classes "this.players.map"))
+      (is (str/includes? classes "this.players.filter"))
+      (is (str/includes? classes "Lambda.fold(this.players"))
+      (is (str/includes? classes "WCHNTRuntime.mapMap(this.scores"))
+      (is (str/includes? classes "WCHNTRuntime.mapFilter(this.scores"))
+      (is (str/includes? classes "WCHNTRuntime.mapFold(this.scores"))
+      (is (str/includes? classes "new Summary(0, 0)"))
+      (is (str/includes? classes "function(p:Player, acc:Summary):Summary"))
+      (is (str/includes? classes "acc.total"))
+      (is (str/includes? classes "function(p:Player, acc:String):String"))
+      (is (str/includes? classes "acc + p.name")))))
 
 (deftest team-stats-example
   (testing "team_stats.wcn uses map, filter, fold, and if"
@@ -437,3 +587,140 @@
       (is (str/includes? main "assemblage.withDi()"))
       (is (str/includes? main "assemblage.fresh()"))
       (is (str/includes? main "assemblage.captain()")))))
+
+(deftest import-public-quest-example
+  (testing "importB constructs a Quest handle from importA and reads Public data"
+    (let [cargo (assert-compiles "importB.wcn")
+          f (factory cargo)
+          cls (classes cargo)
+          loaded (interpret/load-program
+                  (slurp "examples/importB.wcn")
+                  example-opts)
+          purse (interpret/call (:schema-ir loaded) (:methods-ir loaded)
+                                (:root loaded) "purse" [])]
+      (is (str/includes? f "QuestAssemblage.make("))
+      (is (str/includes? cls "public static function make("))
+      (is (= 420 purse)))))
+
+(deftest writepaths-deep-example
+  (testing "writepaths.wcn emits a six-level reconstruct and keeps the ocean sibling"
+    (let [cargo (assert-compiles "writepaths.wcn")
+          cls (classes cargo)
+          main (main cargo)
+          loaded (interpret/load-program (slurp "examples/writepaths.wcn"))
+          {:keys [schema-ir methods-ir root]} loaded
+          fountain-path ["continent" "country" "capital" "plaza" "fountain"]
+          walk (fn [obj fields]
+                 (reduce interpret/get-field obj fields))
+          more (interpret/call schema-ir methods-ir root "moreJets" [])
+          renamed (interpret/call schema-ir methods-ir root "renameFountain" ["Arethusa"])
+          deep (interpret/call schema-ir methods-ir root "deeperOcean" [])
+          resized (interpret/call schema-ir methods-ir root "resize" [])
+          boosted (interpret/call schema-ir methods-ir root "boostFountain"
+                                  [(walk root fountain-path)])]
+      (is (str/includes? cls "new Continent(new Country(new Capital(new Plaza(new Fountain("))
+      (is (str/includes? cls "this.ocean"))
+      (is (str/includes? main "assemblage.moreJets()"))
+      (is (= 8 (interpret/get-field (walk more fountain-path) "jets")))
+      (is (= "Triton" (interpret/get-field (walk more fountain-path) "name")))
+      (is (= 4000 (interpret/get-field (interpret/get-field more "ocean") "depth")))
+      (is (= "Arethusa" (interpret/get-field (walk renamed fountain-path) "name")))
+      (is (= 7 (interpret/get-field (walk renamed fountain-path) "jets")))
+      (is (= 4100 (interpret/get-field (interpret/get-field deep "ocean") "depth")))
+      (is (= 7 (interpret/get-field (walk deep fountain-path) "jets")))
+      (is (= 12 (interpret/get-field (walk resized fountain-path) "jets")))
+      (is (= 5000 (interpret/get-field (interpret/get-field resized "ocean") "depth")))
+      (is (= 8 (interpret/get-field boosted "jets")))
+      (is (= "Triton" (interpret/get-field boosted "name")))
+      (is (= "Fountain Triton has 7 jets; ocean 4000 deep."
+             (interpret/call schema-ir methods-ir root "label" []))))))
+
+(deftest writepaths-live-example
+  (testing "live-examples/writepaths.wcn is IR-only; Haxe backend rejects %cli-live"
+    (let [text (slurp "live-examples/writepaths.wcn")
+          ir (compiler/compile-to-ir text)
+          haxe (compiler/compile text)]
+      (is (:success ir) (str (first (:errors ir))))
+      (is (= "cli-live" (get-in ir [:stash :target-ir :host])))
+      (is (get-in ir [:stash :construction-ir]))
+      (is (not (:success haxe)))
+      (is (re-find #"%cli-live" (or (first (:errors haxe)) ""))))))
+
+(deftest seed-wiki-flying-and-writepaths
+  (testing "wiki seed pages compile: adventure, writepaths, flyingA, flyingB, and factory_args"
+    (let [adventure (compiler/compile-to-ir (slurp "live-examples/adventure_cli.wcn"))
+          writepaths (compiler/compile-to-ir (slurp "live-examples/writepaths.wcn"))
+          flying-a (compiler/compile-to-ir (slurp "live-examples/flyingA.wcn"))
+          factory-args (compiler/compile-to-ir (slurp "live-examples/factory_args.wcn"))
+          opts {:resolve-page (fn [n]
+                                (when (= n "flyingA")
+                                  (slurp "live-examples/flyingA.wcn")))}
+          flying-b (compiler/compile-to-ir (slurp "live-examples/flyingB.wcn") opts)
+          loaded (interpret/load-program (slurp "live-examples/flyingB.wcn") opts)
+          factory-loaded (interpret/load-program (slurp "live-examples/factory_args.wcn"))
+          factory-pen (interpret/construct-object
+                       (:schema-ir factory-loaded) "Pen" ["blue"])
+          factory-root (interpret/construct
+                        (:schema-ir factory-loaded)
+                        (:construction-ir factory-loaded)
+                        (:methods-ir factory-loaded)
+                        [factory-pen])
+          game (interpret/get-field (:root loaded) "game")
+          adv (interpret/load-program (slurp "live-examples/adventure_cli.wcn"))
+          north (interpret/call (:schema-ir adv) (:methods-ir adv) (:root adv) "move" ["N"])]
+      (is (:success adventure) (str (first (:errors adventure))))
+      (is (= "cli-live" (get-in adventure [:stash :target-ir :host])))
+      (is (= "NorthGate" (interpret/get-field north "here")))
+      (is (:success writepaths) (str (first (:errors writepaths))))
+      (is (= "cli-live" (get-in writepaths [:stash :target-ir :host])))
+      (is (:success flying-a) (str (first (:errors flying-a))))
+      (is (= "canvas" (get-in flying-a [:stash :target-ir :host])))
+      (is (:success flying-b) (str (first (:errors flying-b))))
+      (is (= "canvas" (get-in flying-b [:stash :target-ir :host])))
+      (is (= "Sky" (:wchnt/class (:root loaded))))
+      (is (= 4 (count (interpret/get-field game "shapes"))))
+      (is (:success factory-args) (str (first (:errors factory-args))))
+      (is (= "canvas" (get-in factory-args [:stash :target-ir :host])))
+      (is (nil? (:root factory-loaded)))
+      (is (= "star blue"
+             (interpret/call (:schema-ir factory-loaded)
+                             (:methods-ir factory-loaded)
+                             factory-root "caption" []))))))
+
+(deftest flying-published-shape-example
+  (testing "flyingB adds a Pentagon that implements flyingA's public Shape"
+    (let [cargo (assert-compiles "flyingB.wcn")
+          cls (classes cargo)
+          f (factory cargo)
+          main-class (main-class cargo)]
+      (is (= "openfl" (host cargo)))
+      (is (str/includes? cls "interface Shape"))
+      (is (str/includes? cls "class Pentagon implements Shape"))
+      (is (str/includes? cls "public function addShape("))
+      (is (not (str/includes? cls "public static function make(")))
+      (is (str/includes? f "GameAssemblage.factory()"))
+      (is (str/includes? f "addShape(new Pentagon("))
+      (is (str/includes? main-class "assemblage.game.time.update()"))
+      (is (str/includes? main-class "s.draw(graphics)")))))
+
+(deftest factory-args-live-example
+  (testing "live-examples/factory_args.wcn is IR-only; Haxe backend rejects %canvas"
+    (let [text (slurp "live-examples/factory_args.wcn")
+          ir (compiler/compile-to-ir text)
+          haxe (compiler/compile text)
+          params (get-in ir [:stash :construction-ir :factory-params])]
+      (is (:success ir) (str (first (:errors ir))))
+      (is (= "canvas" (get-in ir [:stash :target-ir :host])))
+      (is (= [{:name "pen" :type "Pen"}] params))
+      (is (not (:success haxe)))
+      (is (re-find #"%canvas" (or (first (:errors haxe)) ""))))))
+
+(deftest factory-args-example
+  (testing "factory_args.wcn takes the free @Pen name as a factory argument"
+    (let [cargo (assert-compiles "factory_args.wcn")
+          f (factory cargo)
+          main (main cargo)]
+      (is (str/includes? f "public static function factory(pen: Pen)"))
+      (is (str/includes? f "new Sketch(\"star\", pen)"))
+      (is (str/includes? main "SketchAssemblage.factory(pen)"))
+      (is (not (str/includes? f "sketchFactory()"))))))

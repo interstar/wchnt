@@ -293,14 +293,14 @@ Game = Int/x
 ## Target Methods
 
 ```
-Game::draw : Void = { @Graphics/g | }
+Game::draw = { @Graphics/g | } -> Void
 ```"
           result (parse-mainfile content)]
       (is (:success result))
       (let [value (:value result)]
         (is (= :library (:page-kind value)))
         (is (= "shapes-lib\n[[helpers]]" (:import value)))
-        (is (= "Game::draw : Void = { @Graphics/g | }" (:target-methods value)))))))
+        (is (= "Game::draw = { @Graphics/g | } -> Void" (:target-methods value)))))))
 
 
 (deftest test-parse-import-names
