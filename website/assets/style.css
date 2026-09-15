@@ -1,0 +1,204 @@
+:root {
+  --bg: #fefedd;
+  --ink: #1a1a1a;
+  --accent: #8a3f24;
+  --muted: #6b6b4e;
+  --code-bg: #f4f4da;
+  --code-ink: #f4f4da;
+  --pre-bg: #2b2b26;
+  --border: #d8d8b0;
+  --header-bg: #fffef0;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: Georgia, Cambria, "Charter", "Times New Roman", serif;
+  line-height: 1.7;
+}
+
+/* Header & navigation */
+
+.site-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.9rem 2rem;
+  border-bottom: 2px solid var(--ink);
+  background: var(--header-bg);
+  font-family: "Trebuchet MS", "Helvetica Neue", Arial, sans-serif;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  text-decoration: none;
+  color: var(--ink);
+}
+
+.brand-logo {
+  height: 46px;
+  width: 46px;
+}
+
+.brand-name {
+  font-size: 1.7rem;
+  font-weight: bold;
+  letter-spacing: -1px;
+  line-height: 1;
+}
+
+.brand-tagline {
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.site-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-left: auto;
+}
+
+.site-nav a {
+  color: var(--ink);
+  text-decoration: none;
+  font-weight: bold;
+  padding: 0.3rem 0.6rem;
+  border-radius: 4px;
+}
+
+.site-nav a:hover {
+  background: var(--ink);
+  color: var(--bg);
+}
+
+/* Page body */
+
+.page {
+  max-width: 54rem;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 4rem;
+}
+
+h1, h2, h3, h4 {
+  font-family: "Trebuchet MS", sans-serif;
+  line-height: 1.25;
+}
+
+h1 {
+  font-size: 2.4rem;
+  letter-spacing: -1px;
+  border-bottom: 2px solid var(--ink);
+  padding-bottom: 0.25rem;
+  margin-top: 0;
+}
+
+h2 {
+  font-size: 1.6rem;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.2rem;
+  margin-top: 2.2rem;
+}
+
+h3 {
+  font-size: 1.25rem;
+  margin-top: 1.6rem;
+}
+
+a {
+  color: var(--accent);
+}
+
+/* Code */
+
+code {
+  background: var(--code-bg);
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 0.92em;
+}
+
+pre {
+  background: var(--pre-bg);
+  color: var(--code-ink);
+  padding: 1rem 1.25rem;
+  border-radius: 8px;
+  overflow-x: auto;
+  line-height: 1.5;
+}
+
+pre code {
+  background: none;
+  color: inherit;
+  padding: 0;
+  font-size: 0.95em;
+}
+
+/* WCHNT syntax highlighting — mirrors live/public/css/live.css */
+pre .tok-comment { color: #c4c7cc; font-style: italic; }
+pre .tok-string  { color: #c3e88d; }
+pre .tok-number  { color: #f78c6c; }
+pre .tok-sigil   { color: #ffcb6b; }
+pre .tok-rel-context  { color: #ffcb6b; }
+pre .tok-rel-delegate { color: #64ffda; }
+pre .tok-rel-reactive { color: #ce93d8; }
+pre .tok-rel-external { color: #ff8a80; }
+pre .tok-rel-mailbox  { color: #ffab40; }
+pre .tok-keyword { color: #c792ea; font-weight: 600; }
+pre .tok-class   { color: #82aaff; }
+pre .tok-type    { color: #89ddff; }
+pre .tok-method  { color: #82aaff; }
+pre .tok-name    { color: #f07178; }
+pre .tok-path    { color: #babed8; }
+
+/* Tables */
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1.2rem 0;
+}
+
+th, td {
+  border: 1px solid var(--border);
+  padding: 0.45rem 0.7rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+th {
+  background: var(--header-bg);
+}
+
+/* Misc */
+
+blockquote {
+  border-left: 4px solid var(--accent);
+  margin: 1.2rem 0;
+  padding: 0.3rem 1rem;
+  background: var(--header-bg);
+  color: var(--muted);
+}
+
+hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 2rem 0;
+}
+
+.site-footer {
+  border-top: 2px solid var(--ink);
+  padding: 1rem 2rem;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
