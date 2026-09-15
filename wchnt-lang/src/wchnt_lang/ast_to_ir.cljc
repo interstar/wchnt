@@ -4,6 +4,7 @@
             [wchnt-lang.parser :as parser]
             [wchnt-lang.ast-utils :as ast-utils]
             [wchnt-lang.ast-args :as ast-args]
+            [wchnt-lang.factory-params :as factory-params]
             [clojure.string :as str]))
 
 (declare flatten-nested-constructions)
@@ -23,6 +24,7 @@
                        ":" :context-specific
                        "@" :external
                        "$" :reactive
+                       "+" :delegate
                        nil :ordinary
                        :ordinary)
         component-name (if optional-name
@@ -165,6 +167,85 @@
       (validate-reactive-component! (:name assemblage) component assemblage-names)))
   assemblages)
 
+(defn- interface-name-set
+  [interfaces]
+  (set (map :name interfaces)))
+
+(defn- enum-name-set
+  [enums]
+  (set (map :name enums)))
+
+(defn- validate-delegate-target!
+  [owner-class {:keys [type-name component-name]} assemblage-names interface-names enum-names]
+  (cond
+    (contains? primitive-type-names type-name)
+    (throw (ex-info (str "Delegate +" type-name " on " owner-class
+                         " must be a schema class, not a primitive")
+                    {:class owner-class :type-name type-name}))
+
+    (collection-type-name? type-name)
+    (throw (ex-info (str "Delegate +" type-name " on " owner-class
+                         " must be a schema class, not a collection")
+                    {:class owner-class :type-name type-name}))
+
+    (contains? interface-names type-name)
+    (throw (ex-info (str "Delegate +" type-name " on " owner-class
+                         " cannot be an interface")
+                    {:class owner-class :type-name type-name}))
+
+    (contains? enum-names type-name)
+    (throw (ex-info (str "Delegate +" type-name " on " owner-class
+                         " cannot be an enum")
+                    {:class owner-class :type-name type-name}))
+
+    (not (contains? assemblage-names type-name))
+    (throw (ex-info (str "Delegate +" type-name
+                         (when component-name (str "/" component-name))
+                         " on " owner-class
+                         " is not a class in this schema")
+                    {:class owner-class :type-name type-name}))))
+
+(defn- schema-field-surface
+  [schema-ir class-name]
+  (into (ir/own-field-names schema-ir class-name)
+        (ir/promoted-field-names schema-ir class-name)))
+
+(defn- assert-no-delegate-field-shadow!
+  [schema-ir class-name]
+  (let [own (ir/own-field-names schema-ir class-name)
+        promoted (ir/promoted-field-names schema-ir class-name)
+        clash (first (filter own promoted))]
+    (when clash
+      (throw (ex-info (str class-name " field '" clash
+                           "' shadows a delegated field")
+                      {:class-name class-name :field clash})))))
+
+(defn- assert-no-delegate-field-pair-clash!
+  [schema-ir class-name]
+  (let [slots (ir/delegate-components schema-ir class-name)
+        surfaces (mapv #(schema-field-surface schema-ir (:type-name %)) slots)]
+    (doseq [i (range (count slots))
+            j (range (inc i) (count slots))
+            :let [shared (first (filter (nth surfaces i) (nth surfaces j)))]
+            :when shared]
+      (throw (ex-info (str class-name " delegates share the same field '" shared
+                           "'")
+                      {:class-name class-name :field shared})))))
+
+(defn- validate-delegates!
+  [schema-ir]
+  (let [assemblage-names (set (map :name (:assemblages schema-ir)))
+        interface-names (interface-name-set (:interfaces schema-ir))
+        enum-names (enum-name-set (:enums schema-ir))]
+    (doseq [assemblage (:assemblages schema-ir)
+            component (ir/delegate-components schema-ir (:name assemblage))]
+      (validate-delegate-target! (:name assemblage) component
+                                 assemblage-names interface-names enum-names))
+    (doseq [assemblage (:assemblages schema-ir)]
+      (assert-no-delegate-field-shadow! schema-ir (:name assemblage))
+      (assert-no-delegate-field-pair-clash! schema-ir (:name assemblage))))
+  schema-ir)
+
 
 (defn transform-composition-line
   "Transform a composition line to an assemblage"
@@ -260,11 +341,12 @@
           {:keys [observable-classes subscriber-classes]} (build-observable-and-subscriber-classes schema-ast)
           mailbox-classes (vec (distinct (composition-inlet-names schema-ast)))
           debug-methods (create-debug-methods assemblages)]
-      (assoc (ir/create-schema-ir assemblages interfaces enums context-relationships
-                                  interface-implementers observable-classes subscriber-classes
-                                  debug-methods
-                                  (collect-external-types-from-assemblages assemblages))
-             :mailbox-classes mailbox-classes))))
+      (validate-delegates!
+       (assoc (ir/create-schema-ir assemblages interfaces enums context-relationships
+                                   interface-implementers observable-classes subscriber-classes
+                                   debug-methods
+                                   (collect-external-types-from-assemblages assemblages))
+              :mailbox-classes mailbox-classes)))))
 
 ;; =============================================================================
 ;; Construction AST to IR
@@ -397,7 +479,7 @@
       (throw (ex-info "Unknown expression type in assignment" 
                      {:inner-expression inner-expression}))))))
 
-(defn extract-root-class-from-construction
+(defn root-class-from-construction
   "Extract the root class name from construction AST using schema IR"
   [construction-ast schema-ir]
   (let [class-names (set (map :name (:assemblages schema-ir)))
@@ -418,6 +500,8 @@
                          {:obj-construction obj-construction}))))
       (throw (ex-info "Could not find root class in construction AST" 
                      {:construction-ast construction-ast})))))
+
+(def extract-root-class-from-construction root-class-from-construction)
 
 (defn process-assignments
   "Process assignment statements to build object table and variable mappings"
@@ -505,7 +589,7 @@
   [construction-ast schema-ir]
   (assert-no-with-construction! construction-ast)
   (let [root-class (extract-root-class-from-construction construction-ast schema-ir)
-        factory-name (str (str/lower-case (first root-class)) (subs root-class 1) "Factory")
+        factory-name "factory"
         {:keys [flattened-ast nested-objects]} (flatten-nested-constructions construction-ast schema-ir)
         [assignment-objects variable-mappings] (process-assignments (rest flattened-ast) nested-objects (count nested-objects) schema-ir)
         all-variable-mappings (merge-variable-mappings variable-mappings nested-objects)
@@ -516,7 +600,8 @@
         return-obj-id (if (empty? final-objects)
                         "obj1"
                         (first (keys final-objects)))]
-    (ir/create-construction-ir root-class factory-name all-objects [] [] [] [] all-variable-mappings return-obj-id)))
+    (assoc (ir/create-construction-ir root-class factory-name all-objects [] [] [] [] all-variable-mappings return-obj-id)
+           :factory-params (factory-params/collect construction-ast schema-ir))))
 
 ;; =============================================================================
 ;; Construction flattening

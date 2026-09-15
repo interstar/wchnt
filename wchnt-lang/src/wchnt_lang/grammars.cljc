@@ -29,7 +29,7 @@ KeyType = Name
 ValType = ArrayType / Name
 AltName = Name
 EnumValue =  #'[^\"]+'
-Sigil = ':' / '@' / '$'
+Sigil = ':' / '@' / '$' / '+'
 EmptyType = '_'
 ")
 
@@ -44,6 +44,10 @@ EmptyType = '_'
 (def construction-grammar
   "Code = (MethodDefinition / WS)*
 MethodDefinition = ClassName <'::'> MethodName <'='> BlockOrLambda ReturnAnn?
+PublicMethodDefinition = MethodName <'='> BlockOrLambda ReturnAnn?
+PublicEntry = PublicMethodDefinition / PublicInterface
+PublicInterface = Name
+PublicCode = (PublicEntry / WS)*
 ReturnAnn = <'->'> Type
 BlockOrLambda = Lambda / Block
 Lambda = <'{'> LambdaArgs? <'|'> BlockStatements <'}'>
@@ -172,6 +176,11 @@ ValType = Name
   (transform-construction-ast
    (insta/parse construction-parser reaction-text :start :Code)))
 
+(defn parse-public [public-text]
+  "Parse Public entries: unqualified static methods or interface names."
+  (transform-construction-ast
+   (insta/parse construction-parser public-text :start :PublicCode)))
+
 (defn- regexp-pattern
   [r]
   #?(:clj (str r)
@@ -274,3 +283,7 @@ ValType = Name
 (defn parse-reaction-with-failure-handling [reaction-text]
   "Parse reaction text with proper error handling"
   (parse-with-failure-handling parse-reaction reaction-text))
+
+(defn parse-public-with-failure-handling [public-text]
+  "Parse Public entries with the same expression grammar as Methods."
+  (parse-with-failure-handling parse-public public-text))

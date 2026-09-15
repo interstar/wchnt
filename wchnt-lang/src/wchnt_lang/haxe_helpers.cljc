@@ -145,6 +145,30 @@ class WCHNTRuntime {
         return out.toString();
     }
 
+    public static function mapMap<K,V,W>(m:Map<K,V>, f:K -> V -> W, out:Map<K,W>):Map<K,W> {
+        for (k in m.keys()) {
+            out.set(k, f(k, cast m.get(k)));
+        }
+        return out;
+    }
+
+    public static function mapFilter<K,V>(m:Map<K,V>, f:K -> V -> Bool):Map<K,V> {
+        var out = m.copy();
+        for (k in m.keys()) {
+            var v = cast m.get(k);
+            if (!f(k, v)) out.remove(k);
+        }
+        return out;
+    }
+
+    public static function mapFold<K,V,A>(m:Map<K,V>, init:A, f:A -> K -> V -> A):A {
+        var acc = init;
+        for (k in m.keys()) {
+            acc = f(acc, k, cast m.get(k));
+        }
+        return acc;
+    }
+
     public static function times<T>(n:Int, f:Int -> T):Array<T> {
         if (n < 0) throw \"Int::times expected a non-negative count\";
         return [for (i in 0...n) f(i)];
@@ -165,9 +189,17 @@ import openfl.ui.Keyboard;")
 class WCHNTGraphics {
     var g:Graphics;
     var hud:TextField;
+    var sprite:Sprite;
+    var bgColor:Int;
+    var bgAlpha:Float;
+    var fillColor:Int;
 
     public function new(sprite:Sprite) {
         g = sprite.graphics;
+        this.sprite = sprite;
+        bgColor = 0x111111;
+        bgAlpha = 1;
+        fillColor = 0xFFFFFF;
         hud = new TextField();
         hud.selectable = false;
         hud.mouseEnabled = false;
@@ -175,12 +207,48 @@ class WCHNTGraphics {
         sprite.addChild(hud);
     }
 
-    public inline function clear():Void g.clear();
-    public inline function beginFill(color:Int, ?alpha:Float):Void g.beginFill(color, alpha);
+    public function background(color:Int, ?alpha:Float):Void {
+        bgColor = color;
+        bgAlpha = (alpha == null ? 1 : alpha);
+    }
+
+    public function clear():Void {
+        if (bgAlpha >= 1) {
+            g.clear();
+        } else {
+            g.lineStyle();
+        }
+        g.beginFill(bgColor, bgAlpha);
+        g.drawRect(0, 0, sprite.stage.stageWidth, sprite.stage.stageHeight);
+        g.endFill();
+    }
+
+    public function beginFill(color:Int, ?alpha:Float):Void {
+        fillColor = color;
+        g.beginFill(color, (alpha == null ? 1 : alpha));
+    }
+
     public inline function endFill():Void g.endFill();
-    public inline function lineStyle(thickness:Float, color:Int, ?alpha:Float):Void g.lineStyle(thickness, color, alpha);
+
+    public inline function noStroke():Void g.lineStyle();
+
+    public function lineStyle(?thickness:Float, ?color:Int, ?alpha:Float):Void {
+        if (thickness == null) {
+            g.lineStyle();
+        } else {
+            g.lineStyle(thickness, color, (alpha == null ? 1 : alpha));
+        }
+    }
+
     public inline function drawRect(x:Float, y:Float, w:Float, h:Float):Void g.drawRect(x, y, w, h);
     public inline function drawCircle(x:Float, y:Float, r:Float):Void g.drawCircle(x, y, r);
+    public inline function drawEllipse(x:Float, y:Float, rx:Float, ry:Float):Void g.drawEllipse(x, y, rx, ry);
+
+    public function drawLine(x1:Float, y1:Float, x2:Float, y2:Float):Void {
+        g.moveTo(x1, y1);
+        g.lineTo(x2, y2);
+    }
+
     public inline function moveTo(x:Float, y:Float):Void g.moveTo(x, y);
     public inline function lineTo(x:Float, y:Float):Void g.lineTo(x, y);
 
@@ -188,6 +256,7 @@ class WCHNTGraphics {
         hud.text = text;
         hud.x = x;
         hud.y = y;
+        hud.textColor = fillColor;
     }
 }")
 
@@ -210,28 +279,118 @@ class WCHNTGraphics {
         step();
     }")
 
-(def cli-console-wrapper
-  "// Portable text console for Target: same API on neko %cli and live %cli-live.
+(def wchnt-console-class
+  "// Portable text console for Target: %cli, %terminal, %openfl, live %cli-live.
 class WCHNTConsole {
-    public function new() {}
+    var helper:WCHNTHelper;
 
-    public inline function print(s:String):Void {
-        Sys.print(s);
+    public function new() {
+        helper = new WCHNTHelper();
     }
 
-    public inline function println(s:String):Void {
-        Sys.println(s);
+    function isMap(value:Dynamic):Bool {
+        return Std.isOfType(value, haxe.ds.StringMap)
+            || Std.isOfType(value, haxe.ds.IntMap)
+            || Std.isOfType(value, haxe.ds.EnumValueMap)
+            || Std.isOfType(value, haxe.ds.ObjectMap);
+    }
+
+    public function format(value:Dynamic):String {
+        if (value == null) return \"null\";
+        if (Std.isOfType(value, String)) return cast value;
+        if (Std.isOfType(value, IWCHNTObject))
+            return (cast value : IWCHNTObject).toConstruction(0, helper);
+        if (Std.isOfType(value, Array))
+            return helper.arrayToConstruction(cast value, 0);
+        if (isMap(value))
+            return helper.mapToConstruction(cast value, 0);
+        return Std.string(value);
+    }
+
+    public function print(value:Dynamic):Void {
+        #if sys
+        Sys.print(format(value));
+        #else
+        haxe.Log.trace(format(value), null);
+        #end
+    }
+
+    public function println(value:Dynamic):Void {
+        #if sys
+        Sys.println(format(value));
+        #else
+        haxe.Log.trace(format(value), null);
+        #end
     }
 }")
 
-(def cli-lifecycle
-  "public var wchntConsole:WCHNTConsole;
+(def wchnt-maths-class
+  "// Portable maths for Target. Queries return numbers; there are no Void methods.
+class WCHNTMaths {
+    public function new() {}
 
-    public function new() {
-        wchntConsole = new WCHNTConsole();
+    public function rand():Float { return Math.random(); }
+    public function pi():Float { return Math.PI; }
+
+    public function randInt(n:Int):Int {
+        if (n <= 0) throw \"WCHNTMaths.randInt requires n > 0\";
+        return Std.int(Math.random() * n);
     }
 
-    public static function main():Void {
+    public function sin(x:Float):Float { return Math.sin(x); }
+    public function cos(x:Float):Float { return Math.cos(x); }
+    public function tan(x:Float):Float { return Math.tan(x); }
+    public function asin(x:Float):Float { return Math.asin(x); }
+    public function acos(x:Float):Float { return Math.acos(x); }
+    public function atan(x:Float):Float { return Math.atan(x); }
+    public function atan2(y:Float, x:Float):Float { return Math.atan2(y, x); }
+    public function abs(x:Float):Float { return Math.abs(x); }
+    public function floor(x:Float):Int { return Math.floor(x); }
+    public function ceil(x:Float):Int { return Math.ceil(x); }
+    public function round(x:Float):Int { return Math.round(x); }
+    public function sqrt(x:Float):Float { return Math.sqrt(x); }
+    public function log(x:Float):Float { return Math.log(x); }
+    public function exp(x:Float):Float { return Math.exp(x); }
+    public function pow(x:Float, y:Float):Float { return Math.pow(x, y); }
+    public function min(x:Float, y:Float):Float { return Math.min(x, y); }
+    public function max(x:Float, y:Float):Float { return Math.max(x, y); }
+
+    public function hsv(h:Float, s:Float, v:Float):Int {
+        var hh = ((h % 1) + 1) % 1;
+        var i = Math.floor(hh * 6);
+        var f = hh * 6 - i;
+        var p = v * (1 - s);
+        var q = v * (1 - f * s);
+        var t = v * (1 - (1 - f) * s);
+        var r:Float;
+        var g:Float;
+        var b:Float;
+        switch (((i % 6) + 6) % 6) {
+            case 0: r = v; g = t; b = p;
+            case 1: r = q; g = v; b = p;
+            case 2: r = p; g = v; b = t;
+            case 3: r = p; g = q; b = v;
+            case 4: r = t; g = p; b = v;
+            default: r = v; g = p; b = q;
+        }
+        function ch(x:Float):Int {
+            var n = Math.floor(x * 255);
+            if (n < 0) return 0;
+            if (n > 255) return 255;
+            return n;
+        }
+        return (ch(r) << 16) | (ch(g) << 8) | ch(b);
+    }
+}")
+
+(def wchnt-console-binding
+  "public static var wchntConsole = new WCHNTConsole();")
+
+(def wchnt-maths-binding
+  "public static var wchntMaths = new WCHNTMaths();")
+
+(def cli-lifecycle
+  "public static function main():Void {
         var app = new Main();
         app.init();
         while (true) {

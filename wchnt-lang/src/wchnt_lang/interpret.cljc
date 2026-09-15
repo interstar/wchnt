@@ -4,7 +4,8 @@
   (:require [wchnt-lang.compiler :as compiler]
             [wchnt-lang.ir :as ir]
             [wchnt-lang.pipeline :as p]
-            [wchnt-lang.template :as template]))
+            [wchnt-lang.template :as template]
+            [wchnt-lang.host :as host]))
 
 (declare eval-expr instantiate wire-subscriptions wire-context wire-new
          apply-update eval-map-construction eval-construction-arg)
@@ -42,6 +43,12 @@
          :wchnt/cell (atom fields-map)
          :wchnt/subscribers (atom [])}
         (into {:wchnt/class class-name} fields-map)))))
+
+(defn construct-object
+  "Build one assemblage instance from schema field values in schema order.
+   Target uses this when it constructs a borrowed @ object (new Pen(...))."
+  [schema-ir class-name values]
+  (make-instance schema-ir class-name values))
 
 (defn- primitive-value
   [arg]
@@ -105,17 +112,31 @@
                    (mapv #(eval-construction-arg % env schema-ir methods-ir mappings)
                          (:args obj-data)))))
 
+(defn- seed-factory-env
+  [construction-ir factory-args]
+  (let [params (or (:factory-params construction-ir) [])]
+    (when (not= (count params) (count factory-args))
+      (throw (ex-info (str "Factory expected " (count params)
+                           " argument(s), got " (count factory-args))
+                      {:expected (mapv :name params)
+                       :got (count factory-args)})))
+    (into {} (map (fn [p v] [(:name p) v]) params factory-args))))
+
 (defn construct
-  "Build the root object graph from construction IR."
+  "Build the root object graph from construction IR.
+   factory-args fill free @-slot names, in :factory-params order."
   ([schema-ir construction-ir]
-   (construct schema-ir construction-ir []))
+   (construct schema-ir construction-ir [] []))
   ([schema-ir construction-ir methods-ir]
+   (construct schema-ir construction-ir methods-ir []))
+  ([schema-ir construction-ir methods-ir factory-args]
    (let [mappings (or (:variable-mappings construction-ir) {})
          ordered (ir/objects-in-construction-order (:objects construction-ir)
                                                    mappings)
+         env0 (seed-factory-env construction-ir (or factory-args []))
          env (reduce (fn [env [id data]]
                        (assoc env id (instantiate data env schema-ir methods-ir mappings)))
-                     {}
+                     env0
                      ordered)
          root-id (:return-object construction-ir)
          root (or (get env root-id)
@@ -142,17 +163,32 @@
       :construction-ir (get-in cargo [:stash :construction-ir])
       :target-ir (get-in cargo [:stash :target-ir])
       :page-kind (get-in cargo [:value :page-kind])
-      :root (when (get-in cargo [:stash :construction-ir])
-              (construct (get-in cargo [:stash :schema-ir])
-                         (get-in cargo [:stash :construction-ir])
-                         (or (get-in cargo [:stash :methods-ir]) [])))})))
+      :root (when-let [construction-ir (get-in cargo [:stash :construction-ir])]
+              (when (empty? (or (:factory-params construction-ir) []))
+                (construct (get-in cargo [:stash :schema-ir])
+                           construction-ir
+                           (or (get-in cargo [:stash :methods-ir]) []))))})))
+
+(defn- find-method
+  [methods-ir class-name method-name]
+  (first (filter #(and (= class-name (:class %))
+                       (= method-name (:method-name %))
+                       (not (:interface-signature? %)))
+                 methods-ir)))
 
 (defn- lookup-method
   [methods-ir class-name method-name]
-  (or (first (filter #(and (= class-name (:class %))
-                           (= method-name (:method-name %))
-                           (not (:interface-signature? %)))
-                     methods-ir))
+  (or (find-method methods-ir class-name method-name)
+      (throw (ex-info (str "Unknown method " class-name "::" method-name)
+                      {:class-name class-name :method-name method-name}))))
+
+(defn- lookup-method-or-delegate
+  [schema-ir methods-ir class-name method-name]
+  (or (find-method methods-ir class-name method-name)
+      (when-let [inner (ir/find-delegated-method-class
+                        schema-ir class-name method-name
+                        (fn [c m] (some? (find-method methods-ir c m))))]
+        (find-method methods-ir inner method-name))
       (throw (ex-info (str "Unknown method " class-name "::" method-name)
                       {:class-name class-name :method-name method-name}))))
 
@@ -166,18 +202,35 @@
       (throw (ex-info (str "Unknown method " class-name "::" method-name)
                       {:class-name class-name :method-name method-name}))))
 
+(defn- field-store
+  [obj]
+  (if-let [cell (:wchnt/cell obj)] @cell obj))
+
 (defn get-field
-  "Read a schema field. Identity objects store live values in :wchnt/cell."
-  [obj field-name]
-  (when-not (map? obj)
-    (throw (ex-info (str "Cannot read field '" field-name "' of a non-object")
-                    {:field field-name :value obj})))
-  (let [k (keyword field-name)
-        store (if-let [cell (:wchnt/cell obj)] @cell obj)]
-    (when-not (contains? store k)
-      (throw (ex-info (str "Unknown field '" field-name "'")
-                      {:field field-name :class (class-of obj)})))
-    (get store k)))
+  "Read a schema field. Identity objects store live values in :wchnt/cell.
+   With schema-ir, also walks + delegate slots for promoted fields."
+  ([obj field-name]
+   (get-field nil obj field-name))
+  ([schema-ir obj field-name]
+   (when-not (map? obj)
+     (throw (ex-info (str "Cannot read field '" field-name "' of a non-object")
+                     {:field field-name :value obj})))
+   (let [k (keyword field-name)
+         store (field-store obj)]
+     (cond
+       (contains? store k)
+       (get store k)
+
+       schema-ir
+       (let [hit (ir/resolve-field schema-ir (class-of obj) field-name)]
+         (when (or (nil? hit) (= 1 (count (:fields hit))))
+           (throw (ex-info (str "Unknown field '" field-name "'")
+                           {:field field-name :class (class-of obj)})))
+         (reduce (fn [o f] (get-field schema-ir o f)) obj (:fields hit)))
+
+       :else
+       (throw (ex-info (str "Unknown field '" field-name "'")
+                       {:field field-name :class (class-of obj)}))))))
 
 (defn- walk-fields
   [obj fields]
@@ -342,30 +395,49 @@
 
 (defn- eval-map-call
   [method recv arg-exprs ctx]
-  (let [args (mapv #(eval-expr % ctx) arg-exprs)]
-    (case method
-      "get"
-      (if (= 2 (count args))
-        (get recv (first args) (second args))
+  (case method
+    "map"
+    (into {}
+          (map (fn [[k v]]
+                 [k (invoke-lambda (first arg-exprs) [k v] ctx)])
+               recv))
+
+    "filter"
+    (into {}
+          (filter (fn [[k v]]
+                    (invoke-lambda (first arg-exprs) [k v] ctx))
+                  recv))
+
+    "fold"
+    (reduce (fn [acc [k v]]
+              (invoke-lambda (second arg-exprs) [acc k v] ctx))
+            (eval-expr (first arg-exprs) ctx)
+            recv)
+
+    (let [args (mapv #(eval-expr % ctx) arg-exprs)]
+      (case method
+        "get"
+        (if (= 2 (count args))
+          (get recv (first args) (second args))
+          (let [k (first args)]
+            (when-not (contains? recv k)
+              (throw (ex-info "Map::get: key not found" {:key k})))
+            (get recv k)))
+
+        "exists"
+        (contains? recv (first args))
+
+        "put"
+        (assoc recv (first args) (second args))
+
+        "remove"
         (let [k (first args)]
           (when-not (contains? recv k)
-            (throw (ex-info "Map::get: key not found" {:key k})))
-          (get recv k)))
+            (throw (ex-info "Map::remove: key not found" {:key k})))
+          (dissoc recv k))
 
-      "exists"
-      (contains? recv (first args))
-
-      "put"
-      (assoc recv (first args) (second args))
-
-      "remove"
-      (let [k (first args)]
-        (when-not (contains? recv k)
-          (throw (ex-info "Map::remove: key not found" {:key k})))
-        (dissoc recv k))
-
-      (throw (ex-info (str "Unknown map method '" method "'")
-                      {:method method})))))
+        (throw (ex-info (str "Unknown map method '" method "'")
+                        {:method method}))))))
 
 (defn- eval-string-call
   [method recv arg-exprs ctx]
@@ -395,49 +467,76 @@
                      (assoc :this recv)
                      (update :params merge (bind-params m args))))))
 
-(defn- eval-external-call
+(defn- js-host-apply
   [recv method args]
   #?(:cljs
-     (cond
-       (and (map? recv) (= :graphics (:wchnt/host recv)))
-       (do (apply (get (:methods recv) method) args) recv)
-
-       (some? recv)
-       (let [f (aget recv method)]
-         (when f (.apply f recv (clj->js args)))
-         recv)
-
-       :else recv)
+     (let [f (aget recv method)]
+       (when-not f
+         (throw (ex-info (str "Unknown host method '" method "'")
+                         {:method method})))
+       (.apply f recv (clj->js args)))
      :clj
-     (if (and (map? recv) (= :graphics (:wchnt/host recv)))
-       (do (apply (get (:methods recv) method) args) recv)
-       (throw (ex-info (str "External call on unsupported receiver for '" method "'")
-                       {:method method :receiver recv})))))
+     (throw (ex-info (str "External call on unsupported receiver for '" method "'")
+                     {:method method :receiver recv}))))
+
+(defn- eval-external-call
+  [recv method args ext-type]
+  (cond
+    (and (map? recv) (= :graphics (:wchnt/host recv)))
+    (do (apply (get (:methods recv) method) args) recv)
+
+    (and (map? recv) (= :maths (:wchnt/host recv)))
+    (host/invoke recv method args)
+
+    (and ext-type (host/query? ext-type method))
+    (js-host-apply recv method args)
+
+    :else
+    (do (js-host-apply recv method args) recv)))
 
 (defn- eval-call
   [expr ctx]
   (if (= :import-alias (:expr (:receiver expr)))
     (let [class-name (:import-class expr)
           method (:method expr)
-          m (lookup-method-ctx ctx class-name method)
-          args (mapv #(eval-expr % ctx) (:args expr))]
-      (eval-method m
-                   (-> ctx
-                       (assoc :this nil)
-                       (update :params merge (bind-params m args)))))
+          args (mapv #(eval-expr % ctx) (:args expr))
+          info (get (:import-aliases (:schema-ir ctx))
+                    (:name (:receiver expr)))]
+      (if (= method "factory")
+        (construct (:schema-ir info)
+                   (:construction-ir info)
+                   (:methods-ir info)
+                   args)
+        (let [m (lookup-method-ctx ctx class-name method)]
+          (eval-method m
+                       (-> ctx
+                           (assoc :this nil)
+                           (update :params merge (bind-params m args)))))))
     (let [recv (eval-expr (:receiver expr) ctx)
           method (:method expr)
-          ext-type (:type expr)]
+          ext-type (:external-type expr)]
       (cond
         (and ext-type (ir/external-type? (:schema-ir ctx) ext-type))
-        (eval-external-call recv method (mapv #(eval-expr % ctx) (:args expr)))
+        (eval-external-call recv method
+                            (mapv #(eval-expr % ctx) (:args expr))
+                            ext-type)
 
         (vector? recv)
         (eval-array-call method recv (:args expr) ctx)
 
         (number? recv)
-        (if (= method "str")
-          (str recv)
+        (case method
+          "str" (str recv)
+          "times"
+          (let [n (long recv)
+                lam (first (:args expr))]
+            (when (neg? n)
+              (throw (ex-info "Int::times expected a non-negative count"
+                              {:n n})))
+            (when (not= :lambda (:expr lam))
+              (throw (ex-info "Int::times expects a block"
+                              {:got lam})))
+            (mapv #(invoke-lambda lam [%] ctx) (range n)))
           (throw (ex-info (str "Unknown numeric method '" method "'")
                           {:method method})))
 
@@ -662,10 +761,13 @@
   [schema-ir methods-ir obj method-name args]
   (if (= "update" method-name)
     (apply-update schema-ir methods-ir obj)
-    (let [method (lookup-method methods-ir (class-of obj) method-name)]
+    (let [class-name (class-of obj)
+          method (lookup-method-or-delegate schema-ir methods-ir class-name method-name)
+          via (or (ir/delegate-path schema-ir class-name (:class method)) [])
+          this (reduce (fn [o f] (get-field schema-ir o f)) obj via)]
       (eval-method method
                    {:schema-ir schema-ir
                     :methods-ir methods-ir
-                    :this obj
+                    :this this
                     :params (bind-params method args)
                     :locals {}}))))

@@ -8,13 +8,10 @@
 (def ^:private highlight-sections #{"schema" "construction" "methods"})
 
 (def ^:private tag-kind
-  {:Definee :class
-   :ClassName :class
+  {:ClassName :class
    :Type :type
    :TypeMarker :type
    :AltName :name
-   :Sigil :sigil
-   :Inlet :sigil
    :StringLiteral :string
    :EnumValue :string
    :IntLiteral :number
@@ -22,6 +19,12 @@
    :BoolLiteral :keyword
    :MethodName :method
    :FieldPath :path})
+
+(def ^:private sigil-kind
+  {":" :rel-context
+   "@" :rel-external
+   "$" :rel-reactive
+   "+" :rel-delegate})
 
 (def ^:private node-keywords
   {:IfExpr ["if" "else"]
@@ -72,23 +75,65 @@
     (when (< s e)
       [s e])))
 
+(declare walk-node)
+
+(defn- tagged-span
+  [text node kind]
+  (when-let [[s e] (node-span node)]
+    (when-let [[s e] (trim-span text s e)]
+      [{:kind kind :start s :end e}])))
+
+(defn- find-child
+  [node tag]
+  (first (filter #(and (vector? %) (= tag (first %))) (rest node))))
+
+(defn- element-spans
+  "Colour a Schema element: the sigil and the type share a relationship kind."
+  [text node]
+  (let [sigil (find-child node :Sigil)
+        type-n (find-child node :Type)
+        marker (find-child node :TypeMarker)
+        alt (find-child node :AltName)
+        kind (if sigil
+               (get sigil-kind (second sigil) :type)
+               :type)]
+    (concat (when sigil (tagged-span text sigil kind))
+            (when type-n (tagged-span text type-n kind))
+            (when marker (walk-node text marker))
+            (when alt (tagged-span text alt :name)))))
+
+(defn- definee-spans
+  "Mailbox `>` tints the class name; ordinary definees stay :class."
+  [text node]
+  (if-let [inlet (find-child node :Inlet)]
+    (let [full (node-span node)
+          inlet-span (node-span inlet)]
+      (concat (tagged-span text inlet :rel-mailbox)
+              (when (and full inlet-span)
+                (when-let [[s e] (trim-span text (second inlet-span) (second full))]
+                  [{:kind :rel-mailbox :start s :end e}]))))
+    (tagged-span text node :class)))
+
 (defn- walk-node
   [text node]
   (if-not (vector? node)
     []
-    (let [tag (first node)
-          kind (get tag-kind tag)
-          span (node-span node)
-          tagged (if-let [[s e] (when (and kind span)
-                                  (trim-span text (first span) (second span)))]
-                   [{:kind kind :start s :end e}]
-                   [])
-          kws (if (and span (get node-keywords tag))
-                (keywords-in text (first span) (second span)
-                             (get node-keywords tag))
-                [])]
-      (into (into tagged kws)
-            (mapcat #(walk-node text %) (rest node))))))
+    (let [tag (first node)]
+      (case tag
+        :Element (vec (element-spans text node))
+        :Definee (vec (definee-spans text node))
+        (let [kind (get tag-kind tag)
+              span (node-span node)
+              tagged (if-let [[s e] (when (and kind span)
+                                      (trim-span text (first span) (second span)))]
+                       [{:kind kind :start s :end e}]
+                       [])
+              kws (if (and span (get node-keywords tag))
+                    (keywords-in text (first span) (second span)
+                                 (get node-keywords tag))
+                    [])]
+          (into (into tagged kws)
+                (mapcat #(walk-node text %) (rest node))))))))
 
 (defn- lines-with-offsets
   [text]

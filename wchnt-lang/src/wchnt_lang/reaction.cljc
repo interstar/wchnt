@@ -3,6 +3,7 @@
   (:require [clojure.string :as str]
             [wchnt-lang.ast-utils :as ast-utils]
             [wchnt-lang.ir :as ir]
+            [wchnt-lang.host :as host]
             [wchnt-lang.template :as template]))
 
 (defn- unwrap-expr
@@ -58,11 +59,6 @@
   [schema-ir interface-name]
   (vec (get-in schema-ir [:interface-implementers interface-name] #{})))
 
-(defn- find-component
-  [schema-ir class-name field-name]
-  (first (filter #(= field-name (:component-name %))
-                 (or (ir/get-assemblage-components schema-ir class-name) []))))
-
 (defn- context-parent-type
   "If name is the generated context field on this class, return the parent class name."
   [schema-ir class-name name]
@@ -73,12 +69,25 @@
 
 (defn- binding-type
   [schema-ir class-name name]
-  (or (:type-name (find-component schema-ir class-name name))
+  (or (:type (ir/resolve-field schema-ir class-name name))
       (context-parent-type schema-ir class-name name)))
 
 (defn- field-names
   [schema-ir class-name]
-  (set (map :component-name (ir/get-assemblage-components schema-ir class-name))))
+  (into (ir/own-field-names schema-ir class-name)
+        (ir/promoted-field-names schema-ir class-name)))
+
+(defn- this-field-expr
+  "IR for a field of this, expanding + promotion into a path."
+  [schema-ir class-name name]
+  (let [hit (ir/resolve-field schema-ir class-name name)]
+    (cond
+      (nil? hit) nil
+      (= 1 (count (:fields hit))) {:expr :field :name (first (:fields hit))}
+      :else {:expr :path
+             :root {:expr :this}
+             :fields (:fields hit)
+             :type (:type hit)})))
 
 (defn- enums-with-value
   [schema-ir name]
@@ -109,8 +118,10 @@
     (contains? param-names name)
     {:expr :param :name name}
 
-    (or (contains? (field-names schema-ir class-name) name)
-        (context-parent-type schema-ir class-name name))
+    (this-field-expr schema-ir class-name name)
+    (this-field-expr schema-ir class-name name)
+
+    (context-parent-type schema-ir class-name name)
     {:expr :field :name name}
 
     :else
@@ -119,7 +130,9 @@
                              " method (not a field, parameter, or let)")
                         {:name name :class-name class-name})))))
 
-(declare ast->expr process-statements assert-fresh-let-name value-type block-statements convert-call-arg)
+(declare ast->expr process-statements assert-fresh-let-name value-type make-arith
+         block-statements convert-call-arg
+         assert-methods-complete!)
 
 (defn- convert-chain-parts
   [items ctx]
@@ -183,11 +196,17 @@
             (str/starts-with? class-name "Map<"))
     (throw (ex-info (str "Cannot access fields of collection type " class-name)
                     {:class-name class-name :field-name field-name})))
-  (let [component (find-component schema-ir class-name field-name)]
-    (when-not component
+  (when (or (str/starts-with? class-name "Array<")
+            (str/starts-with? class-name "Map<"))
+    (throw (ex-info (str "Cannot access fields of collection type " class-name)
+                    {:class-name class-name :field-name field-name})))
+  (let [hit (ir/resolve-field schema-ir class-name field-name)]
+    (when-not hit
       (throw (ex-info (str "Unknown field '" field-name "' on " class-name)
                       {:class-name class-name :field-name field-name})))
-    (:type-name component)))
+    (:type hit)))
+
+(declare imported-handle?)
 
 (defn- ast->path
   [node ctx]
@@ -203,14 +222,14 @@
                      (first names) ")")
                 (str "Cannot determine type of '" (first names) "' for field access"))
               {:name (first names)})))
-    (let [final-type (reduce (fn [class-name field-name]
-                               (follow-field (:schema-ir ctx) class-name field-name))
-                             start-type
-                             (rest names))]
+    (when (imported-handle? (:schema-ir ctx) start-type)
+      (throw (ex-info (str "Cannot read fields of imported handle " start-type)
+                      {:class-name start-type :fields (rest names)})))
+    (let [expanded (ir/expand-field-path (:schema-ir ctx) start-type (rest names))]
       {:expr :path
        :root root
-       :fields (vec (rest names))
-       :type final-type})))
+       :fields (:fields expanded)
+       :type (:type expanded)})))
 
 (defn- method-arg-items
   [arg-list]
@@ -233,6 +252,8 @@
      :args (first more)
      :more (vec (rest more))}))
 
+(declare imported-handle?)
+
 (defn- apply-fields
   [root fields ctx]
   (if (empty? fields)
@@ -241,14 +262,14 @@
       (when-not start
         (throw (ex-info "Cannot determine type of receiver for field access"
                         {:root root})))
-      (let [final-type (reduce (fn [class-name field-name]
-                                 (follow-field (:schema-ir ctx) class-name field-name))
-                               start
-                               fields)]
+      (when (imported-handle? (:schema-ir ctx) start)
+        (throw (ex-info (str "Cannot read fields of imported handle " start)
+                        {:class-name start :fields fields})))
+      (let [expanded (ir/expand-field-path (:schema-ir ctx) start fields)]
         {:expr :path
          :root root
-         :fields (vec fields)
-         :type final-type}))))
+         :fields (:fields expanded)
+         :type (:type expanded)}))))
 
 (defn- receiver-class
   [receiver ctx]
@@ -400,6 +421,7 @@
   [schema-ir expected actual]
   (or (nil? actual)
       (= expected actual)
+      (and (= expected "Float") (= actual "Int"))
       (contains? (set (interface-implementers schema-ir expected)) actual)))
 
 (defn- assert-assignable!
@@ -632,8 +654,9 @@
       (throw (ex-info (str "'times' is only defined on Int, not " class-name)
                       {:class-name class-name})))
     (expect-arity "Int" "times" 1 arg-nodes)
-    (let [lam (ast->lambda (require-lambda (first arg-nodes) "times")
-                           ["Int"] ctx "Int" "times")]
+    (let [owner (:class-name ctx)
+          lam (ast->lambda (require-lambda (first arg-nodes) "times")
+                           ["Int"] ctx owner "times")]
       {:expr :call
        :receiver receiver
        :method "times"
@@ -641,62 +664,137 @@
        :arg-types [(:type lam)]
        :type (str "Array<" (:type lam) ">")})))
 
+(defn- array-combinator-call
+  [receiver class-name method arg-nodes ctx elem-type]
+  (case method
+    "map"
+    (do (expect-arity "Array" "map" 1 arg-nodes)
+        (let [lam (ast->lambda (require-lambda (first arg-nodes) "map")
+                               [elem-type] ctx "Array" "map")]
+          {:expr :call
+           :receiver receiver
+           :method "map"
+           :on "Array"
+           :args [lam]
+           :arg-types [(:type lam)]
+           :type (str "Array<" (:type lam) ">")}))
+
+    "filter"
+    (do (expect-arity "Array" "filter" 1 arg-nodes)
+        (let [lam (ast->lambda (require-lambda (first arg-nodes) "filter")
+                               [elem-type] ctx "Array" "filter")]
+          (when (not= "Bool" (:type lam))
+            (throw (ex-info (str "Array::filter block must return Bool, got "
+                                 (:type lam))
+                            {:type (:type lam)})))
+          {:expr :call
+           :receiver receiver
+           :method "filter"
+           :on "Array"
+           :args [lam]
+           :arg-types ["Bool"]
+           :type class-name}))
+
+    "fold"
+    (do (expect-arity "Array" "fold" 2 arg-nodes)
+        (let [initial (ast->expr (first arg-nodes) ctx)
+              acc-type (value-type initial ctx)]
+          (when-not acc-type
+            (throw (ex-info "Cannot determine type of fold initial value"
+                            {:initial initial})))
+          (let [lam (ast->lambda (require-lambda (second arg-nodes) "fold")
+                                 [acc-type elem-type] ctx "Array" "fold")]
+            (when (not= acc-type (:type lam))
+              (throw (ex-info (str "Array::fold block must return " acc-type
+                                   ", got " (:type lam))
+                              {:expected acc-type :got (:type lam)})))
+            {:expr :call
+             :receiver receiver
+             :method "fold"
+             :on "Array"
+             :args [initial lam]
+             :arg-types [acc-type (:type lam)]
+             :type acc-type})))
+
+    nil))
+
+(defn- map-type-name
+  [key-type val-type]
+  (str "Map<" key-type ", " val-type ">"))
+
+(defn- map-combinator-call
+  [receiver class-name method arg-nodes ctx {:keys [key val]}]
+  (case method
+    "map"
+    (do (expect-arity "Map" "map" 1 arg-nodes)
+        (let [lam (ast->lambda (require-lambda (first arg-nodes) "map")
+                               [key val] ctx "Map" "map")]
+          {:expr :call
+           :receiver receiver
+           :method "map"
+           :on "Map"
+           :args [lam]
+           :arg-types [(:type lam)]
+           :type (map-type-name key (:type lam))}))
+
+    "filter"
+    (do (expect-arity "Map" "filter" 1 arg-nodes)
+        (let [lam (ast->lambda (require-lambda (first arg-nodes) "filter")
+                               [key val] ctx "Map" "filter")]
+          (when (not= "Bool" (:type lam))
+            (throw (ex-info (str "Map::filter block must return Bool, got "
+                                 (:type lam))
+                            {:type (:type lam)})))
+          {:expr :call
+           :receiver receiver
+           :method "filter"
+           :on "Map"
+           :args [lam]
+           :arg-types ["Bool"]
+           :type class-name}))
+
+    "fold"
+    (do (expect-arity "Map" "fold" 2 arg-nodes)
+        (let [initial (ast->expr (first arg-nodes) ctx)
+              acc-type (value-type initial ctx)]
+          (when-not acc-type
+            (throw (ex-info "Cannot determine type of fold initial value"
+                            {:initial initial})))
+          (let [lam (ast->lambda (require-lambda (second arg-nodes) "fold")
+                                 [acc-type key val] ctx "Map" "fold")]
+            (when (not= acc-type (:type lam))
+              (throw (ex-info (str "Map::fold block must return " acc-type
+                                   ", got " (:type lam))
+                              {:expected acc-type :got (:type lam)})))
+            {:expr :call
+             :receiver receiver
+             :method "fold"
+             :on "Map"
+             :args [initial lam]
+             :arg-types [acc-type (:type lam)]
+             :type acc-type})))
+
+    nil))
+
 (defn- combinator-call
   [receiver class-name method arg-nodes ctx]
-  (let [elem-type (array-elem-type class-name)]
-    (when (and (contains? #{"map" "filter" "fold" "cons"} method)
-               (not elem-type))
-      (throw (ex-info (str "'" method "' is only defined on arrays, not " class-name)
-                      {:class-name class-name :method method})))
-    (when elem-type
-      (case method
-        "map"
-        (do (expect-arity "Array" "map" 1 arg-nodes)
-            (let [lam (ast->lambda (require-lambda (first arg-nodes) "map")
-                                   [elem-type] ctx "Array" "map")]
-              {:expr :call
-               :receiver receiver
-               :method "map"
-               :args [lam]
-               :arg-types [(:type lam)]
-               :type (str "Array<" (:type lam) ">")}))
+  (when (contains? #{"map" "filter" "fold" "cons"} method)
+    (let [elem-type (array-elem-type class-name)
+          types (map-types class-name)]
+      (cond
+        elem-type
+        (array-combinator-call receiver class-name method arg-nodes ctx elem-type)
 
-        "filter"
-        (do (expect-arity "Array" "filter" 1 arg-nodes)
-            (let [lam (ast->lambda (require-lambda (first arg-nodes) "filter")
-                                   [elem-type] ctx "Array" "filter")]
-              (when (not= "Bool" (:type lam))
-                (throw (ex-info (str "Array::filter block must return Bool, got "
-                                     (:type lam))
-                                {:type (:type lam)})))
-              {:expr :call
-               :receiver receiver
-               :method "filter"
-               :args [lam]
-               :arg-types ["Bool"]
-               :type class-name}))
+        (and types (not= method "cons"))
+        (map-combinator-call receiver class-name method arg-nodes ctx types)
 
-        "fold"
-        (do (expect-arity "Array" "fold" 2 arg-nodes)
-            (let [initial (ast->expr (first arg-nodes) ctx)
-                  acc-type (value-type initial ctx)]
-              (when-not acc-type
-                (throw (ex-info "Cannot determine type of fold initial value"
-                                {:initial initial})))
-              (let [lam (ast->lambda (require-lambda (second arg-nodes) "fold")
-                                     [acc-type elem-type] ctx "Array" "fold")]
-                (when (not= acc-type (:type lam))
-                  (throw (ex-info (str "Array::fold block must return " acc-type
-                                       ", got " (:type lam))
-                                  {:expected acc-type :got (:type lam)})))
-                {:expr :call
-                 :receiver receiver
-                 :method "fold"
-                 :args [initial lam]
-                 :arg-types [acc-type (:type lam)]
-                 :type acc-type})))
-
-        nil))))
+        :else
+        (throw (ex-info (str "'" method "' is only defined on "
+                             (if (= method "cons")
+                               "arrays"
+                               "arrays and maps")
+                             ", not " class-name)
+                        {:class-name class-name :method method}))))))
 
 (defn- builtin-call
   [receiver class-name method arg-nodes ctx]
@@ -735,17 +833,60 @@
                        :got arg-count})))
     callee))
 
+(defn- via-receiver
+  [receiver via-fields result-type]
+  (cond
+    (empty? via-fields) receiver
+    (= :path (:expr receiver))
+    {:expr :path
+     :root (:root receiver)
+     :fields (into (vec (:fields receiver)) via-fields)
+     :type result-type}
+    :else
+    {:expr :path
+     :root receiver
+     :fields (vec via-fields)
+     :type result-type}))
+
+(defn- host-arg-ok?
+  [expected actual]
+  (or (nil? actual)
+      (= expected actual)
+      (and (= expected "Float") (= actual "Int"))))
+
+(defn- typed-external-call
+  [receiver class-name method args spec ctx]
+  (doseq [[arg expected] (map vector args (:arg-types spec))]
+    (let [actual (value-type arg ctx)]
+      (when-not (host-arg-ok? expected actual)
+        (throw (ex-info (str class-name "::" method " expected " expected
+                             ", got " actual)
+                        {:class-name class-name :method method})))))
+  {:expr :call
+   :receiver receiver
+   :method method
+   :args args
+   :arg-types (or (:arg-types spec) (vec (repeat (count args) nil)))
+   :external-type class-name
+   :type (:return spec)})
+
 (defn- external-call
-  "Passthrough call on an @ type — no WCHNT method table; Haxe uses the host type."
+  "Passthrough call on an @ type. Host-table types use declared returns;
+   other externals stay fluent (type is the receiver)."
   [receiver class-name method arg-nodes ctx]
   (when (ir/external-type? (:schema-ir ctx) class-name)
     (let [args (mapv #(convert-call-arg % ctx) arg-nodes)]
-      {:expr :call
-       :receiver receiver
-       :method method
-       :args args
-       :arg-types (vec (repeat (count args) nil))
-       :type class-name})))
+      (if (host/known-host? class-name)
+        (typed-external-call receiver class-name method args
+                             (host/lookup class-name method (count args))
+                             ctx)
+        {:expr :call
+         :receiver receiver
+         :method method
+         :args args
+         :arg-types (vec (repeat (count args) nil))
+         :external-type class-name
+         :type class-name}))))
 
 (defn- imported-handle?
   [schema-ir class-name]
@@ -760,38 +901,33 @@
                       {:class-name class-name :method-name method})))))
 
 (defn- resolve-import-method
-  "Map alias.method or alias.Class.method to a public Class::method."
+  "Resolve alias.factory or alias.staticPublicMethod."
   [alias fields method schema-ir]
   (let [info (get (:import-aliases schema-ir) alias)
-        public (or (:public-methods info) #{})]
+        static (or (:static-public-methods info) #{})
+        root (:root-class info)]
     (when-not info
       (throw (ex-info (str "Unknown import alias '" alias "'") {:alias alias})))
-    (if (seq fields)
-      (let [class-name (first fields)]
-        (when (next fields)
-          (throw (ex-info (str "Import call '" alias "." (str/join "." fields)
-                               "." method "' is too long; use alias.method or alias.Class.method")
-                          {:alias alias :fields fields :method method})))
-        (when-not (contains? public [class-name method])
-          (throw (ex-info (str class-name "::" method
-                               " is not public on imported assemblage '"
-                               (:page info) "'")
-                          {:class-name class-name :method-name method})))
-        class-name)
-      (let [matches (filterv #(= method (second %)) public)]
-        (cond
-          (empty? matches)
-          (throw (ex-info (str "No public method '" method "' on imported assemblage '"
-                               (:page info) "'")
-                          {:alias alias :method method}))
+    (when (seq fields)
+      (throw (ex-info (str "Imported assemblage calls cannot qualify a class: "
+                           alias "." (str/join "." fields) "." method)
+                      {:alias alias :fields fields :method method})))
+    (when-not (or (= method "factory")
+                  (contains? static [root method]))
+      (throw (ex-info (str "'" method "' is not a static Public method on imported assemblage '"
+                           (:page info) "'")
+                      {:alias alias :method method})))
+    info))
 
-          (next matches)
-          (throw (ex-info (str "Ambiguous public method '" method
-                               "' on '" alias "'; qualify with the class")
-                          {:alias alias :method method :matches matches}))
-
-          :else
-          (first (first matches)))))))
+(defn expr-uses-call?
+  "True when an expression IR contains a method/host call."
+  [node]
+  (cond
+    (nil? node) false
+    (map? node) (or (= :call (:expr node))
+                    (some expr-uses-call? (vals node)))
+    (sequential? node) (boolean (some expr-uses-call? node))
+    :else false))
 
 (defn expr-uses-instance?
   "True when a method IR (or expression) reads this or a field of this."
@@ -814,18 +950,30 @@
 (defn- import-call
   [receiver fields method arg-list ctx]
   (let [alias (:name receiver)
-        class-name (resolve-import-method alias fields method (:schema-ir ctx))
+        info (resolve-import-method alias fields method (:schema-ir ctx))
+        class-name (:root-class info)
         arg-nodes (method-arg-items arg-list)
         args (mapv #(convert-call-arg % ctx) arg-nodes)
-        callee (lookup-callee class-name method (count args) ctx)]
-    (when (method-uses-instance? callee)
+        callee (if (= method "factory")
+                  {:parameters (mapv (fn [{:keys [name type]}]
+                                       {:name name :type type})
+                                     (or (:factory-params info) []))
+                   :return-type class-name}
+                  (lookup-callee class-name method (count args) ctx))]
+    (when (= method "factory")
+      (when (not= (count (:parameters callee)) (count args))
+        (throw (ex-info (str "factory expected " (count (:parameters callee))
+                             " arguments, got " (count args))
+                        {:alias alias}))))
+    (when (and (not= method "factory")
+               (not (:static? callee)))
       (throw (ex-info (str class-name "::" method
-                           " uses instance state; call it on a "
-                           class-name " handle, not on import alias '" alias "'")
+                           " is an instance method; call it on the handle returned by factory")
                       {:class-name class-name :method-name method})))
     {:expr :call
      :receiver receiver
      :import-class class-name
+     :import-assemblage (:assemblage-class info)
      :method method
      :args args
      :arg-types (mapv :type (:parameters callee))
@@ -837,17 +985,17 @@
     (import-call receiver [] method arg-list ctx)
     (let [arg-nodes (method-arg-items arg-list)
           class-name (receiver-class receiver ctx)]
-      (assert-public-method! (:schema-ir ctx) class-name method)
       (or (builtin-call receiver class-name method arg-nodes ctx)
           (and (not (imported-handle? (:schema-ir ctx) class-name))
                (external-call receiver class-name method arg-nodes ctx))
           (let [args (mapv #(convert-call-arg % ctx) arg-nodes)
-                callee (lookup-callee class-name method (count args) ctx)]
+                callee (lookup-callee class-name method (count args) ctx)
+                via (or (ir/delegate-path (:schema-ir ctx) class-name (:class callee)) [])]
             (doseq [[arg param] (map vector args (:parameters callee))]
               (assert-assignable! (:schema-ir ctx) (:type param) (value-type arg ctx)
                                   (str class-name "::" method)))
             {:expr :call
-             :receiver receiver
+             :receiver (via-receiver receiver via (:class callee))
              :method method
              :args args
              :arg-types (mapv :type (:parameters callee))
@@ -1016,6 +1164,13 @@
                   (:nested hits)
                   ctx))))
 
+(defn- expand-with-assigns
+  [schema-ir class-name assigns]
+  (mapv (fn [{:keys [path value]}]
+          {:path (:fields (ir/expand-field-path schema-ir class-name path))
+           :value value})
+        assigns))
+
 (defn- lower-with
   "Expand [:Class | path = expr] into a full :construct of every schema field."
   [class-name source-ir assigns ctx]
@@ -1025,7 +1180,8 @@
       (throw (ex-info (str "Cannot use write-path construction on '" class-name
                            "' (not a composition class)")
                       {:class-name class-name})))
-    (let [grouped (group-with-assigns assigns class-name)]
+    (let [assigns (expand-with-assigns schema-ir class-name assigns)
+          grouped (group-with-assigns assigns class-name)]
       (assert-known-with-fields! grouped components class-name)
       (doseq [{:keys [path]} assigns]
         (field-type-at-path schema-ir class-name path))
@@ -1187,10 +1343,10 @@
       (resolve-name (second node) ctx)
 
       (ast-utils/node-type? node :AddOp)
-      {:expr :arith :parts (convert-chain-parts (rest node) ctx)}
+      (make-arith (convert-chain-parts (rest node) ctx) ctx)
 
       (ast-utils/node-type? node :MulOp)
-      {:expr :arith :parts (convert-chain-parts (rest node) ctx)}
+      (make-arith (convert-chain-parts (rest node) ctx) ctx)
 
       (ast-utils/node-type? node :AndOp)
       {:expr :and :args (mapv #(ast->expr % ctx) (rest node))}
@@ -1368,7 +1524,7 @@
     :float "Float"
     :bool "Bool"
     :string "String"
-    :arith "Int"
+    :arith (:type expr)
     :cmp "Bool"
     :and "Bool"
     :or "Bool"
@@ -1534,6 +1690,24 @@
             (context-parent-type (:schema-ir ctx) (:class-name ctx) name))
     (throw-rebind name class-name method-name)))
 
+(defn- arith-result-type
+  "Int unless any operand is Float (literals, fields, calls, nested arith)."
+  [parts ctx]
+  (if (some (fn [part]
+              (and (map? part)
+                   (= "Float" (value-type part ctx))))
+            parts)
+    "Float"
+    "Int"))
+
+(declare value-type)
+
+(defn- make-arith
+  [parts ctx]
+  {:expr :arith
+   :parts parts
+   :type (arith-result-type parts ctx)})
+
 (defn- value-type
   [expr ctx]
   (case (:expr expr)
@@ -1547,7 +1721,7 @@
     :param (get (:param-types ctx) (:name expr))
     :field (binding-type (:schema-ir ctx) (:class-name ctx) (:name expr))
     :local (get (:let-types ctx) (:name expr))
-    :arith "Int"
+    :arith (or (:type expr) (arith-result-type (:parts expr) ctx))
     :int "Int"
     :float "Float"
     :bool "Bool"
@@ -1862,10 +2036,23 @@
                           {:key key})))
         (swap! state update :visiting conj key)
         (let [imported (or (:imported-methods schema-ir) {})
+              defined? (fn [c m]
+                         (or (contains? imported [c m])
+                             (contains? defs-by-key [c m])))
+              lookup-defined (fn [class-name method-name]
+                               (or (get imported [class-name method-name])
+                                   (when (contains? defs-by-key [class-name method-name])
+                                     (ensure-method! state defs-by-key schema-ir target-fns
+                                                     [class-name method-name]))))
               lookup (fn [class-name method-name]
-                       (or (get imported [class-name method-name])
-                           (ensure-method! state defs-by-key schema-ir target-fns
-                                           [class-name method-name])))
+                       (or (lookup-defined class-name method-name)
+                           (when-let [inner (ir/find-delegated-method-class
+                                             schema-ir class-name method-name defined?)]
+                             (lookup-defined inner method-name))
+                           (throw (ex-info (str "Unknown method '" method-name
+                                                "' on " class-name)
+                                           {:class-name class-name
+                                            :method-name method-name}))))
               ir (method-def->ir (get defs-by-key key) schema-ir lookup target-fns)]
           (swap! state (fn [s]
                          (-> s
@@ -1901,12 +2088,71 @@
            methods (mapv #(ensure-method! state defs-by-key schema-ir target-fns %)
                          keys)]
        (when-not skip-checks?
-         (assert-update-wiring! methods schema-ir)
-         (validate-interface-implementations! methods schema-ir))
+         (assert-methods-complete! methods schema-ir))
        methods))))
 
+(defn- concrete-methods-by-class
+  [methods-ir]
+  (reduce (fn [acc method]
+            (if (:interface-signature? method)
+              acc
+              (update acc (:class method) (fnil conj []) method)))
+          {}
+          methods-ir))
+
+(defn- method-names-on
+  [by-class schema-ir class-name]
+  (into (set (map :method-name (get by-class class-name)))
+        (mapcat #(method-names-on by-class schema-ir (:type-name %))
+                (ir/delegate-components schema-ir class-name))))
+
+(defn- assert-no-method-field-shadow!
+  [schema-ir class-name method-name]
+  (when (contains? (ir/promoted-field-names schema-ir class-name) method-name)
+    (throw (ex-info (str class-name "::" method-name
+                         " shadows field '" method-name "' from a delegate")
+                    {:class-name class-name :method-name method-name}))))
+
+(defn- assert-no-delegate-method-clash!
+  [schema-ir by-class class-name]
+  (let [slots (ir/delegate-components schema-ir class-name)
+        surfaces (mapv #(method-names-on by-class schema-ir (:type-name %)) slots)]
+    (doseq [i (range (count slots))
+            j (range (inc i) (count slots))
+            :let [shared (first (filter (nth surfaces i) (nth surfaces j)))]
+            :when shared]
+      (throw (ex-info (str class-name " delegates share the same method '" shared
+                           "'")
+                      {:class-name class-name :method-name shared})))))
+
+(defn- assert-delegate-overrides!
+  [schema-ir by-class class-name]
+  (let [defined (set (map :method-name (get by-class class-name)))]
+    (doseq [slot (ir/delegate-components schema-ir class-name)
+            method (get by-class (:type-name slot))
+            :when (= (:return-type method) (:type-name slot))]
+      (when-not (contains? defined (:method-name method))
+        (throw (ex-info (str class-name " must define '" (:method-name method)
+                             "' because " (:type-name slot) "::"
+                             (:method-name method) " returns "
+                             (:type-name slot))
+                        {:class-name class-name
+                         :method-name (:method-name method)
+                         :delegate (:type-name slot)}))))))
+
+(defn- validate-delegate-methods!
+  [methods-ir schema-ir]
+  (let [by-class (concrete-methods-by-class methods-ir)]
+    (doseq [assemblage (:assemblages schema-ir)
+            :let [class-name (:name assemblage)]]
+      (doseq [method (get by-class class-name)]
+        (assert-no-method-field-shadow! schema-ir class-name (:method-name method)))
+      (assert-no-delegate-method-clash! schema-ir by-class class-name)
+      (assert-delegate-overrides! schema-ir by-class class-name))))
+
 (defn assert-methods-complete!
-  "Run subscriber wiring and interface checks on the full Methods IR."
+  "Run subscriber wiring, interface, and delegate checks on the full Methods IR."
   [methods schema-ir]
   (assert-update-wiring! methods schema-ir)
-  (validate-interface-implementations! methods schema-ir))
+  (validate-interface-implementations! methods schema-ir)
+  (validate-delegate-methods! methods schema-ir))

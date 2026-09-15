@@ -1,5 +1,6 @@
 (ns wchnt-lang.ir
-  "IR constructors and lookup helpers. Shape is checked with Malli in wchnt-lang.schema.")
+  "IR constructors and lookup helpers. Shape is checked with Malli in wchnt-lang.schema."
+  (:require [clojure.string :as str]))
 
 (defn create-schema-ir
   "Create a schema IR structure"
@@ -70,7 +71,9 @@
 (defn find-assemblage
   "Find an assemblage by name"
   [schema-ir assemblage-name]
-  (first (filter #(= (:name %) assemblage-name) (:assemblages schema-ir))))
+  (first (filter #(= (:name %) assemblage-name)
+                 (concat (:assemblages schema-ir)
+                         (or (:imported-assemblages schema-ir) [])))))
 
 (defn get-assemblage-components
   "Get components for an assemblage"
@@ -107,6 +110,134 @@
   [schema-ir class-name]
   (filterv #(= :reactive (:relationship %))
            (or (get-assemblage-components schema-ir class-name) [])))
+
+(defn delegate-components
+  "Owned components marked + on this class."
+  [schema-ir class-name]
+  (filterv #(= :delegate (:relationship %))
+           (or (get-assemblage-components schema-ir class-name) [])))
+
+(defn- field-hit
+  [type-name fields]
+  {:type type-name :fields (vec fields)})
+
+(defn- resolve-own-field
+  [schema-ir class-name field-name]
+  (when-let [component (first (filter #(= field-name (:component-name %))
+                                      (or (get-assemblage-components schema-ir class-name) [])))]
+    (field-hit (:type-name component) [field-name])))
+
+(defn- resolve-field*
+  [schema-ir class-name field-name seen]
+  (when (contains? seen class-name)
+    (throw (ex-info (str "Cyclic delegation involving '" class-name "'")
+                    {:class-name class-name})))
+  (or (resolve-own-field schema-ir class-name field-name)
+      (let [seen (conj seen class-name)
+            hits (keep (fn [slot]
+                         (when-let [inner (resolve-field* schema-ir (:type-name slot)
+                                                          field-name seen)]
+                           (field-hit (:type inner)
+                                      (into [(:component-name slot)] (:fields inner)))))
+                       (delegate-components schema-ir class-name))]
+        (when (next hits)
+          (throw (ex-info (str "Field '" field-name "' is ambiguous on " class-name
+                               " (two delegates provide it)")
+                          {:class-name class-name :field field-name})))
+        (first hits))))
+
+(defn resolve-field
+  "Direct or promoted field. Returns {:type :fields} or nil."
+  [schema-ir class-name field-name]
+  (resolve-field* schema-ir class-name field-name #{}))
+
+(defn- collection-type?
+  [type-name]
+  (or (str/starts-with? (or type-name "") "Array<")
+      (str/starts-with? (or type-name "") "Map<")))
+
+(defn expand-field-path
+  "Walk field names, expanding promotion. Returns {:type :fields}."
+  [schema-ir class-name field-names]
+  (reduce (fn [{:keys [type fields]} field-name]
+            (when (collection-type? type)
+              (throw (ex-info (str "Cannot access fields of collection type " type)
+                              {:class-name type :field-name field-name})))
+            (let [hit (resolve-field schema-ir type field-name)]
+              (when-not hit
+                (throw (ex-info (str "Unknown field '" field-name "' on " type)
+                                {:class-name type :field-name field-name})))
+              {:type (:type hit)
+               :fields (into fields (:fields hit))}))
+          {:type class-name :fields []}
+          field-names))
+
+(defn own-field-names
+  [schema-ir class-name]
+  (set (map :component-name (or (get-assemblage-components schema-ir class-name) []))))
+
+(defn- promoted-field-names*
+  [schema-ir class-name seen]
+  (when (contains? seen class-name)
+    (throw (ex-info (str "Cyclic delegation involving '" class-name "'")
+                    {:class-name class-name})))
+  (let [seen (conj seen class-name)]
+    (into #{}
+          (mapcat (fn [slot]
+                    (let [inner (:type-name slot)]
+                      (concat (own-field-names schema-ir inner)
+                              (promoted-field-names* schema-ir inner seen))))
+                  (delegate-components schema-ir class-name)))))
+
+(defn promoted-field-names
+  "Field names visible on class-name only because of + slots."
+  [schema-ir class-name]
+  (promoted-field-names* schema-ir class-name #{}))
+
+(defn promoted-field-hits
+  "Promoted fields as {:name :type :fields} in name order."
+  [schema-ir class-name]
+  (->> (promoted-field-names schema-ir class-name)
+       sort
+       (mapv (fn [name]
+               (let [hit (resolve-field schema-ir class-name name)]
+                 {:name name
+                  :type (:type hit)
+                  :fields (:fields hit)})))))
+
+(defn- delegate-path*
+  [schema-ir from-class to-class seen]
+  (cond
+    (= from-class to-class) []
+    (contains? seen from-class) nil
+    :else
+    (some (fn [slot]
+            (when-let [rest (delegate-path* schema-ir (:type-name slot) to-class
+                                            (conj seen from-class))]
+              (into [(:component-name slot)] rest)))
+          (delegate-components schema-ir from-class))))
+
+(defn delegate-path
+  "Component names from from-class down to to-class, or nil."
+  [schema-ir from-class to-class]
+  (delegate-path* schema-ir from-class to-class #{}))
+
+(defn find-delegated-method-class
+  "First delegate (possibly nested) for which has-method? is true.
+   has-method? is (fn [class-name method-name])."
+  [schema-ir class-name method-name has-method?]
+  (let [hits (keep (fn [slot]
+                     (let [inner (:type-name slot)]
+                       (if (has-method? inner method-name)
+                         inner
+                         (find-delegated-method-class schema-ir inner method-name
+                                                      has-method?))))
+                   (delegate-components schema-ir class-name))]
+    (when (next hits)
+      (throw (ex-info (str "Method '" method-name "' is ambiguous on " class-name
+                           " (two delegates provide it)")
+                      {:class-name class-name :method-name method-name})))
+    (first hits)))
 
 (defn- variable-arg-name
   [arg]

@@ -90,6 +90,8 @@
         ;; Check if it's an enum type
         (some #(= (:name %) type-name) (:enums schema-ir))
         (str "helper.enumToConstruction(this." component-name ", depth + 1)")
+        (ir/external-type? schema-ir type-name)
+        (str "'@" type-name "'")
         ;; For other types (custom classes), call toConstruction with helper
         :else
         (str "this." component-name ".toConstruction(depth + 1, helper)")))))
@@ -149,20 +151,25 @@
         haxe))))
 
 (defn- haxe-infix
-  "Render infix arith. WCHNT Int division uses Std.int (Haxe / promotes to Float)."
+  "Render infix arith. Int-only / uses Std.int; Float chains keep Haxe /."
   [parts]
-  (if (some #(= "/" %) parts)
-    (loop [acc (haxe-infix-part (first parts))
-           rest (rest parts)]
-      (if (empty? rest)
-        acc
-        (let [op (first rest)
-              rhs (haxe-infix-part (second rest))
-              combined (if (= op "/")
-                         (str "Std.int((" acc ") / (" rhs "))")
-                         (str acc " " op " " rhs))]
-          (recur combined (drop 2 rest)))))
-    (str/join " " (map haxe-infix-part parts))))
+  (let [float-chain? (some (fn [p]
+                             (and (map? p)
+                                  (or (= :float (:expr p))
+                                      (= "Float" (:type p)))))
+                           parts)]
+    (if (and (some #(= "/" %) parts) (not float-chain?))
+      (loop [acc (haxe-infix-part (first parts))
+             rest (rest parts)]
+        (if (empty? rest)
+          acc
+          (let [op (first rest)
+                rhs (haxe-infix-part (second rest))
+                combined (if (= op "/")
+                           (str "Std.int((" acc ") / (" rhs "))")
+                           (str acc " " op " " rhs))]
+            (recur combined (drop 2 rest)))))
+      (str/join " " (map haxe-infix-part parts)))))
 
 (defn- haxe-join-op
   [op exprs]
@@ -266,14 +273,41 @@
        (str/join ", " (map expr-ir-to-haxe (cons (:receiver expr) (:args expr))))
        ")"))
 
+(defn- haxe-dot-call
+  [expr]
+  (str (expr-ir-to-haxe (:receiver expr)) "." (:method expr) "("
+       (str/join ", " (map expr-ir-to-haxe (:args expr)))
+       ")"))
+
+(defn- haxe-map-map
+  [expr]
+  (let [lam (first (:args expr))
+        k-type (:type (first (:params lam)))
+        w-type (:type lam)]
+    (when (or (nil? k-type) (nil? w-type))
+      (throw (ex-info "Map::map is missing key or result types"
+                      {:expr expr})))
+    (str "WCHNTRuntime.mapMap("
+         (expr-ir-to-haxe (:receiver expr)) ", "
+         (expr-ir-to-haxe lam) ", "
+         "new Map<" k-type ", " w-type ">())")))
+
 (defn- haxe-call
   [expr]
   (if (= :import-alias (:expr (:receiver expr)))
-    (str (:import-class expr) "." (:method expr) "("
+    (str (or (:import-assemblage expr) (:import-class expr)) "." (:method expr) "("
          (str/join ", " (map expr-ir-to-haxe (:args expr)))
          ")")
     (case (:method expr)
-    "fold" (haxe-fold expr)
+    "fold" (if (= "Map" (:on expr))
+             (haxe-runtime-call "mapFold" expr)
+             (haxe-fold expr))
+    "map" (if (= "Map" (:on expr))
+            (haxe-map-map expr)
+            (haxe-dot-call expr))
+    "filter" (if (= "Map" (:on expr))
+               (haxe-runtime-call "mapFilter" expr)
+               (haxe-dot-call expr))
     "length" (str (expr-ir-to-haxe (:receiver expr)) ".length")
     "concat" (str (expr-ir-to-haxe (:receiver expr)) " + "
                   (expr-ir-to-haxe (first (:args expr))))
@@ -292,9 +326,7 @@
     "str" (str "Std.string(" (expr-ir-to-haxe (:receiver expr)) ")")
     "tpl" (haxe-runtime-call "tpl" expr)
     "times" (haxe-runtime-call "times" expr)
-    (str (expr-ir-to-haxe (:receiver expr)) "." (:method expr) "("
-         (str/join ", " (map expr-ir-to-haxe (:args expr)))
-         ")"))))
+    (haxe-dot-call expr))))
 
 (defn expr-ir-to-haxe
   "Render a reaction expression IR node as a Haxe expression string."
@@ -514,11 +546,56 @@
   [methods-ir class-name]
   (filterv #(= class-name (:class %)) methods-ir))
 
+(defn- generate-promoted-field
+  [{:keys [name type fields]}]
+  (str "    public var " name "(get, never): " type ";\n"
+       "    function get_" name "(): " type " {\n"
+       "        return this." (str/join "." fields) ";\n"
+       "    }"))
+
+(defn- generate-promoted-method
+  [{:keys [method-name parameters return-type]} via-fields]
+  (let [params (str/join ", " (map #(str (:name %) ":" (:type %)) parameters))
+        args (str/join ", " (map :name parameters))
+        recv (str "this." (str/join "." via-fields))]
+    (str "\n    public function " method-name "(" params "): " return-type " {\n"
+         "        return " recv "." method-name "(" args ");\n"
+         "    }")))
+
+(defn- collect-promoted-methods
+  [schema-ir methods-ir class-name defined]
+  (mapcat (fn [slot]
+            (let [inner (:type-name slot)
+                  here (for [m (methods-for-class methods-ir inner)
+                             :when (and (not (:interface-signature? m))
+                                        (not (contains? defined (:method-name m))))]
+                         {:method m :via [(:component-name slot)]})
+                  nested (collect-promoted-methods schema-ir methods-ir inner defined)]
+              (concat here
+                      (map (fn [{:keys [method via]}]
+                             {:method method
+                              :via (into [(:component-name slot)] via)})
+                           nested))))
+          (ir/delegate-components schema-ir class-name)))
+
+(defn- generate-delegate-forwards
+  [schema-ir methods-ir class-name defined]
+  (let [fields (str/join "\n" (map generate-promoted-field
+                                  (ir/promoted-field-hits schema-ir class-name)))
+        methods (str/join ""
+                          (map (fn [{:keys [method via]}]
+                                 (generate-promoted-method method via))
+                               (collect-promoted-methods schema-ir methods-ir
+                                                         class-name defined)))]
+    {:fields fields :methods methods}))
+
 (defn generate-haxe-class
   "Generate Haxe class from IR assemblage"
   ([assemblage schema-ir]
    (generate-haxe-class assemblage schema-ir []))
   ([assemblage schema-ir class-methods]
+   (generate-haxe-class assemblage schema-ir class-methods []))
+  ([assemblage schema-ir class-methods methods-ir]
    (let [class-name (:name assemblage)
          components (:components assemblage)
          needs-context (ir/needs-context? schema-ir class-name)
@@ -548,23 +625,25 @@
                      :schema-ir schema-ir
                      :class-name class-name}
          static-public (or (:static-public-methods schema-ir) #{})
-         instance-methods (remove #(contains? static-public
-                                             [class-name (:method-name %)])
+         instance-methods (remove #(or (:static? %)
+                                       (contains? static-public
+                                                  [class-name (:method-name %)]))
                                   class-methods)
          user-methods (str/join "" (map #(generate-method % method-ctx)
                                         instance-methods))
-         static-methods (str/join ""
-                                  (for [m class-methods
-                                        :when (contains? static-public
-                                                         [class-name (:method-name m)])]
-                                    (generate-ordinary-method m true)))]
+         static-methods ""
+         defined (set (map :method-name class-methods))
+         forwards (generate-delegate-forwards schema-ir methods-ir class-name defined)]
      (str "class " class-name implements-clause " {\n"
           (str/join "\n" all-fields)
+          (when (seq (:fields forwards))
+            (str "\n" (:fields forwards)))
           "\n\n"
           "    public function new(" constructor-params ") {\n"
           "        " constructor-body "\n"
           "    }"
           user-methods
+          (:methods forwards)
           static-methods
           (or inject-method "")
           (or set-context-method "")
@@ -604,11 +683,27 @@
 
 ;; No longer needed - arrays are handled inline in each class
 
+(defn generate-haxe-assemblage-class
+  "Emit the host-facing wrapper for a program assemblage."
+  [schema-ir methods-ir factory-haxe]
+  (let [root (:root-class schema-ir)
+        class-name (str root "Assemblage")
+        static-methods (->> methods-ir
+                            (filter #(and (= root (:class %)) (:static? %)))
+                            (map #(generate-ordinary-method % true))
+                            (apply str))]
+    (str "class " class-name " {\n"
+         factory-haxe
+         static-methods
+         "\n}")))
+
 (defn schema-ir-to-haxe
   "Transform schema IR to Haxe code, including any reaction methods."
   ([schema-ir]
-   (schema-ir-to-haxe schema-ir []))
+   (schema-ir-to-haxe schema-ir [] true))
   ([schema-ir methods-ir]
+   (schema-ir-to-haxe schema-ir methods-ir true))
+  ([schema-ir methods-ir include-helpers?]
    (let [assemblages (:assemblages schema-ir)
          interfaces (:interfaces schema-ir)
          enums (:enums schema-ir)
@@ -622,10 +717,13 @@
                             haxe-helpers/wchnt-runtime)
          classes (map #(generate-haxe-class % schema-ir
                                             (remove :interface-signature?
-                                                    (methods-for-class methods-ir (:name %))))
+                                                    (methods-for-class methods-ir (:name %)))
+                                            methods-ir)
                       assemblages)
          enum-classes (map generate-haxe-enum enums)
-         all-classes (concat interface-classes [iwchnt-helper] classes enum-classes)]
+         all-classes (concat interface-classes
+                             (when include-helpers? [iwchnt-helper])
+                             classes enum-classes)]
      (str/join "\n" all-classes)))) 
 
 ;; =============================================================================
@@ -891,12 +989,19 @@
                            subscribe-statements
                            [final-statement]))))
 
+(defn- factory-signature-params
+  [construction-ir]
+  (->> (or (:factory-params construction-ir) [])
+       (map #(str (:name %) ": " (:type %)))
+       (str/join ", ")))
+
 (defn generate-construction-factory
   "Generate Haxe factory function from construction IR"
   [construction-ir schema-ir]
   (let [root-class (:root-class construction-ir)
-        factory-name (:factory-name construction-ir)
+        factory-name "factory"
+        params (factory-signature-params construction-ir)
         body (generate-factory-body construction-ir schema-ir)]
-    (str "public static function " factory-name "(): " root-class " {\n"
+    (str "public static function " factory-name "(" params "): " root-class " {\n"
          body "\n"
          "}"))) 

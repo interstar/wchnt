@@ -51,6 +51,35 @@
         (reaction/assert-methods-section-placement! methods schema-with-ext section)
         {:methods methods :schema-ir schema-with-ext}))))
 
+(defn- parse-public-methods-text
+  [text schema-ir target-ir construction-text]
+  (if (str/blank? text)
+    {:methods [] :schema-ir schema-ir}
+    (do
+      (when (str/blank? construction-text)
+        (throw (ex-info "Public static methods require a Construction section" {})))
+      (let [construction (parser/parse-construction-unified construction-text)]
+        (when (p/failed? construction)
+          (throw (ex-info (or (first (:errors construction)) "Construction parse failed") {})))
+        (let [root (ast-to-ir/root-class-from-construction (:value construction) schema-ir)
+              public-ast (importing/public-methods-ast root text)
+              schema-with-ext (reaction/merge-external-types
+                               schema-ir
+                               (reaction/collect-external-types-from-reaction-ast public-ast))
+              methods (reaction/reaction-ast-to-ir public-ast schema-with-ext target-ir
+                                                   {:skip-checks? true})
+              methods (mapv #(assoc % :static? true) methods)]
+          (doseq [method methods]
+            (when (reaction/expr-uses-instance? method)
+              (throw (ex-info (str "Public static method '" (:method-name method)
+                                   "' cannot use this or instance fields")
+                              {:method-name (:method-name method)})))
+            (when (reaction/expr-uses-call? method)
+              (throw (ex-info (str "Public static method '" (:method-name method)
+                                   "' cannot call another method")
+                              {:method-name (:method-name method)}))))
+          {:methods methods :schema-ir (assoc schema-with-ext :root-class root)})))))
+
 (defn- reaction-stages
   []
   [(p/retrieve :codeblocks)
@@ -66,8 +95,13 @@
                                                      :target-methods
                                                      (:schema-ir after-methods)
                                                      target-ir)
-            schema-ir (:schema-ir after-target-methods)
-            combined (into (:methods after-methods) (:methods after-target-methods))]
+            after-public-methods (parse-public-methods-text (:public codeblocks)
+                                                            (:schema-ir after-target-methods)
+                                                            target-ir
+                                                            (:construction codeblocks))
+            schema-ir (:schema-ir after-public-methods)
+            combined (into (into (:methods after-methods) (:methods after-target-methods))
+                           (:methods after-public-methods))]
         (reaction/assert-methods-complete! combined schema-ir)
         (-> (p/success-cargo combined)
             (assoc-in [:stash :schema-ir] schema-ir))))
@@ -178,12 +212,12 @@
   (apply p/run codeblocks (ir-stages-from-codeblocks)))
 
 (defn- import-codeblocks
-  "Imported pages contribute schema and methods only."
+  "Imported program pages retain their Construction so the root assemblage and factory are compiled.
+   Their Target is deliberately omitted: importing a page never runs its host lifecycle."
   [codeblocks]
   (assoc codeblocks
-         :construction ""
          :target ""
-         :page-kind :library))
+         :page-kind :program))
 
 (defn- compile-import-page
   [page-name resolve-page]
@@ -261,7 +295,9 @@
                (if (p/failed? page-cargo)
                  page-cargo
                  (finalize-ir-cargo
-                  (merge-imports-into-cargo page-cargo import-order cargos-by-page)
+                  (-> page-cargo
+                      (assoc-in [:stash :imported-cargos] cargos-by-page)
+                      (assoc-in [:stash :import-order] import-order))
                   codeblocks)))))))
      (catch #?(:clj Exception :cljs :default) e
        (p/fail-cargo (or (ex-message e) (str e)))))))
@@ -275,30 +311,40 @@
   (str/join "\n" (remove str/blank? parts)))
 
 (defn- emit-terminal-main
-  [factory helpers main]
+  [helpers main]
   (when (str/blank? (or main ""))
     (throw (ex-info "Construction programs must define %main in Target" {})))
-  (str "class Main {\n" (class-body factory helpers main) "\n}"))
+  (str "class Main {\n"
+       (class-body haxe-helpers/wchnt-console-binding
+                   haxe-helpers/wchnt-maths-binding
+                   helpers main)
+       "\n}"))
 
 (defn- emit-openfl-main
-  [factory helpers init step]
+  [helpers init step]
   (when (or (str/blank? (or init "")) (str/blank? (or step "")))
     (throw (ex-info "%openfl requires %init and %step" {})))
   (str "class Main extends Sprite {\n"
-       (class-body factory helpers init step haxe-helpers/openfl-lifecycle)
+       (class-body haxe-helpers/wchnt-console-binding
+                   haxe-helpers/wchnt-maths-binding
+                   helpers init step
+                   haxe-helpers/openfl-lifecycle)
        "\n}"))
 
 (defn- emit-cli-main
-  [factory helpers init step]
+  [helpers init step]
   (when (or (str/blank? (or init "")) (str/blank? (or step "")))
     (throw (ex-info "%cli requires %init and %step" {})))
   (str "class Main {\n"
-       (class-body factory helpers init step haxe-helpers/cli-lifecycle)
+       (class-body haxe-helpers/wchnt-console-binding
+                   haxe-helpers/wchnt-maths-binding
+                   helpers init step
+                   haxe-helpers/cli-lifecycle)
        "\n}"))
 
 (defn- emit-main-class
-  [factory target-ir]
-  (if (str/blank? factory)
+  [target-ir]
+  (if (nil? (:host target-ir))
     ""
     (let [host (:host target-ir)]
       (when-not host
@@ -310,36 +356,64 @@
             init (get-in target-ir [:init :haxe])
             step (get-in target-ir [:step :haxe])]
         (case host
-          "terminal" (emit-terminal-main factory helpers main)
-          "openfl" (emit-openfl-main factory helpers init step)
-          "cli" (emit-cli-main factory helpers init step)
+          "terminal" (emit-terminal-main helpers main)
+          "openfl" (emit-openfl-main helpers init step)
+          "cli" (emit-cli-main helpers init step)
           "canvas" (throw (ex-info "%canvas is for the live interpreter, not the Haxe backend"
                                    {:host host}))
           "cli-live" (throw (ex-info "%cli-live is for the live interpreter, not the Haxe backend"
                                      {:host host}))
           (throw (ex-info (str "Unknown Target host '" host "'") {:host host})))))))
 
+(defn- haxe-artifacts-for-cargo
+  [cargo include-helpers?]
+  (let [schema-ir (get-in cargo [:stash :schema-ir])
+        construction-ir (get-in cargo [:stash :construction-ir])
+        methods-ir (or (get-in cargo [:stash :methods-ir]) [])]
+    (if construction-ir
+      (let [schema-ir (assoc schema-ir :root-class (:root-class construction-ir))
+            methods-for-codegen (into methods-ir (vals (or (:imported-methods schema-ir) {})))
+            classes (ir-to-haxe/schema-ir-to-haxe schema-ir methods-for-codegen include-helpers?)
+            factory (ir-to-haxe/generate-construction-factory construction-ir schema-ir)
+            wrapper (ir-to-haxe/generate-haxe-assemblage-class schema-ir methods-ir factory)]
+        {:classes classes :wrapper wrapper})
+      {:classes (ir-to-haxe/schema-ir-to-haxe schema-ir methods-ir include-helpers?)
+       :wrapper ""})))
+
 (defn- cargo->full-program
   [cargo]
   (let [codeblocks (get-in cargo [:stash :codeblocks])
-        factory (or (-> cargo :stash :construction-haxe) "")
         target-ir (get-in cargo [:stash :target-ir])
         host (:host target-ir)
         page-kind (or (:page-kind codeblocks) :program)
-        has-construction? (not (str/blank? factory))
+        construction-ir (get-in cargo [:stash :construction-ir])
+        has-construction? (boolean construction-ir)
+        local-artifacts (haxe-artifacts-for-cargo cargo true)
+        imported-artifacts (for [imported (vals (get-in cargo [:stash :imported-cargos] {}))]
+                             (haxe-artifacts-for-cargo imported false))
+        classes (str/join "\n" (concat [(:classes local-artifacts)
+                                            (:wrapper local-artifacts)]
+                                           (map :classes imported-artifacts)
+                                           (map :wrapper imported-artifacts)))
+        factory ""
         main (or (get-in target-ir [:main :haxe]) "")
         main-class (if has-construction?
-                     (emit-main-class factory target-ir)
+                     (emit-main-class target-ir)
                      "")]
-    {:classes (-> cargo :stash :schema-haxe)
+    {:classes classes
      :factory factory
      :main main
      :init (or (get-in target-ir [:init :haxe]) "")
      :step (or (get-in target-ir [:step :haxe]) "")
      :preamble (case host
                  "openfl" (str haxe-helpers/openfl-imports "\n\n"
-                               haxe-helpers/openfl-graphics-wrapper)
-                 "cli" haxe-helpers/cli-console-wrapper
+                               haxe-helpers/openfl-graphics-wrapper "\n\n"
+                               haxe-helpers/wchnt-console-class "\n\n"
+                               haxe-helpers/wchnt-maths-class)
+                 "cli" (str haxe-helpers/wchnt-console-class "\n\n"
+                            haxe-helpers/wchnt-maths-class)
+                 "terminal" (str haxe-helpers/wchnt-console-class "\n\n"
+                                 haxe-helpers/wchnt-maths-class)
                  "")
      :main-class main-class
      :has-construction? has-construction?

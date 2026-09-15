@@ -145,7 +145,7 @@
   [:map
    [:component-name string?]
    [:type-name string?]
-   [:relationship [:enum :ordinary :context-specific :external :reactive]]
+   [:relationship [:enum :ordinary :context-specific :external :reactive :delegate]]
    [:optional-name [:maybe string?]]])
 
 (def AssemblageSchema
@@ -206,7 +206,7 @@
       [:class-name string?]
       [:args [:sequential [:ref ::ConstructionArg]]]  ;; All nested args should be structured ConstructionArg objects
       [:index int?]
-      [:value {:optional true} [:maybe [:or string? int? boolean?]]]]}))  ;; For primitives and variables: strings, integers, booleans. For objects, this is optional.
+      [:value {:optional true} [:maybe [:or string? boolean? number?]]]]}))
 
 ;; ConstructionArg schema - references the registry
 (def ConstructionArg [:ref ::ConstructionArg])
@@ -262,7 +262,9 @@
    [:statements [:sequential Statement]]
    [:dependencies [:sequential Dependency]]
    [:variable-mappings [:map-of string? string?]]
-   [:return-object string?]])
+   [:return-object string?]
+   [:factory-params {:optional true}
+    [:sequential [:map [:name string?] [:type string?]]]]])
 
 ;; Method IR Schemas
 (def Parameter

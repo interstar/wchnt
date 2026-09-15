@@ -184,6 +184,14 @@
    :args []
    :index arg-index})
 
+(defn- float-literal->arg
+  [arg-item arg-index]
+  {:type :primitive
+   :class-name "Float"
+   :value (ast-utils/parse-float (second arg-item))
+   :args []
+   :index arg-index})
+
 (defn- extract-arg-item
   [{:keys [enum-values] :as ctx} arg-item arg-index]
   (cond
@@ -201,6 +209,9 @@
 
     (ast-utils/node-type? arg-item :IntLiteral)
     (int-literal->arg arg-item arg-index)
+
+    (ast-utils/node-type? arg-item :FloatLiteral)
+    (float-literal->arg arg-item arg-index)
 
     (ast-utils/node-type? arg-item :StringLiteral)
     (string-literal->arg arg-item arg-index)

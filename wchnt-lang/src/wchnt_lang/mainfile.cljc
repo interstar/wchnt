@@ -224,24 +224,22 @@
     specs))
 
 (defn parse-public-names
-  "Parse ## Public fence: one Class::method or published type name per line."
+  "Parse ## Public fence: an unqualified method definition or published type name."
   [public-text]
   (->> (str/split-lines (or public-text ""))
        (map str/trim)
        (remove str/blank?)
        (mapv (fn [line]
                (cond
-                 (re-matches #"([A-Za-z][A-Za-z0-9_]*)::([A-Za-z_][A-Za-z0-9_]*)" line)
-                 (let [[_ class method]
-                       (re-matches #"([A-Za-z][A-Za-z0-9_]*)::([A-Za-z_][A-Za-z0-9_]*)" line)]
-                   {:class class :method method})
+                 (re-matches #"([A-Za-z_][A-Za-z0-9_]*)\s*=.*" line)
+                 {:method (first (str/split line #"\s*=\s*" 2))}
 
                  (re-matches #"([A-Za-z][A-Za-z0-9_]*)" line)
                  {:type line}
 
                  :else
                  (throw (ex-info (str "Invalid Public line '" line
-                                      "' (expected Class::method or a type name)")
+                                      "' (expected name = {...} or a type name)")
                                  {:line line})))))))
 
 (defn valid-page-name?

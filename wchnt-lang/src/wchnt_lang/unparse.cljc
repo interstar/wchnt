@@ -178,10 +178,18 @@
 
 ;; --- methods / code ---------------------------------------------------------
 
+(defn- ends-safe-for-stmt-dot?
+  "Statement separator is `.`. A following `name.method(...)` re-parses as a
+   field/method chain unless the prior statement ends with ) ] }."
+  [s]
+  (boolean (re-find #"[)\\]}]$" s)))
+
 (defn- unparse-assignment
   [node depth]
-  (str (second (find-child node :VariableName)) " = "
-       (unparse-node (find-child node :Expression) depth :expr)))
+  (let [nm (second (find-child node :VariableName))
+        rhs (unparse-node (find-child node :Expression) depth :expr)
+        rhs' (if (ends-safe-for-stmt-dot? rhs) rhs (str "(" rhs ")"))]
+    (str nm " = " rhs')))
 
 (defn- block-multiline?
   [stmts]
