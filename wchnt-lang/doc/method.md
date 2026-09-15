@@ -167,10 +167,11 @@ name.length()
 name.concat(":").concat(score)
 ```
 
-Arrays also have `length()`, `cons` (prepend), `head`, and `tail`. `head` / `tail` of an empty array fail at runtime. Maps have `put`, `get`, `exists`, and `remove`. One-argument `get` / `remove` of a missing key fail at runtime. `get(key, fallback)` returns `fallback` (same value type) when the key is absent. `exists` is Bool. Map writes copy the map; Target can later name a persistent or mutating store.
+Arrays also have `length()`, `get(index)`, `cons` (prepend), `head`, and `tail`. `head` / `tail` of an empty array, and `get(index)` out of range, fail at runtime. Maps have `put`, `get`, `exists`, and `remove`. One-argument `get` / `remove` of a missing key fail at runtime. `get(key, fallback)` returns `fallback` (same value type) when the key is absent. `exists` is Bool. Map writes copy the map; Target can later name a persistent or mutating store.
 
 ```
 players.cons(p)
+players.get(0)
 players.head()
 players.tail()
 scores.put(n, s)
@@ -250,7 +251,7 @@ When an **observable** finishes its own `update`, it calls `update()` on each su
 
 ### 6. Arrays and maps inside methods
 
-Construction already builds arrays and maps. Methods can too, including empty collections. Arrays have `cons`, `head`, and `tail`. Maps have `put`, `get`, `exists`, and `remove` (copy-on-write for now). One-argument `get` fails if the key is missing; `get(key, fallback)` returns `fallback` of the value type. `exists` is Bool.
+Construction already builds arrays and maps. Methods can too, including empty collections. Arrays have `get(index)`, `cons`, `head`, and `tail`. Maps have `put`, `get`, `exists`, and `remove` (copy-on-write for now). One-argument map `get` fails if the key is missing; `get(key, fallback)` returns `fallback` of the value type. `exists` is Bool.
 
 ```
 Team::count = { players.length() }
@@ -258,6 +259,8 @@ Team::count = { players.length() }
 Team::withP = {p | players.cons(p) }
 
 Team::captain = { players.head() }
+
+Team::first = { p = players.get(0). p.name }
 
 Team::withScore = {n, s | scores.put(n, s) }
 
@@ -268,7 +271,7 @@ Team::hasAda = { scores.exists("Ada") }
 Team::fresh = { [:Team name [:Array/Player] {String:Int}] }
 ```
 
-Plus `map` / `filter` / `fold` in §4. Indexing spelling is unset (`players.get(0)` vs `players.at(0)` vs something shorter).
+Plus `map` / `filter` / `fold` in §4. Array indexing is `players.get(index)`; on a map, `get` is key lookup.
 
 ### Write paths (`[:Class | field = expr]`) — Done
 
@@ -402,7 +405,7 @@ Each slice: an `examples/*.wcn` file, tests on Haxe strings, no Haxe compiler in
 3. **Method calls.** Done. Receiver required (`this.move()`, `ball.move()`, `playArea.rect.area()`). Arguments comma-separated. Fail if the method is not defined on that class or the arity is wrong.
 4. **`if` / `else` as an expression, and `map` / `filter` / `fold` on arrays.** Done.
 5. **`update` rules.** Done. In-place rewrite of `this`, identity slots patch not replace, `$` notify with no args, no child percolation.
-6. **Array `concat` and index sugar.** `times`, `get`/`remove`, `head`/`tail`, and `substring` are done.
+6. **Array `concat` and index.** `times`, array `get(index)`, map `get`/`remove`, `head`/`tail`, and `substring` are done.
 6b. **Write paths.** Done. `[:Class | path = expr]` copies unspecified fields from `this` or a named source.
 7. **Target `%` expansion.** Done as expressions plus `%main` Haxe. Unknown `%name` fails. Methods are not auto-run.
 8. **Typed params, interface signatures, `@Type/name`.** Done. `shapes_openfl.wcn` is the example. Void host chains unroll in codegen.

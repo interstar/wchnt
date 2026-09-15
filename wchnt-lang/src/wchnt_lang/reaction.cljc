@@ -324,6 +324,8 @@
        :body body
        :type ret})))
 
+(declare type-join)
+
 (defn- branch-type
   [branch ctx]
   (value-type (:body branch) ctx))
@@ -345,8 +347,9 @@
                             then-branch (process-block (nth else-if-node 2)
                                                        ctx class-name "if-then")
                             then-type (branch-type then-branch ctx)
-                            else-type (branch-or-if-type acc ctx)]
-                        (when (not= then-type else-type)
+                            else-type (branch-or-if-type acc ctx)
+                            result-type (type-join then-type else-type)]
+                        (when-not result-type
                           (throw (ex-info (str "if branches must have the same type, got "
                                                then-type " and " else-type)
                                           {:then then-type :else else-type})))
@@ -354,7 +357,7 @@
                          :condition cond-expr
                          :then then-branch
                          :else acc
-                         :type then-type}))
+                         :type result-type}))
                     final-else
                     (reverse else-if-nodes))]
     chain))
@@ -367,8 +370,9 @@
         then (process-block (nth node 2) ctx class-name "if-then")
         else (process-else-part (nth node 3) ctx class-name method-name)
         then-type (branch-type then ctx)
-        else-type (branch-or-if-type else ctx)]
-    (when (not= then-type else-type)
+        else-type (branch-or-if-type else ctx)
+        result-type (type-join then-type else-type)]
+    (when-not result-type
       (throw (ex-info (str "if branches must have the same type, got "
                            then-type " and " else-type)
                       {:then then-type :else else-type})))
@@ -379,7 +383,7 @@
      :condition condition
      :then then
      :else else
-     :type then-type}))
+     :type result-type}))
 
 (defn- require-lambda
   [node method-name]
@@ -417,11 +421,32 @@
     (throw (ex-info (str what " expected " expected ", got " actual)
                     {:expected expected :actual actual}))))
 
+(def ^:private numeric-types #{"Int" "Float"})
+
+(defn- numeric-type?
+  [type-name]
+  (contains? numeric-types type-name))
+
+(defn- type-join
+  "The least common type for values used in one expression.
+
+  WCHNT currently has a two-level numeric lattice: Int is below Float,
+  so mixing the two promotes the result to Float. Other types still need
+  to match exactly here; interface assignability is handled separately.
+  "
+  [left right]
+  (cond
+    (= left right) left
+    (and (numeric-type? left) (numeric-type? right)) "Float"
+    :else nil))
+
 (defn- type-assignable?
   [schema-ir expected actual]
   (or (nil? actual)
       (= expected actual)
-      (and (= expected "Float") (= actual "Int"))
+      (and (numeric-type? expected)
+           (numeric-type? actual)
+           (= expected (type-join expected actual)))
       (contains? (set (interface-implementers schema-ir expected)) actual)))
 
 (defn- assert-assignable!
@@ -528,25 +553,42 @@
 (defn- get-call
   [receiver class-name method arg-nodes ctx]
   (when (= method "get")
-    (let [types (map-types class-name)
-          n (count arg-nodes)]
-      (when-not types
-        (throw (ex-info (str "'get' is only defined on maps, not " class-name)
-                        {:class-name class-name})))
-      (when-not (or (= n 1) (= n 2))
-        (throw (ex-info (str "Map::get expected 1 or 2 arguments, got " n)
-                        {:expected "1 or 2" :got n})))
-      (let [k (convert-call-arg (first arg-nodes) ctx)
-            fallback (when (= n 2) (convert-call-arg (second arg-nodes) ctx))]
-        (assert-arg-type (:key types) (value-type k ctx) "Map::get")
-        (when fallback
-          (assert-arg-type (:val types) (value-type fallback ctx) "Map::get"))
-        {:expr :call
-         :receiver receiver
-         :method "get"
-         :args (if fallback [k fallback] [k])
-         :arg-types (if fallback [(:key types) (:val types)] [(:key types)])
-         :type (:val types)}))))
+    (let [elem-type (array-elem-type class-name)
+          types (map-types class-name)]
+      (cond
+        elem-type
+        (do (expect-arity "Array" "get" 1 arg-nodes)
+            (let [idx (convert-call-arg (first arg-nodes) ctx)]
+              (assert-arg-type "Int" (value-type idx ctx) "Array::get")
+              {:expr :call
+               :receiver receiver
+               :method "get"
+               :on "Array"
+               :args [idx]
+               :arg-types ["Int"]
+               :type elem-type}))
+
+        types
+        (let [n (count arg-nodes)]
+          (when-not (or (= n 1) (= n 2))
+            (throw (ex-info (str "Map::get expected 1 or 2 arguments, got " n)
+                            {:expected "1 or 2" :got n})))
+          (let [k (convert-call-arg (first arg-nodes) ctx)
+                fallback (when (= n 2) (convert-call-arg (second arg-nodes) ctx))]
+            (assert-arg-type (:key types) (value-type k ctx) "Map::get")
+            (when fallback
+              (assert-arg-type (:val types) (value-type fallback ctx) "Map::get"))
+            {:expr :call
+             :receiver receiver
+             :method "get"
+             :args (if fallback [k fallback] [k])
+             :arg-types (if fallback [(:key types) (:val types)] [(:key types)])
+             :type (:val types)}))
+
+        :else
+        (throw (ex-info (str "'get' is only defined on arrays and maps, not "
+                             class-name)
+                        {:class-name class-name}))))))
 
 (defn- exists-call
   [receiver class-name method arg-nodes ctx]
@@ -796,9 +838,24 @@
                              ", not " class-name)
                         {:class-name class-name :method method}))))))
 
+(defn- numeric-call
+  "Explicit conversions and rounding operations on Float values."
+  [receiver class-name method arg-nodes]
+  (when (and (= class-name "Float")
+             (contains? #{"toInt" "floor" "ceil" "round"} method))
+    (expect-arity "Float" method 0 arg-nodes)
+    {:expr :call
+     :receiver receiver
+     :method method
+     :numeric-op method
+     :args []
+     :arg-types []
+     :type "Int"}))
+
 (defn- builtin-call
   [receiver class-name method arg-nodes ctx]
-  (or (length-call receiver class-name method arg-nodes)
+  (or (numeric-call receiver class-name method arg-nodes)
+      (length-call receiver class-name method arg-nodes)
       (concat-call receiver class-name method arg-nodes ctx)
       (cons-call receiver class-name method arg-nodes ctx)
       (head-call receiver class-name method arg-nodes)
@@ -1397,20 +1454,46 @@
   (when (= :param (:expr expr))
     (swap! types-atom update (:name expr) (fnil conj #{}) type-name)))
 
-(defn- infer-param-types-from
+(defn- known-param-type
+  [expr types-atom]
+  (when (= :param (:expr expr))
+    (let [types (get @types-atom (:name expr))]
+      (when (= 1 (count types))
+        (first types)))))
+
+(defn- contains-float?
   [expr types-atom]
   (case (:expr expr)
+    :float true
+    :param (= "Float" (known-param-type expr types-atom))
+    :neg (contains-float? (:arg expr) types-atom)
+    :arith (some #(contains-float? % types-atom) (:parts expr))
+    :call (= "Float" (:type expr))
+    :field (= "Float" (:type expr))
+    false))
+
+(defn- infer-param-types-from
+  ([expr types-atom]
+   (infer-param-types-from expr types-atom nil))
+  ([expr types-atom numeric-context]
+   (case (:expr expr)
     :arith
-    (doseq [part (:parts expr)]
-      (when (map? part)
-        (note-param-type types-atom part "Int")
-        (infer-param-types-from part types-atom)))
+    (let [target (if (contains-float? expr types-atom) "Float"
+                     (or numeric-context "Int"))]
+      (doseq [part (:parts expr)]
+        (when (map? part)
+          (note-param-type types-atom part target)
+          (infer-param-types-from part types-atom target))))
 
     :cmp
-    (do (note-param-type types-atom (:left expr) "Int")
-        (note-param-type types-atom (:right expr) "Int")
-        (infer-param-types-from (:left expr) types-atom)
-        (infer-param-types-from (:right expr) types-atom))
+    (let [target (if (or (contains-float? (:left expr) types-atom)
+                        (contains-float? (:right expr) types-atom))
+                   "Float"
+                   (or numeric-context "Int"))]
+      (note-param-type types-atom (:left expr) target)
+      (note-param-type types-atom (:right expr) target)
+      (infer-param-types-from (:left expr) types-atom target)
+      (infer-param-types-from (:right expr) types-atom target))
 
     :and
     (doseq [arg (:args expr)]
@@ -1457,8 +1540,11 @@
         (infer-param-types-from (:body expr) types-atom))
 
     :neg
-    (do (note-param-type types-atom (:arg expr) "Int")
-        (infer-param-types-from (:arg expr) types-atom))
+    (let [target (or numeric-context
+                    (known-param-type (:arg expr) types-atom)
+                    "Int")]
+      (note-param-type types-atom (:arg expr) target)
+      (infer-param-types-from (:arg expr) types-atom target))
 
     :array
     (doseq [item (:items expr)]
@@ -1469,7 +1555,7 @@
       (infer-param-types-from (:key pair) types-atom)
       (infer-param-types-from (:value pair) types-atom))
 
-    nil))
+    nil)))
 
 (defn- inferred-param-type
   [param-name types-map]
@@ -1491,7 +1577,10 @@
 
 (defn- infer-parameters
   [param-names exprs explicit-types schema-ir]
-  (let [types-atom (atom {})]
+  (let [types-atom (atom (into {}
+                              (map (fn [[name type-name]]
+                                     [name #{type-name}])
+                                   explicit-types)))]
     (doseq [expr exprs]
       (infer-param-types-from expr types-atom))
     (mapv (fn [name]
@@ -1540,7 +1629,7 @@
     :call (:type expr)
     :target-call (:type expr)
     :if (:type expr)
-    :neg "Int"
+    :neg (expr-return-type (:arg expr) schema-ir class-name param-type-by-name let-types)
     :lambda (:type expr)
     (throw (ex-info "Cannot determine return type of method body"
                     {:expr expr}))))
@@ -1716,7 +1805,7 @@
     :call (:type expr)
     :target-call (:type expr)
     :if (:type expr)
-    :neg "Int"
+    :neg (value-type (:arg expr) ctx)
     :lambda (:type expr)
     :param (get (:param-types ctx) (:name expr))
     :field (binding-type (:schema-ir ctx) (:class-name ctx) (:name expr))

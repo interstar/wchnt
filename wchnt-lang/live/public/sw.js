@@ -1,7 +1,7 @@
 /* WCHNT live service worker.
    Precache the app shell; stale-while-revalidate everything else on this origin.
    Bump CACHE when a hard flush is needed after deploy. */
-const CACHE = "wchnt-live-v3";
+const CACHE = "wchnt-live-v5";
 
 const PRECACHE = [
   "./",

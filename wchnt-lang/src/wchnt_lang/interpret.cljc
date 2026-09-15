@@ -382,6 +382,13 @@
     "cons"
     (into [(eval-expr (first arg-exprs) ctx)] recv)
 
+    "get"
+    (let [idx (eval-expr (first arg-exprs) ctx)]
+      (when-not (and (integer? idx) (<= 0 idx) (< idx (count recv)))
+        (throw (ex-info (str "Array::get: index " idx " out of range")
+                        {:index idx :length (count recv)})))
+      (nth recv idx))
+
     "length"
     (count recv)
 
@@ -527,6 +534,13 @@
         (number? recv)
         (case method
           "str" (str recv)
+          "toInt" (int recv)
+          "floor" #?(:clj (long (Math/floor (double recv)))
+                      :cljs (js/Math.floor recv))
+          "ceil" #?(:clj (long (Math/ceil (double recv)))
+                     :cljs (js/Math.ceil recv))
+          "round" #?(:clj (long (Math/round (double recv)))
+                      :cljs (js/Math.round recv))
           "times"
           (let [n (long recv)
                 lam (first (:args expr))]

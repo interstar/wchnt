@@ -28,6 +28,55 @@
         "Game::update = { [:Game | ball.x = (ball.x + ball.dx)] }\n"
         "```\n")))
 
+(defn- array-get-program
+  []
+  (interpret/load-program
+   (str "# array get\n"
+        "## Schema\n```\n"
+        "Team = [Player]/players\n"
+        "Player = String/name\n"
+        "```\n## Construction\n```\n"
+        "[:Team [:Array/Player [:Player \"Ada\"] [:Player \"Bob\"]]]\n"
+        "```\n## Methods\n```\n"
+        "Team::first = { p = players.get(0). p.name }\n"
+        "Team::second = { p = players.get(1). p.name }\n"
+        "Team::bad = { p = players.get(2). p.name }\n"
+        "```\n")))
+
+(defn- numeric-conversion-program
+  []
+  (interpret/load-program
+   (str "# numeric conversions\n"
+        "## Schema\n```\n"
+        "Game = Float/x\n"
+        "```\n## Construction\n```\n"
+        "[:Game 2.75]\n"
+        "```\n## Methods\n```\n"
+        "Game::truncated = { x.toInt() }\n"
+        "Game::rounded = { x.round() }\n"
+        "Game::floored = { x.floor() }\n"
+        "Game::ceiled = { x.ceil() }\n"
+        "```\n")))
+
+(deftest numeric-conversions-interpret
+  (testing "Float conversion methods have explicit, deterministic semantics"
+    (let [{:keys [schema-ir methods-ir root]} (numeric-conversion-program)]
+      (is (= 2 (interpret/call schema-ir methods-ir root "truncated" [])))
+      (is (= 3 (interpret/call schema-ir methods-ir root "rounded" [])))
+      (is (= 2 (interpret/call schema-ir methods-ir root "floored" [])))
+      (is (= 3 (interpret/call schema-ir methods-ir root "ceiled" []))))))
+
+(deftest array-get-interpret
+  (testing "Array::get returns the element at an index"
+    (let [{:keys [schema-ir methods-ir root]} (array-get-program)]
+      (is (= "Ada" (interpret/call schema-ir methods-ir root "first" [])))
+      (is (= "Bob" (interpret/call schema-ir methods-ir root "second" [])))))
+
+  (testing "Array::get out of range fails fast"
+    (let [{:keys [schema-ir methods-ir root]} (array-get-program)]
+      (is (thrown-with-msg? Exception #"out of range"
+                            (interpret/call schema-ir methods-ir root "bad" []))))))
+
 (deftest with-path-copies-untouched-fields
   (testing "[:Rect | width = ...] keeps x, y, height"
     (let [{:keys [schema-ir methods-ir root]} (with-paths-program)

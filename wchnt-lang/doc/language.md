@@ -293,21 +293,24 @@ Ball::move = {
 
 ### Collections and strings
 
-Arrays have `length()`, `cons` (prepend), `head`, `tail`, plus the combinators
-`map`, `filter`, `fold`. Maps have the same three combinators (the block sees
-key and value; `map` keeps the keys) plus `put`, `get`, `exists`, `remove`.
+Arrays have `length()`, `get(index)`, `cons` (prepend), `head`, `tail`, plus the
+combinators `map`, `filter`, `fold`. Maps have the same three combinators (the
+block sees key and value; `map` keeps the keys) plus `put`, `get`, `exists`,
+`remove`.
 
 ```wchnt
 players.map({ p | p.name })
 players.filter({ p | p.score > 0 })
 players.fold(0, { acc, p | acc + p.score })
+players.get(0)
 scores.map({ k, v | v + 1 })
 scores.get("Ada")
 scores.get("Di", 0)
 ```
 
-`get(key, fallback)` returns the fallback when the key is missing; one-argument
-`get` fails on a missing key.
+On an array, `get(index)` returns the element and fails on an out-of-range
+index. On a map, `get(key)` fails on a missing key, and `get(key, fallback)`
+returns the fallback instead.
 
 Ints have `times`: `3.times({ i | i * 2 })`.
 

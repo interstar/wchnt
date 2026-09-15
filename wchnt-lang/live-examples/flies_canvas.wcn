@@ -1,0 +1,141 @@
+# Flies on the wall (canvas)
+
+Curve-mode chase with a small HUD. Press 1, 2, or 3 to switch mode:
+
+- **1 chase** — each fly follows the fly `follow` steps ahead.
+- **2 surprise** — every fly chases the mouse.
+- **3 steer** — arrow keys move fly 0; the rest chase it.
+
+`Wall::step` takes the mode and the current input as arguments; Target reads the
+harness `input` and draws the trails plus the HUD.
+
+## Schema
+
+```
+Wall = [Fly]/flies Int/follow @WCHNTMaths/maths
+Fly = Float/x Float/y String/col Bool/live
+```
+
+## Construction
+
+```
+[:Wall [:Array/Fly] 2 maths]
+```
+
+## Methods
+
+```
+Fly::move = { Fly/t |
+  dx = t.x - x.
+  dy = t.y - y.
+  adx = if (dx < 0.0) { -dx } else { dx }.
+  ady = if (dy < 0.0) { -dy } else { dy }.
+  if (not live) {
+    [:Fly x y col false]
+  } else if ((adx < 2.0) and (ady < 2.0)) {
+    [:Fly x y col false]
+  } else {
+    steps = if (adx > ady) { adx } else { ady }.
+    xinc = if (dx == 0.0) { 0.0 } else { dx / steps }.
+    yinc = if (dy == 0.0) { 0.0 } else { dy / steps }.
+    [:Fly (x + xinc) (y + yinc) col true]
+  }
+}
+
+Fly::steer = { Float/udx, Float/udy |
+  [:Fly (x + udx) (y + udy) col true]
+}
+
+Wall::step = { Int/mode, Float/mx, Float/my, Float/udx, Float/udy |
+  n = flies.length().
+  moved = n.times({ i |
+    f = flies.get(i).
+    j = ((i + follow + n) % n).
+    target = if (mode == 2) {
+      [:Fly mx my "white" true]
+    } else if (mode == 3) {
+      flies.get(0)
+    } else {
+      flies.get(j)
+    }.
+    if ((mode == 3) and (i == 0)) {
+      f.steer(udx, udy)
+    } else {
+      f.move(target)
+    }
+  }).
+  [:Wall moved follow maths]
+}
+
+Wall::aliveCount = { flies.fold(0, { acc, f | if (f.live) { acc + 1 } else { acc } }) }
+
+Wall::init = {
+  cols = [:Array/String "red" "green" "blue" "white"].
+  moved = 12.times({ i |
+    a = ((2.0 * maths.pi()) * i) / 12.0.
+    fx = 400.0 + (maths.cos(a) * 250.0).
+    fy = 300.0 + (maths.sin(a) * 250.0).
+    c = cols.get(i % 4).
+    [:Fly fx fy c true]
+  }).
+  [:Wall moved follow maths]
+}
+```
+
+## Target
+
+```
+%canvas
+
+%init
+var assemblage;
+var mode = 1;
+var colors = {red: 0xff4444, green: 0x44cc44, blue: 0x4488ff, white: 0xffffff};
+
+function drawHud() {
+    wchntGraphics.noStroke();
+    wchntGraphics.beginFill(0x111111);
+    wchntGraphics.drawRect(0, 0, 800, 56);
+    wchntGraphics.endFill();
+    wchntGraphics.beginFill(0xffffff);
+    wchntGraphics.fillText("1 chase   2 surprise   3 steer", 12, 18);
+    wchntGraphics.fillText("mode " + mode, 12, 40);
+    wchntGraphics.endFill();
+}
+
+function init() {
+    assemblage = WallAssemblage.factory(wchntMaths).init();
+    wchntGraphics.background(0x111111);
+    wchntGraphics.clear();
+    wchntGraphics.lineStyle(1, 0x222222);
+    for (var x = 0; x <= 800; x += 50) { wchntGraphics.drawLine(x, 0, x, 600); }
+    for (var y = 0; y <= 600; y += 50) { wchntGraphics.drawLine(0, y, 800, y); }
+    wchntGraphics.noStroke();
+    drawHud();
+}
+
+%step
+function step() {
+    if (input.keys["1"]) mode = 1;
+    if (input.keys["2"]) mode = 2;
+    if (input.keys["3"]) mode = 3;
+    var mx = input.mouse.x * 800;
+    var my = input.mouse.y * 600;
+    var udx = (input.keys["ArrowRight"] ? 4.0 : 0.0) - (input.keys["ArrowLeft"] ? 4.0 : 0.0);
+    var udy = (input.keys["ArrowDown"] ? 4.0 : 0.0) - (input.keys["ArrowUp"] ? 4.0 : 0.0);
+    var old = assemblage;
+    var next = assemblage.step(mode, mx, my, udx, udy);
+    for (var i = 0; i < old.flies.length; i++) {
+        var f = old.flies[i];
+        var g = next.flies[i];
+        wchntGraphics.lineStyle(1, colors[f.col]);
+        wchntGraphics.drawLine(f.x, f.y, g.x, g.y);
+    }
+    assemblage = next;
+    if (assemblage.aliveCount() < 2) {
+        wchntGraphics.clear();
+        assemblage = WallAssemblage.factory(wchntMaths).init();
+    }
+    drawHud();
+}
+```

@@ -1,0 +1,96 @@
+# Flies on the wall (terminal slice)
+
+Curve-mode chase with three modes, driven by `Wall::step` arguments:
+1 = chase, 2 = surprise (all chase a mouse point), 3 = steer (fly 0 is moved
+by `udx`/`udy`, the rest chase it). The terminal slice passes mode 1 with no
+mouse/keys.
+
+## Schema
+
+```
+Wall = [Fly]/flies Int/follow @WCHNTMaths/maths
+Fly = Float/x Float/y String/col Bool/live
+```
+
+## Construction
+
+```
+[:Wall [:Array/Fly] 2 maths]
+```
+
+## Methods
+
+```
+Fly::move = { Fly/t |
+  dx = t.x - x.
+  dy = t.y - y.
+  adx = if (dx < 0.0) { -dx } else { dx }.
+  ady = if (dy < 0.0) { -dy } else { dy }.
+  if (not live) {
+    [:Fly x y col false]
+  } else if ((adx < 2.0) and (ady < 2.0)) {
+    [:Fly x y col false]
+  } else {
+    steps = if (adx > ady) { adx } else { ady }.
+    xinc = if (dx == 0.0) { 0.0 } else { dx / steps }.
+    yinc = if (dy == 0.0) { 0.0 } else { dy / steps }.
+    [:Fly (x + xinc) (y + yinc) col true]
+  }
+}
+
+Fly::steer = { Float/udx, Float/udy |
+  [:Fly (x + udx) (y + udy) col true]
+}
+
+Wall::step = { Int/mode, Float/mx, Float/my, Float/udx, Float/udy |
+  n = flies.length().
+  moved = n.times({ i |
+    f = flies.get(i).
+    j = ((i + follow + n) % n).
+    target = if (mode == 2) {
+      [:Fly mx my "white" true]
+    } else if (mode == 3) {
+      flies.get(0)
+    } else {
+      flies.get(j)
+    }.
+    if ((mode == 3) and (i == 0)) {
+      f.steer(udx, udy)
+    } else {
+      f.move(target)
+    }
+  }).
+  [:Wall moved follow maths]
+}
+
+Wall::aliveCount = { flies.fold(0, { acc, f | if (f.live) { acc + 1 } else { acc } }) }
+
+Wall::init = {
+  cols = [:Array/String "red" "green" "blue" "white"].
+  moved = 12.times({ i |
+    a = ((2.0 * maths.pi()) * i) / 12.0.
+    fx = 400.0 + (maths.cos(a) * 250.0).
+    fy = 300.0 + (maths.sin(a) * 250.0).
+    c = cols.get(i % 4).
+    [:Fly fx fy c true]
+  }).
+  [:Wall moved follow maths]
+}
+```
+
+## Target
+
+```
+%terminal
+
+%main
+public static function main():Void {
+    var assemblage = WallAssemblage.factory(wchntMaths).init();
+    var helper = new WCHNTHelper();
+    trace(assemblage.toConstruction(0, helper));
+    for (i in 0...3) {
+        assemblage = assemblage.step(1, 0.0, 0.0, 0.0, 0.0);
+        trace(assemblage.toConstruction(0, helper));
+    }
+}
+```

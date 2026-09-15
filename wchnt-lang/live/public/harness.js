@@ -167,6 +167,7 @@
       ArrowDown: false,
       Shift: false
     };
+    for (var d = 0; d <= 9; d++) { keys[String(d)] = false; }
     var mouse = { x: 0.5, y: 0.5 };
     var active = false;
     var pointerEl = mouseEl || focusEl;
@@ -184,6 +185,12 @@
         e.preventDefault();
         return;
       }
+      if (/^[0-9]$/.test(e.key)) {
+        keys[e.key] = true;
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
       var name = arrowName(e);
       if (!name) return;
       keys[name] = true;
@@ -199,6 +206,12 @@
       if (e.key === "Shift" || e.code === "ShiftLeft" || e.code === "ShiftRight") {
         keys.Shift = false;
         e.preventDefault();
+        return;
+      }
+      if (/^[0-9]$/.test(e.key)) {
+        keys[e.key] = false;
+        e.preventDefault();
+        e.stopPropagation();
         return;
       }
       var name = arrowName(e);
@@ -222,6 +235,7 @@
       keys.ArrowUp = false;
       keys.ArrowDown = false;
       keys.Shift = false;
+      for (var d = 0; d <= 9; d++) { keys[String(d)] = false; }
     }
 
     return {
@@ -235,6 +249,9 @@
         global.addEventListener("keydown", onDown, true);
         global.addEventListener("keyup", onUp, true);
         pointerEl.addEventListener("mousemove", onMove, true);
+        if (focusEl !== pointerEl) {
+          focusEl.addEventListener("mousemove", onMove, true);
+        }
       },
       detach: function () {
         active = false;
@@ -244,6 +261,9 @@
         global.removeEventListener("keydown", onDown, true);
         global.removeEventListener("keyup", onUp, true);
         pointerEl.removeEventListener("mousemove", onMove, true);
+        if (focusEl !== pointerEl) {
+          focusEl.removeEventListener("mousemove", onMove, true);
+        }
         clearKeys();
       },
       focus: function () {

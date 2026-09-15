@@ -152,12 +152,13 @@
 
 (defn- haxe-infix
   "Render infix arith. Int-only / uses Std.int; Float chains keep Haxe /."
-  [parts]
-  (let [float-chain? (some (fn [p]
-                             (and (map? p)
-                                  (or (= :float (:expr p))
-                                      (= "Float" (:type p)))))
-                           parts)]
+  [parts type]
+  (let [float-chain? (or (= "Float" type)
+                         (some (fn [p]
+                                 (and (map? p)
+                                      (or (= :float (:expr p))
+                                          (= "Float" (:type p)))))
+                               parts))]
     (if (and (some #(= "/" %) parts) (not float-chain?))
       (loop [acc (haxe-infix-part (first parts))
              rest (rest parts)]
@@ -315,15 +316,22 @@
                 (expr-ir-to-haxe (:receiver expr)) ")")
     "head" (haxe-runtime-call "arrayHead" expr)
     "tail" (haxe-runtime-call "arrayTail" expr)
-    "get" (haxe-runtime-call (if (= 2 (count (:args expr)))
-                               "mapGetDefault"
-                               "mapGet")
-                             expr)
+    "get" (if (= "Array" (:on expr))
+            (str "(" (expr-ir-to-haxe (:receiver expr)) ")["
+                 (expr-ir-to-haxe (first (:args expr))) "]")
+            (haxe-runtime-call (if (= 2 (count (:args expr)))
+                                 "mapGetDefault"
+                                 "mapGet")
+                               expr))
     "exists" (haxe-runtime-call "mapExists" expr)
     "put" (haxe-runtime-call "mapPut" expr)
     "remove" (haxe-runtime-call "mapRemove" expr)
     "substring" (haxe-runtime-call "substring" expr)
     "str" (str "Std.string(" (expr-ir-to-haxe (:receiver expr)) ")")
+    "toInt" (str "Std.int(" (expr-ir-to-haxe (:receiver expr)) ")")
+    "floor" (str "Math.floor(" (expr-ir-to-haxe (:receiver expr)) ")")
+    "ceil" (str "Math.ceil(" (expr-ir-to-haxe (:receiver expr)) ")")
+    "round" (str "Math.round(" (expr-ir-to-haxe (:receiver expr)) ")")
     "tpl" (haxe-runtime-call "tpl" expr)
     "times" (haxe-runtime-call "times" expr)
     (haxe-dot-call expr))))
@@ -352,7 +360,7 @@
            (if (re-matches #"[A-Za-z0-9_.]+" inner)
              (str "-" inner)
              (str "-(" inner ")")))
-    :arith (haxe-infix (:parts expr))
+    :arith (haxe-infix (:parts expr) (:type expr))
     :and (haxe-join-op "&&" (:args expr))
     :or (haxe-join-op "||" (:args expr))
     :not (str "!(" (expr-ir-to-haxe (:arg expr)) ")")

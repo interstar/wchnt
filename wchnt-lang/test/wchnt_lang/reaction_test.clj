@@ -407,6 +407,36 @@ Game::bad = { playArea.area() }")))))
                           (methods-ir rect-ball-schema
                                       "Ball::bad = { if (dx < 0) { dx } else { true } }")))))
 
+(deftest numeric-branches-use-float-join
+  (testing "an Int branch and a Float branch have the common type Float"
+    (let [m (first (methods-ir "Game = Int/x"
+                               "Game::value = { if (x < 0) { x } else { -0.5 } }"))]
+      (is (= "Float" (:return-type m)))
+      (is (= "Float" (get-in m [:body :type]))))))
+
+(deftest float-negation-preserves-explicit-type
+  (testing "negating an explicitly typed Float does not infer it as Int"
+    (let [m (first (methods-ir "Game = Int/x"
+                               "Game::abs = { Float/x | if (x < 0.0) { x } else { -x } }"))]
+      (is (= [{:name "x" :type "Float"}] (:parameters m)))
+      (is (= "Float" (:return-type m))))))
+
+(deftest float-conversions-are-language-builtins
+  (testing "Float conversion methods need no WCHNTMaths receiver"
+    (let [methods (methods-ir "Game = Float/x"
+                              "Game::rounded = { x.round() }
+                               Game::truncated = { x.toInt() }")
+          rounded (first methods)
+          truncated (second methods)]
+      (is (= "Int" (:return-type rounded)))
+      (is (= "round" (get-in rounded [:body :method])))
+      (is (= "Int" (:return-type truncated)))
+      (is (= "toInt" (get-in truncated [:body :method])))
+      (is (str/includes? (ir-to-haxe/generate-method rounded)
+                         "return Math.round(this.x);"))
+      (is (str/includes? (ir-to-haxe/generate-method truncated)
+                         "return Std.int(this.x);")))))
+
 (deftest emit-if-haxe
   (testing "if transpiles to a Haxe if expression"
     (let [haxe (ir-to-haxe/generate-method
@@ -532,6 +562,29 @@ Team::total = { players.fold(0, { acc, p | acc + p.score }) }")
       (is (str/includes? scorers-haxe "this.players.filter"))
       (is (str/includes? total-haxe "Lambda.fold(this.players"))
       (is (str/includes? total-haxe "function(p:Player, acc:Int):Int")))))
+
+(deftest array-get-ir
+  (testing "Array::get(index) returns the element type"
+    (let [m (first (methods-ir team-schema
+                               "Team::first = { players.get(0) }"))]
+      (is (= "Player" (:return-type m)))
+      (is (= :call (get-in m [:body :expr])))
+      (is (= "get" (get-in m [:body :method])))
+      (is (= "Array" (get-in m [:body :on])))
+      (is (= ["Int"] (get-in m [:body :arg-types]))))))
+
+(deftest array-get-on-non-array-fails
+  (testing "get on a non-array, non-map receiver fails fast"
+    (is (thrown-with-msg? Exception #"arrays and maps"
+                          (methods-ir rect-ball-schema
+                                      "Ball::bad = { dx.get(0) }")))))
+
+(deftest array-get-haxe
+  (testing "Array::get emits Haxe index access"
+    (let [m (first (methods-ir team-schema
+                               "Team::first = { players.get(0) }"))
+          haxe (ir-to-haxe/generate-method m)]
+      (is (str/includes? haxe "(this.players)[0]")))))
 
 (deftest emit-map-collection-haxe
   (testing "map filter fold on maps emit WCHNTRuntime helpers"
