@@ -314,6 +314,31 @@ returns the fallback instead.
 
 Ints have `times`: `3.times({ i | i * 2 })`.
 
+### Numbers and explicit conversion
+
+WCHNT's numeric lattice is:
+
+```
+Int  <:  Float
+```
+
+An `Int` widens automatically where a `Float` is expected. The join of mixed
+numeric expressions is `Float`, so an `if` with one `Int` branch and one
+`Float` branch returns `Float`. Narrowing never happens implicitly.
+
+Float values provide explicit conversion and rounding methods:
+
+```wchnt
+x.toInt()   // truncate toward zero; returns Int
+x.floor()   // toward negative infinity; returns Int
+x.ceil()    // toward positive infinity; returns Int
+x.round()   // nearest integer; returns Int
+```
+
+These are built-in methods on `Float`, not methods on `WCHNTMaths`. Use
+`WCHNTMaths` for host maths such as `rand`, `randInt`, trigonometry, `sqrt`,
+`pow`, and `hsv`.
+
 Strings have `length()`, `concat`, `str`, `substring(start, end)`, and **`tpl`**.
 `+` does **not** concatenate strings — use `.concat` or a template.
 
@@ -420,8 +445,8 @@ Assemblages are **opaque** unless they have `## Public`. Importing a page
 without Public fails. The importer never sees the other page's Schema
 internals.
 
-**Publisher** lists static method bodies and bare
-interface names:
+**Publisher** writes static method bodies and bare interface names directly in
+Public:
 
 ```
 make = { ... }
@@ -430,9 +455,10 @@ update = { ... }
 Shape
 ```
 
-The class itself is not published: the importer cannot write `[:Adventurer …]`
-or read `quest.party.hero`. A bare interface name (`Shape`) lets another page
-add a new implementer.
+The implicit `factory()` is always available on a program assemblage and is not
+listed in Public. The class itself is not published: the importer cannot write
+`[:Adventurer …]` or read `quest.party.hero`. A bare interface name (`Shape`)
+lets another page add a new implementer.
 
 **Importer**:
 
@@ -447,12 +473,15 @@ Chronicle = String/scribe @Quest
 [:Chronicle "Greyhold" realm.make("The Lost Chalice", "Andy", "Dave")]
 ```
 
-`realm` is a module alias; `realm.make(...)` is a Construction **call** that
-returns an already-wired handle. Store handles only in `@` slots, and call only
-Public methods (`quest.headline()`). A published interface may be implemented
-locally with `Pentagon : Shape = …` (not inheritance, not `+`), and a local
-implementer may be passed into a Public method. See `examples/importA.wcn` /
-`importB.wcn` and `examples/flyingA.wcn` / `flyingB.wcn`.
+`realm` names the imported assemblage class. `realm.factory(...)` is the
+implicit Construction **call** for the root object; `realm.make(...)` is an
+explicit static method only when the publisher wrote `make = { ... }` in
+Public. Both return already-wired values. Store imported root handles only in
+`@` slots, and call methods on those handles (`quest.headline()`). A published
+interface may be implemented locally with `Pentagon : Shape = …` (not
+inheritance, not `+`), and a local implementer may be passed into a Public
+method. See `examples/importA.wcn` / `importB.wcn` and
+`examples/flyingA.wcn` / `flyingB.wcn`.
 
 ---
 

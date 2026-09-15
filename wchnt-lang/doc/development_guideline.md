@@ -207,13 +207,33 @@ Example and tests: `examples/test_delegate.wcn`, `test/wchnt_lang/delegate_test.
 
 ## Import membrane (WCHNT source only)
 
-`## Import` + `## Public` is a **compile-time** membrane (`pages.cljc`, `reaction.cljc`). Interpreter maps, Haxe `public var`, and `js-view` still expose fields. Target of the importer may cheat (`assemblage.game.playArea`). That is v1.
+`## Import` + `## Public` is a **compile-time** membrane (`pages.cljc`,
+`reaction.cljc`). A program assemblage with root class `Game` emits
+`GameAssemblage.factory(...)` as its implicit static factory. Additional static
+methods are written explicitly in Public:
+
+```
+make = { String/title | [:Game ...] }
+Shape
+```
+
+The factory is never listed. A bare interface name publishes that interface to
+importers. Instance methods are not listed: once an importer has an opaque
+handle, it may call methods on the handle. An importer may not read fields,
+construct internal classes, or name internal schema types in WCHNT source.
+
+Interpreter maps, Haxe `public var`, and `js-view` still expose fields. Target
+of the importer may therefore peek (`assemblage.game.playArea`). That is a
+source-level membrane, not a generated-code security boundary.
 
 When touching import:
 
 - Do **not** flatten-merge A’s Schema into B. Keep origin on classes and methods.
 - Importer Schema stores a handle only as `@Quest` / `@Game`.
-- Construction may contain a call leaf (`realm.make(...)`). Flatten / factory / `eval-construction-arg` must treat that as an already-wired object, not a nested `:object`.
+- Construction may contain call leaves (`realm.factory(...)` or an explicit
+  static such as `realm.make(...)`). Flatten / factory /
+  `eval-construction-arg` must treat these as already-wired objects, not nested
+  `:object` constructions.
 - `Class : Interface =` on the importer implements a **published** sum. It is not `+` and not `extends`.
 
 See `doc/import.md`, `examples/importA.wcn` / `importB.wcn`, `examples/flyingA.wcn` / `flyingB.wcn`.

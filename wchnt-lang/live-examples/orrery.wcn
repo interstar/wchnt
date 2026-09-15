@@ -85,7 +85,7 @@ System::draw = { @Graphics/g, @WCHNTMaths/m |
 var assemblage;
 
 function init() {
-    assemblage = gameFactory();
+    assemblage = SystemAssemblage.factory();
     wchntGraphics.background(0x05070d, 0.5);
 }
 

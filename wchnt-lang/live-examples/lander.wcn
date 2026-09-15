@@ -210,7 +210,7 @@ Ship::draw = { @Graphics/g, Int/hull |
 var assemblage;
 
 function init() {
-    assemblage = gameFactory(wchntMaths);
+    assemblage = GameAssemblage.factory(wchntMaths);
     wchntGraphics.background(0x05070d, 1);
 }
 

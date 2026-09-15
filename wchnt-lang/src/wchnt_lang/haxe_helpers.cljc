@@ -182,13 +182,14 @@ import openfl.events.Event;
 import openfl.events.KeyboardEvent;
 import openfl.text.TextField;
 import openfl.text.TextFormat;
+import openfl.text.TextFieldAutoSize;
 import openfl.ui.Keyboard;")
 
 (def openfl-graphics-wrapper
   "// Portable draw surface for Target: same API on OpenFL and canvas (see WCHNTHarness).
 class WCHNTGraphics {
     var g:Graphics;
-    var hud:TextField;
+    var texts:Array<TextField>;
     var sprite:Sprite;
     var bgColor:Int;
     var bgAlpha:Float;
@@ -200,11 +201,7 @@ class WCHNTGraphics {
         bgColor = 0x111111;
         bgAlpha = 1;
         fillColor = 0xFFFFFF;
-        hud = new TextField();
-        hud.selectable = false;
-        hud.mouseEnabled = false;
-        hud.defaultTextFormat = new TextFormat(\"_sans\", 16, 0xFFFFFF);
-        sprite.addChild(hud);
+        texts = [];
     }
 
     public function background(color:Int, ?alpha:Float):Void {
@@ -213,6 +210,8 @@ class WCHNTGraphics {
     }
 
     public function clear():Void {
+        for (t in texts) sprite.removeChild(t);
+        texts = [];
         if (bgAlpha >= 1) {
             g.clear();
         } else {
@@ -253,10 +252,17 @@ class WCHNTGraphics {
     public inline function lineTo(x:Float, y:Float):Void g.lineTo(x, y);
 
     public function fillText(text:String, x:Float, y:Float):Void {
-        hud.text = text;
-        hud.x = x;
-        hud.y = y;
-        hud.textColor = fillColor;
+        var t = new TextField();
+        t.selectable = false;
+        t.mouseEnabled = false;
+        t.defaultTextFormat = new TextFormat(\"_sans\", 16, fillColor);
+        t.autoSize = TextFieldAutoSize.LEFT;
+        t.text = text;
+        t.x = x;
+        t.y = y;
+        t.textColor = fillColor;
+        sprite.addChild(t);
+        texts.push(t);
     }
 }")
 

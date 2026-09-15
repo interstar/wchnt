@@ -140,6 +140,9 @@
        "    }"))
 
 (declare expr-ir-to-haxe)
+(declare let-binding-lines)
+(declare unroll-call-chain-lines)
+(declare fluent-external-call?)
 
 (defn- haxe-infix-part
   [part]
@@ -180,13 +183,19 @@
 
 (defn- haxe-lets-then-value
   [{:keys [lets body]} return?]
-  (let [let-lines (map (fn [{:keys [name value]}]
-                         (str "        var " name " = " (expr-ir-to-haxe value) ";"))
-                       (or lets []))
-        value-line (if return?
-                     (str "        return " (expr-ir-to-haxe body) ";")
-                     (str "        " (expr-ir-to-haxe body) ";"))]
-    (str/join "\n" (concat let-lines [value-line]))))
+  (let [let-lines (mapcat let-binding-lines (or lets []))
+        body-lines (cond
+                     (fluent-external-call? body)
+                     (unroll-call-chain-lines body return?)
+
+                     (= "Void" (:type body))
+                     [(str "        " (expr-ir-to-haxe body) ";")]
+
+                     :else
+                     [(if return?
+                        (str "        return " (expr-ir-to-haxe body) ";")
+                        (str "        " (expr-ir-to-haxe body) ";"))])]
+    (str/join "\n" (concat let-lines body-lines))))
 
 (declare haxe-if)
 
@@ -329,9 +338,15 @@
     "substring" (haxe-runtime-call "substring" expr)
     "str" (str "Std.string(" (expr-ir-to-haxe (:receiver expr)) ")")
     "toInt" (str "Std.int(" (expr-ir-to-haxe (:receiver expr)) ")")
-    "floor" (str "Math.floor(" (expr-ir-to-haxe (:receiver expr)) ")")
-    "ceil" (str "Math.ceil(" (expr-ir-to-haxe (:receiver expr)) ")")
-    "round" (str "Math.round(" (expr-ir-to-haxe (:receiver expr)) ")")
+    "floor" (if (:external-type expr)
+              (haxe-dot-call expr)
+              (str "Math.floor(" (expr-ir-to-haxe (:receiver expr)) ")"))
+    "ceil" (if (:external-type expr)
+             (haxe-dot-call expr)
+             (str "Math.ceil(" (expr-ir-to-haxe (:receiver expr)) ")"))
+    "round" (if (:external-type expr)
+              (haxe-dot-call expr)
+              (str "Math.round(" (expr-ir-to-haxe (:receiver expr)) ")"))
     "tpl" (haxe-runtime-call "tpl" expr)
     "times" (haxe-runtime-call "times" expr)
     (haxe-dot-call expr))))
@@ -384,9 +399,7 @@
 
 (defn- method-let-lines
   [lets]
-  (map (fn [{:keys [name value]}]
-         (str "        var " name " = " (expr-ir-to-haxe value) ";"))
-       (or lets [])))
+  (mapcat let-binding-lines (or lets [])))
 
 (defn- identity-slot-type?
   "Mailbox and observable ($) objects keep their identity across update()."
@@ -475,23 +488,56 @@
        (= (:expr (:receiver body)) :call)))
 
 (defn- unroll-call-chain-lines
-  "Emit g.f(); g.g(); on the chain root — WCHNT source stays one chained expression."
+  "Emit g.f(); g.g(); on the chain root. When return-root?, also return the root
+   (for value-producing bodies such as fold lambdas)."
+  ([expr] (unroll-call-chain-lines expr false))
+  ([expr return-root?]
+   (let [{:keys [root steps]} (call-chain-steps expr)
+         root-haxe (expr-ir-to-haxe root)
+         lines (mapv (fn [{:keys [method args]}]
+                       (str "        " root-haxe "." method "("
+                            (str/join ", " (map expr-ir-to-haxe args))
+                            ");"))
+                     steps)]
+     (if return-root?
+       (conj lines (str "        return " root-haxe ";"))
+       lines))))
+
+(defn- fluent-external-call?
+  "An @-host call WCHNT treats as fluent (returns the receiver) but Haxe sees
+   as Void — e.g. @Graphics. Host-known types (WCHNTMaths) have real returns."
   [expr]
-  (let [{:keys [root steps]} (call-chain-steps expr)
-        root-haxe (expr-ir-to-haxe root)]
-    (mapv (fn [{:keys [method args]}]
-            (str "        " root-haxe "." method "("
-                 (str/join ", " (map expr-ir-to-haxe args))
-                 ");"))
-          steps)))
+  (and (= (:expr expr) :call)
+       (:external-type expr)
+       (= (:type expr) (:external-type expr))))
+
+(defn- let-binding-lines
+  "Emit one let binding. Void-valued bindings (host fluent chains or Void
+   method calls) become side-effect statements, since Haxe rejects var x = Void."
+  [{:keys [name value]}]
+  (cond
+    (fluent-external-call? value)
+    (unroll-call-chain-lines value)
+
+    (= "Void" (:type value))
+    [(str "        " (expr-ir-to-haxe value) ";")]
+
+    :else
+    [(str "        var " name " = " (expr-ir-to-haxe value) ";")]))
 
 (defn- generate-ordinary-method
   [{:keys [method-name parameters return-type body lets]} static?]
   (let [branch-lets (when (= :if (:expr body)) (collect-if-branch-lets body))
         body (if (seq branch-lets) (strip-if-branch-lets body) body)
         params (str/join ", " (map #(str (:name %) ":" (:type %)) parameters))
-        body-lines (if (void-call-chain? return-type body)
+        body-lines (cond
+                     (void-call-chain? return-type body)
                      (unroll-call-chain-lines body)
+
+                     (= return-type "Void")
+                     [(str "        " (expr-ir-to-haxe body) ";")]
+
+                     :else
                      [(str "        return " (expr-ir-to-haxe body) ";")])
         kind (if static? "public static function" "public function")]
     (str "\n    " kind " " method-name "(" params "): " return-type " {\n"

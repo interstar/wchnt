@@ -21,9 +21,11 @@ headings, in this order:
 | `## Target` | name the host and its entry points |
 
 A page may be **documentation** (no compile sections), a **library** (Schema,
-no Construction), or a **program** (Schema + Construction). Prose and unrelated
-fences are ignored. Wiki `[[PageName]]` links in prose are navigation only —
-they do not import classes. Class reuse is `## Import`.
+no Construction), or a **program** (Schema + Construction). A program's root
+class is emitted with an automatically generated `<Root>Assemblage.factory(...)`
+static method. Prose and unrelated fences are ignored. Wiki `[[PageName]]`
+links in prose are navigation only — they do not import classes. Class reuse is
+`## Import`.
 
 ---
 
@@ -138,26 +140,20 @@ Assemblages are **opaque** unless they have `## Public`. Importing a page
 without Public fails. The importer never sees the other page's Schema
 internals.
 
-**Publisher** (`importA`, `flyingA`) lists references, not bodies:
+**Publisher** (`importA`, `flyingA`) writes extra static methods directly in
+the Public section, plus any interfaces it wants to publish:
 
 ```
-Quest::make
-Quest::headline
-Quest::roster
-Quest::gold
-```
-
-or, to let another page add a new `Shape`:
-
-```
-Game::make
-Game::addShape
-Game::update
+make = { String/title, String/heroName, String/companionName |
+  [:Quest title heroName companionName]
+}
 Shape
 ```
 
-The class itself is not published: the importer cannot write `[:Adventurer …]`
-or `quest.party.hero`.
+The implicit `factory()` is always present for a program page and is never
+listed in Public. Instance methods are not listed: after obtaining a handle,
+the importer may call its methods. The class itself is still opaque: the
+importer cannot construct `[:Quest …]`, read fields, or name internal classes.
 
 **Importer** (`importB`, `flyingB`):
 
@@ -172,10 +168,13 @@ Chronicle = String/scribe @Quest
 [:Chronicle "Greyhold" realm.make("The Lost Chalice", "Andy", "Dave")]
 ```
 
-`realm` is a module alias. `realm.make(...)` is a Construction **call** — it
-returns an already-wired handle. Store that handle as `@Quest`. Call only
-Public methods (`quest.headline()`). Target may still peek at fields; the
-membrane is WCHNT source, not generated Haxe.
+`realm` names the imported assemblage class. `realm.factory(...)` and explicit
+Public static methods such as `realm.make(...)` are Construction calls. The
+result of `factory()` is an already-wired opaque handle. Store it as `@Quest`;
+then call methods on the handle (`quest.headline()`, for example). A Public
+method may accept or return published interfaces and opaque handles. Target and
+generated host code may still access generated fields; the membrane is a
+WCHNT-source rule, not a Haxe or JavaScript security boundary.
 
 ---
 
@@ -296,6 +295,21 @@ Maps also have `put`, `get`, `exists`, `remove` (writes copy the map).
 
 Ints have `times`: `3.times({ i | i * 2 })`.
 
+Numbers use a two-level widening lattice: `Int <: Float`. An `Int` is widened
+automatically where a `Float` is expected, and mixed numeric branches join as
+`Float`. Narrowing is explicit on Float values:
+
+```wchnt
+x.toInt()   // truncate toward zero
+x.floor()   // round down
+x.ceil()    // round up
+x.round()   // nearest integer
+```
+
+All four conversion methods return `Int`. `WCHNTMaths` is still used for
+trigonometry, random numbers, HSV conversion, and similar host operations; it
+is not needed just to convert a Float.
+
 Strings have `length()`, `concat`, `str`, `substring(start, end)`, and **`tpl`**.
 `+` does not concatenate strings — use `.concat` or a template.
 
@@ -355,7 +369,8 @@ Every non-empty Target must name a host first. There is no default.
 
 `%name(...)` helpers bind a function callable from Methods. Drawing uses the
 portable [`wchntGraphics`](wchntgraphics.html) object. Text hosts use
-`wchntConsole`. The browser harness also exposes `gameFactory()` and `input`.
+`wchntConsole`. The browser harness exposes `input`; generated Target code
+creates the assemblage through `<Root>Assemblage.factory(...)`.
 
 For games with both a clock and held keys: **inject** the mailbox every frame,
 then tick `$Time`. Do not put `$Keys` on Game if you also tick Time, or Game
