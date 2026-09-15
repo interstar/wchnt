@@ -502,6 +502,8 @@ There's a **[Tutorial](tutorial.html)**, and **[Guide](guide.html)** for the ful
 
 You can try writing real code in WCHNT in the **[online environment](play/)**.
 
+It's now on [GitHub](https://github.com/interstar/wchnt) and [GitLab](https://gitlab.com/interstar/wchnt)
+
 Full examples (HTML here; same files seed the Play wiki):
 
 - [Pollution](pollution.html) — arcade; [open in Play](play/?page=pollution)
