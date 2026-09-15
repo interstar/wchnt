@@ -1,0 +1,98 @@
+# Orrery
+
+A clockwork solar system with no mutable state at all. There is no `update`
+anywhere. Each frame, Target replaces the assemblage with `tick()`, a new
+System identical to the old one except that its clock reads one more. A
+planet's position is a pure function of `time.t`, and so is each moon's.
+Nothing walks the planets, nothing stores an angle, and nothing can drift out
+of sync, because there is exactly one number in the whole assemblage that
+changes.
+
+The Schema reads as a description of the thing:
+
+- a System is a Sun, some Planets, and a clock
+- a Planet is a name, an orbit, a period, a size, a colour, a starting phase, and some Moons
+- a Moon is an orbit, a period, a size, and a starting phase
+
+Drawing is hierarchical without any mutation: the System hands the pen and the
+sun's centre to each planet with a `fold`, and each planet hands the pen and
+its own centre to its moons. Moons orbit planets because that is what the
+drawing says, not because any code copies coordinates.
+
+## Schema
+
+```
+System = Sun [Planet]/planets Time
+Sun = Float/x Float/y Float/size
+Planet = String/name Float/orbit Float/period Float/size Int/colour Float/phase [Moon]/moons
+Moon = Float/orbit Float/period Float/size Float/phase
+Time = Int/t
+```
+
+## Construction
+
+```
+[:System
+  [:Sun 400.0 300.0 22.0]
+  [:Array/Planet
+    [:Planet "Mercury"  48.0   88.0  3.0 11184810 0.0 [:Array/Moon]]
+    [:Planet "Venus"    78.0  225.0  5.5 15453289 1.2 [:Array/Moon]]
+    [:Planet "Earth"   112.0  365.0  6.0  4359642 2.8 [:Array/Moon [:Moon 13.0 27.0 1.8 0.0]]]
+    [:Planet "Mars"    150.0  687.0  4.0 13527844 4.1 [:Array/Moon [:Moon 8.0 8.0 1.0 0.0] [:Moon 11.0 30.0 1.0 2.0]]]
+    [:Planet "Jupiter" 215.0 1200.0 13.0 14000730 0.7
+      [:Array/Moon [:Moon 19.0 18.0 1.5 0.0] [:Moon 23.0 36.0 1.6 1.0] [:Moon 28.0 72.0 2.0 2.0] [:Moon 35.0 170.0 1.8 3.0]]]
+    [:Planet "Saturn"  275.0 2900.0 11.0 15258743 5.5 [:Array/Moon [:Moon 22.0 160.0 2.0 0.0]]]
+  ]
+  [:Time 0]
+]
+```
+
+## Methods
+
+```
+System::tick = { [:System sun planets [:Time (time.t + 1)]] }
+```
+
+## Target Methods
+
+```
+Moon::draw = { @Graphics/g, Float/cx, Float/cy, Int/t, @WCHNTMaths/m |
+  a = phase + (t * (0.9 / period)).
+  g.beginFill(13421772).drawCircle(cx + (m.cos(a) * orbit), cy + (m.sin(a) * orbit), size).endFill()
+} -> Void
+
+Planet::draw = { @Graphics/g, Sun/sun, Int/t, @WCHNTMaths/m |
+  a = phase + (t * (0.35 / period)).
+  px = sun.x + (m.cos(a) * orbit).
+  py = sun.y + (m.sin(a) * orbit).
+  ring = g.lineStyle(1, 2236962).drawCircle(sun.x, sun.y, orbit).noStroke().
+  body = g.beginFill(colour).drawCircle(px, py, size).endFill().
+  moons.fold(g, { acc, Moon/mo | drawn = mo.draw(acc, px, py, t, m). acc })
+} -> Void
+
+System::draw = { @Graphics/g, @WCHNTMaths/m |
+  lit = g.beginFill(16768640).drawCircle(sun.x, sun.y, sun.size).endFill().
+  planets.fold(g, { acc, Planet/p | drawn = p.draw(acc, sun, time.t, m). acc })
+} -> Void
+```
+
+## Target
+
+```
+%canvas
+
+%init
+var assemblage;
+
+function init() {
+    assemblage = gameFactory();
+    wchntGraphics.background(0x05070d, 0.5);
+}
+
+%step
+function step() {
+    assemblage = assemblage.tick();
+    wchntGraphics.clear();
+    assemblage.draw(wchntGraphics, wchntMaths);
+}
+```

@@ -1,0 +1,233 @@
+# Lander
+
+Bring the ship down on the green pad. Arrow keys: **left / right** rotate,
+**up** burns fuel. Touch down slowly, level, and on the pad, or you'll leave a
+new crater. **Down** after a landing or a crash starts a fresh game on freshly
+rolled terrain.
+
+Click the play area after Run so the arrow keys reach the program.
+
+What this page shows about WCHNT:
+
+- The phase machine is an enum: `Phase = "Flying" | "Landed" | "Crashed"`.
+- `Game = ... :Ship ...` makes the ship context-specific: it reads gravity through `theGame` instead of being handed it.
+- `>Keys` is the mailbox Target fills each frame; `$Time` then drives `Game::update`.
+- Construction holds a hand-drawn moon. Restarts roll a new one in Methods with `maths.rand`, folding over `times` into a `Build` accumulator, because a method cannot loop or mutate.
+- The height of the ground under the ship is a `fold` over the segments.
+- Everything on screen is drawn by WCHNT in Target Methods through `@Graphics/g`, including the terrain, via a fold whose accumulator is the graphics handle.
+- The HUD text is a `tpl` template filled from a `{String:String}` map.
+- `Game::update` builds the new Game exactly once. Building a Game inside a helper leaks a `$Time` subscription per frame and the program slows to a crawl.
+
+## Schema
+
+```
+>Keys = Bool/left Bool/right Bool/up Bool/down
+Phase = "Flying" | "Landed" | "Crashed"
+Game = Sky Terrain :Ship Phase/phase Int/score Int/landings $Time Keys @WCHNTMaths/maths
+Sky = Int/width Int/height Float/gravity
+Terrain = [Segment]/segments Pad @WCHNTMaths/maths
+Segment = Float/x1 Float/y1 Float/x2 Float/y2
+Pad = Float/x Float/y Float/width
+Ship = Float/x Float/y Float/vx Float/vy Float/angle Float/fuel Bool/burning @WCHNTMaths/maths
+Time = Int/t
+Build = Float/px Float/py [Segment]/segs
+```
+
+## Construction
+
+```
+[:Game
+  [:Sky 800 600 0.016]
+  [:Terrain
+    [:Array/Segment
+      [:Segment 0.0 470.0 70.0 430.0]
+      [:Segment 70.0 430.0 130.0 500.0]
+      [:Segment 130.0 500.0 200.0 480.0]
+      [:Segment 200.0 480.0 260.0 540.0]
+      [:Segment 260.0 540.0 330.0 520.0]
+      [:Segment 330.0 520.0 400.0 520.0]
+      [:Segment 400.0 520.0 470.0 470.0]
+      [:Segment 470.0 470.0 540.0 500.0]
+      [:Segment 540.0 500.0 610.0 440.0]
+      [:Segment 610.0 440.0 680.0 490.0]
+      [:Segment 680.0 490.0 740.0 460.0]
+      [:Segment 740.0 460.0 800.0 510.0]
+    ]
+    [:Pad 330.0 520.0 70.0]
+    maths
+  ]
+  [:Ship 120.0 90.0 0.8 0.0 0.0 100.0 false maths]
+  Flying
+  0
+  0
+  [:Time 0]
+  [:Keys false false false false]
+  maths
+]
+```
+
+## Methods
+
+```
+Time::update = { [:Time (t + 1)] }
+
+Keys::update = { [:Keys left right up down] }
+
+Segment::heightAt = { Float/px, Float/fallback |
+  if ((px >= x1) and (px < x2)) {
+    y1 + ((y2 - y1) * ((px - x1) / ((x2 - x1) + 0.0001)))
+  } else { fallback }
+}
+
+Terrain::heightAt = { Float/px |
+  segments.fold(600.0, { Float/acc, Segment/s | s.heightAt(px, acc) })
+}
+
+Terrain::onPad = { Float/px | (px >= pad.x) and (px <= (pad.x + pad.width)) }
+
+Terrain::roll = {
+  padX = 120.0 + (maths.rand() * 500.0).
+  padY = 440.0 + (maths.rand() * 100.0).
+  built = 12.times({ i | i }).fold([:Build 0.0 (420.0 + (maths.rand() * 120.0)) [:Array/Segment]], { Build/b, Int/i |
+    nx = (i + 1) * 66.7.
+    ny = if ((nx > padX) and (nx < (padX + 140.0))) { padY } else { 400.0 + (maths.rand() * 160.0) }.
+    [:Build nx ny b.segs.cons([:Segment b.px b.py nx ny])]
+  }).
+  [:Terrain built.segs [:Pad (padX + 5.0) padY 70.0] maths]
+}
+
+Ship::step = { Keys/k |
+  turn = (if (k.left) { (0.0 - 0.06) } else { 0.0 }) + (if (k.right) { 0.06 } else { 0.0 }).
+  nangle = angle + turn.
+  firing = k.up and (fuel > 0.0).
+  power = if (firing) { 0.055 } else { 0.0 }.
+  gravity = theGame.sky.gravity.
+  w = theGame.sky.width * 1.0.
+  nvx = vx + (maths.sin(nangle) * power).
+  nvy = (vy - (maths.cos(nangle) * power)) + gravity.
+  nfuel = if (firing) { fuel - 0.2 } else { fuel }.
+  [:Ship ((x + nvx + w) % w) (y + nvy) nvx nvy nangle nfuel firing maths]
+}
+
+Ship::gentle = {
+  (maths.abs(vx) < 1.5) and (vy < 2.0) and (maths.abs(angle) < 0.4)
+}
+
+Ship::fmt = { Float/v |
+  tenths = maths.floor((maths.abs(v) * 10.0) + 0.5).
+  whole = tenths / 10.
+  frac = tenths % 10.
+  sign = if (v < (0.0 - 0.05)) { "-" } else { "" }.
+  "{sign}{whole}.{frac}".tpl({String:String
+    "sign": sign, "whole": whole.str(), "frac": frac.str()})
+}
+
+Ship::readout = {
+  rfuel = maths.round(fuel).
+  "fuel {fuel}   vx {vx}   vy {vy}   tilt {tilt}".tpl({String:String
+    "fuel": rfuel.str(), "vx": this.fmt(vx), "vy": this.fmt(vy), "tilt": this.fmt(angle)})
+}
+
+Game::newShip = { [:Ship 120.0 90.0 0.8 0.0 0.0 100.0 false maths] }
+
+Game::update = {
+  restart = (phase != Flying) and keys.down.
+  moved = if (phase == Flying) { ship.step(keys) }
+    else if (restart) { this.newShip() }
+    else { ship }.
+  land = if (restart) { terrain.roll() } else { terrain }.
+  ground = land.heightAt(moved.x).
+  touching = (phase == Flying) and ((moved.y + 12.0) >= ground).
+  nextPhase = if (restart) { Flying }
+    else if (not touching) { phase }
+    else if (land.onPad(moved.x) and moved.gentle()) { Landed }
+    else { Crashed }.
+  justLanded = (phase == Flying) and (nextPhase == Landed).
+  bonus = if (justLanded) { 100 + maths.round(moved.fuel) } else { 0 }.
+  more = if (justLanded) { 1 } else { 0 }.
+  [:Game sky land moved nextPhase (score + bonus) (landings + more) time keys maths]
+}
+
+Game::banner = {
+  if (phase == Landed) { "THE EAGLE HAS LANDED   (down: fly again)" }
+  else if (phase == Crashed) { "CRATER   (down: fly again)" }
+  else { "" }
+}
+
+Game::scoreLine = {
+  "score {score}   landings {landings}".tpl({String:String
+    "score": score.str(), "landings": landings.str()})
+}
+```
+
+## Target Methods
+
+```
+Terrain::draw = { @Graphics/g |
+  ground = segments.fold(g.lineStyle(2, 11184810), { acc, Segment/s | acc.drawLine(s.x1, s.y1, s.x2, s.y2) }).
+  g.lineStyle(4, 5232783).drawLine(pad.x, pad.y, pad.x + pad.width, pad.y)
+} -> Void
+
+Game::draw = { @Graphics/g |
+  hull = if (phase == Crashed) { 14428979 } else if (phase == Landed) { 5232783 } else { 3556687 }.
+  terrainDrawn = terrain.draw(g).
+  ship.draw(g, hull)
+} -> Void
+
+Ship::draw = { @Graphics/g, Int/hull |
+  c = maths.cos(angle).
+  s = maths.sin(angle).
+  noseX = x + (s * 14.0).
+  noseY = y - (c * 14.0).
+  leftX = (x - (c * 10.0)) - (s * 10.0).
+  leftY = (y - (s * 10.0)) + (c * 10.0).
+  rightX = (x + (c * 10.0)) - (s * 10.0).
+  rightY = (y + (s * 10.0)) + (c * 10.0).
+  flameLen = if (burning) { 18.0 + (maths.rand() * 12.0) } else { 0.0 }.
+  flameX = x - (s * flameLen).
+  flameY = y + (c * flameLen).
+  g.lineStyle(1, 16750899, (if (burning) { 0.9 } else { 0.0 }))
+   .beginFill(16750899, (if (burning) { 0.9 } else { 0.0 }))
+   .moveTo((x - (c * 5.0)) - (s * 8.0), (y - (s * 5.0)) + (c * 8.0))
+   .lineTo(flameX, flameY)
+   .lineTo((x + (c * 5.0)) - (s * 8.0), (y + (s * 5.0)) + (c * 8.0))
+   .endFill()
+   .lineStyle(2, 15132390)
+   .beginFill(hull)
+   .moveTo(noseX, noseY)
+   .lineTo(leftX, leftY)
+   .lineTo(rightX, rightY)
+   .endFill()
+} -> Void
+```
+
+## Target
+
+```
+%canvas
+
+%init
+var assemblage;
+
+function init() {
+    assemblage = gameFactory(wchntMaths);
+    wchntGraphics.background(0x05070d, 1);
+}
+
+%step
+function step() {
+    var k = input.keys;
+    assemblage.keys.inject(!!k["ArrowLeft"], !!k["ArrowRight"], !!k["ArrowUp"], !!k["ArrowDown"]);
+    assemblage.time.update();
+
+    wchntGraphics.clear();
+    assemblage.draw(wchntGraphics);
+    wchntGraphics.noStroke();
+
+    wchntGraphics.beginFill(0xd8dee9);
+    wchntGraphics.fillText(assemblage.ship.readout(), 12, 12);
+    wchntGraphics.fillText(assemblage.scoreLine(), 12, 34);
+    wchntGraphics.fillText(assemblage.banner(), 12, 64);
+    wchntGraphics.endFill();
+}
+```
