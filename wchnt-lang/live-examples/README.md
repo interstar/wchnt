@@ -14,21 +14,13 @@ These `.wcn` files use a **live** host (JavaScript Target + browser harness). Th
 | `writepaths.wcn` | Pair of `examples/writepaths.wcn` (`%cli-live`; type `jets` / `ocean` / `resize`) |
 | `flyingA.wcn` | Canvas pair of `examples/flyingA.wcn`; publishes `Shape` |
 | `flyingB.wcn` | Imports `[[flyingA]]` and adds a Pentagon |
+| `factory_args.wcn` | Pair of `examples/factory_args.wcn`; Target `new Pen` → factory arg |
+| `combinators_cli.wcn` | Pair of `examples/combinators_cli.wcn`; `println` formats WCHNT values |
+| `maths_cli.wcn` | Pair of `examples/maths.wcn`; factory-inject `wchntMaths` |
+| `origin_canvas.wcn` | Patternflow Origin port; mouse + Shift knobs, `drawRect` cells |
 
-These files are the source of truth for the matching Play wiki seed pages. `prepare-live` and `website/build.sh` copy:
-
-| Live example | Wiki seed name |
-|---|---|
-| `welcome.wcn` | `welcome` |
-| `bounce_canvas.wcn` | `bounce` |
-| `shapes_canvas.wcn` | `shapes` |
-| `square_canvas.wcn` | `square` |
-| `pollution_canvas.wcn` | `pollution` |
-| `pong_canvas.wcn` | `pong` |
-| `adventure_cli.wcn` | `adventure` |
-| `writepaths.wcn` | `writepaths` |
-| `flyingA.wcn` | `flyingA` |
-| `flyingB.wcn` | `flyingB` |
+The Play wiki seed set is `seed-map.txt`. `seed-from-live.sh` writes `seed/*.wcn`
+and `seed/index.txt`; the live page fetches that index.
 
 OpenFL / terminal / `%cli` examples stay in **`examples/`** and run via `./go.sh` or `./go_all_examples.sh`.
 

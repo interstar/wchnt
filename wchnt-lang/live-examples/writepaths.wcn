@@ -74,7 +74,7 @@ World::label = {
 var assemblage;
 
 function init() {
-    assemblage = gameFactory();
+    assemblage = GameAssemblage.factory();
     wchntConsole.println("jets | ocean | resize | or type a fountain name");
     wchntConsole.println(assemblage.label());
 }

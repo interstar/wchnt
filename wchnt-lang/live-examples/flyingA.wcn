@@ -58,17 +58,6 @@ Triangle::step = { Int/width |
   [:Triangle nx y base height dx]
 }
 
-Game::make = {
-  [:Game
-    [:PlayArea [:Rect 0 0 800 600]]
-    [:Array/Shape
-      [:Circle 80 120 24 5]
-      [:Square 220 280 40 3]
-      [:Triangle 520 400 50 45 4]
-    ]
-    [:Time 0]]
-}
-
 Game::addShape = { Shape/s |
   [:Game playArea shapes.cons(s) time]
 }
@@ -82,9 +71,6 @@ Game::update = {
 ## Public
 
 ```
-Game::make
-Game::addShape
-Game::update
 Shape
 ```
 
@@ -115,7 +101,7 @@ Triangle::draw = { @Graphics/g |
 var assemblage;
 
 function init() {
-    assemblage = gameFactory();
+    assemblage = GameAssemblage.factory();
 }
 
 %step

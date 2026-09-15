@@ -1,0 +1,109 @@
+# Bicycles (live canvas)
+
+The P5 bicycle sketch, translated. `wchntMaths` is injected through the
+factory (a free name in each `@WCHNTMaths` slot collapses to one factory
+argument); every Bicycle keeps the shared reference and pulls `randInt`s in
+`step`. Target draws the scene with the portable `wchntGraphics` API.
+
+Construction cannot call `maths.randInt` yet (construction lets only accept
+literals/constructions), so the five bikes start from fixed, varied values;
+all the ongoing randomness lives in `Bicycle::step`.
+
+## Schema
+
+```
+Game = [Bicycle]/bikes Int/w Int/h
+Bicycle = Int/x Int/y Int/size Int/dx Int/dy Int/dSize Int/colour @WCHNTMaths/maths
+```
+
+## Construction
+
+```
+b1 = [:Bicycle 100 320 40 2 0 0 5294335 maths].
+b2 = [:Bicycle 300 280 60 1 0 0 16732415 maths].
+b3 = [:Bicycle 520 350 30 3 0 0 16752895 maths].
+b4 = [:Bicycle 700 300 50 2 0 0 3997695 maths].
+b5 = [:Bicycle 160 430 45 1 0 0 13172735 maths].
+[:Game [:Array/Bicycle b1 b2 b3 b4 b5] 800 600]
+```
+
+## Methods
+
+```
+Bicycle::step = { Int/w, Int/h |
+  x1 = x + dx.
+  wrappedX = (x1 > (w + size)).
+  x2 = if (wrappedX) { (0 - (size * 4)) } else { x1 }.
+  y2 = if (wrappedX) { ((h / 2) + maths.randInt((h / 2))) } else { y }.
+  y3 = y2 + dy.
+  fell = (y3 > (h + 100)).
+  y4 = if (fell) { ((h / 2) + maths.randInt((h / 2))) } else { y3 }.
+  dy2 = if (fell) { 0 } else { dy }.
+  dx2 = if (fell) { 1 + maths.randInt(4) } else { dx }.
+  x3 = if (fell) { -100 } else { x2 }.
+  falling = (maths.randInt(800) == 0).
+  dx3 = if (falling) { 0 } else { dx2 }.
+  dy3 = if (falling) { 10 } else { dy2 }.
+  size2 = size - dSize.
+  tiny = (size2 < 1).
+  x4 = if (tiny) { -100 } else { x3 }.
+  size3 = if (tiny) { 50 + maths.randInt(50) } else { size2 }.
+  dSize2 = if (tiny) { 0 } else { dSize }.
+  shrinking = (maths.randInt(3000) == 0).
+  dSize3 = if (shrinking) { 1 } else { dSize2 }.
+  [:Bicycle x4 y4 size3 dx3 dy3 dSize3 colour maths]
+}
+
+Game::step = {
+  moved = bikes.map({ Bicycle/b | b.step(w, h) }).
+  [:Game moved w h]
+}
+```
+
+## Target
+
+```
+%canvas
+
+%init
+var assemblage;
+
+function init() {
+    assemblage = GameAssemblage.factory(wchntMaths);
+}
+
+%step
+function step() {
+    assemblage = assemblage.step();
+    var w = assemblage.w;
+    var h = assemblage.h;
+    var horizon = h / 2;
+
+    wchntGraphics.background(0x18EAFF, 0.196);
+    wchntGraphics.clear();
+
+    var r = 150, g = 255, b = 100;
+    var dr = horizon / 100, dg = horizon / 200, db = horizon / 50;
+    for (var i = 0; i < horizon; i++) {
+        r -= dr; g -= dg; b -= db;
+        var rr = Math.max(0, r) | 0;
+        var gg = Math.max(0, g) | 0;
+        var bb = Math.max(0, b) | 0;
+        wchntGraphics.beginFill(rr * 65536 + gg * 256 + bb);
+        wchntGraphics.drawRect(0, horizon + i, w, 2);
+        wchntGraphics.endFill();
+    }
+
+    for (var bk of assemblage.bikes) {
+        var fx = bk.x + bk.size + ((bk.size / 20) | 0);
+        wchntGraphics.beginFill(bk.colour);
+        wchntGraphics.lineStyle(1, 0x000000);
+        wchntGraphics.drawCircle(bk.x, bk.y, bk.size / 2);
+        wchntGraphics.drawCircle(bk.x, bk.y, bk.size / 4);
+        wchntGraphics.drawCircle(fx, bk.y, bk.size / 2);
+        wchntGraphics.drawCircle(fx, bk.y, bk.size / 4);
+        wchntGraphics.drawLine(bk.x, bk.y, fx, bk.y);
+        wchntGraphics.noStroke();
+    }
+}
+```

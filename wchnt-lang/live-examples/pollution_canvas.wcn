@@ -121,7 +121,7 @@ Game::update = {
 var assemblage;
 
 function init() {
-    assemblage = gameFactory();
+    assemblage = GameAssemblage.factory();
 }
 
 %step
@@ -137,6 +137,7 @@ function step() {
     wchntGraphics.endFill();
     wchntGraphics.lineStyle(2, 0x00ff00);
     wchntGraphics.drawRect(r.x, r.y, r.width, r.height);
+    wchntGraphics.noStroke();
     for (var o of assemblage.pollutants) {
         wchntGraphics.beginFill(0xff6464);
         wchntGraphics.drawCircle(o.x, o.y, o.rad);

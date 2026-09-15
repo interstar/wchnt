@@ -1,0 +1,50 @@
+# WCHNTMaths on the live CLI
+
+Same assemblage as `examples/maths.wcn`. Target is `%cli-live`.
+`wchntMaths` is the host handle; press Enter to roll.
+
+## Schema
+
+```
+Trio = Int/a Int/b Int/c
+Roll = @WCHNTMaths/maths
+```
+
+## Construction
+
+```
+[:Roll maths]
+```
+
+## Methods
+
+```
+Roll::once = {
+  r1 = maths.randInt(10).
+  r2 = maths.randInt(10).
+  r3 = maths.randInt(10).
+  [:Trio r1 r2 r3]
+}
+
+Roll::wave = { maths.sin(0) }
+```
+
+## Target
+
+```
+%cli-live
+
+%init
+var assemblage;
+
+function init() {
+    assemblage = RollAssemblage.factory(wchntMaths);
+    wchntConsole.println("enter to roll");
+}
+
+%step
+function step(line) {
+    wchntConsole.println(assemblage.once());
+    wchntConsole.println(assemblage.wave());
+}
+```

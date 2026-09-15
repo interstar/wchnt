@@ -21,7 +21,7 @@ Pentagon : Shape = Int/x Int/y Int/side Int/dx
 ## Construction
 
 ```
-[:Sky flying.make().addShape([:Pentagon 640 90 36 4])]
+[:Sky flying.factory().addShape([:Pentagon 640 90 36 4])]
 ```
 
 ## Methods
@@ -50,7 +50,7 @@ Pentagon::draw = { @Graphics/g |
 var assemblage;
 
 function init() {
-    assemblage = gameFactory();
+    assemblage = GameAssemblage.factory();
 }
 
 %step

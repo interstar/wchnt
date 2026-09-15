@@ -1,0 +1,20 @@
+# Which live-examples also seed the Play wiki.
+# Columns: live-example-stem   wiki-page-name
+# Adding a seed page: add a line here, then run prepare-live or website/build.sh.
+# No ClojureScript rebuild is required.
+
+welcome              welcome
+bounce_canvas        bounce
+shapes_canvas        shapes
+square_canvas        square
+pollution_canvas     pollution
+pong_canvas          pong
+adventure_cli        adventure
+writepaths           writepaths
+flyingA              flyingA
+flyingB              flyingB
+factory_args         factory_args
+combinators_cli      combinators
+origin_canvas        origin
+maths_cli            maths
+bikes_canvas         bikes

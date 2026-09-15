@@ -84,7 +84,7 @@ Triangle::draw = { @Graphics/g |
 var assemblage;
 
 function init() {
-    assemblage = gameFactory();
+    assemblage = GameAssemblage.factory();
 }
 
 %step
