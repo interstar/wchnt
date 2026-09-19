@@ -29,7 +29,7 @@ Far term this is the Smalltalk-like live system. v1 is a page: editor, canvas, R
 
 **Wiki (2026-09):** the live page stores `.wcn` pages in **localStorage**. **New Page** creates a sibling page; **Load example** copies canvas/cli demos including `origin_canvas` and `maths_cli`. Prose may contain **`[[PageName]]`** links — click to navigate (navigation only; class reuse is **`## Import`**). On first visit the wiki is seeded from `live/public/seed/` (`welcome`, `bounce`, `shapes`, `square`, `pollution`, `pong`, `adventure`, `writepaths`, `flyingA`, `flyingB`, `factory_args`, `combinators`, `maths`, `origin`) — a seed page is written only if no page of that name exists, so existing user data is never overwritten. Run on a documentation page reports “nothing to run”; on a library page it is a schema/methods check pass.
 
-**Target Methods:** methods with `@Type/name` parameters live in **`## Target Methods`**. See **`method.md`**.
+Methods with `@Type/name` parameters also live in **`## Methods`**; their target-provided signatures come from **`%requires`**. See **`method.md`**.
 
 ---
 
@@ -83,7 +83,7 @@ graphics.drawCircle(...);
 
 Canvas Target should be the same shape in JS (`function init` / `function step`, `GameAssemblage.factory()`, `assemblage.step()`, `graphics.*`). That is the isomorphism: **not** one file, **the same Target protocol**.
 
-`wchntGraphics` (shared API, OpenFL + canvas): `background`, `clear`, `beginFill`, `endFill`, `lineStyle`, `noStroke`, `moveTo`, `lineTo`, `drawLine`, `drawRect`, `drawCircle`, `drawEllipse`, `fillText`. Filled/stroked shapes follow Processing-style state; `moveTo`/`lineTo`…`endFill` fills+strokes a path. Parity example: `graphics_canvas.wcn` / `graphics_openfl.wcn`.
+`wchntGraphics` (shared API, OpenFL + canvas): `color`, `red`, `green`, `blue`, `alpha`, `background`, `clear`, `beginFill`, `endFill`, `lineStyle`, `noStroke`, `moveTo`, `lineTo`, `drawLine`, `drawRect`, `drawCircle`, `drawEllipse`, `fillText`. Filled/stroked shapes follow Processing-style state; `moveTo`/`lineTo`…`endFill` fills+strokes a path. `color(r, g, b)` and `color(r, g, b, a)` produce packed `0xAARRGGBB` colours, while `color(x)` produces grayscale; the component methods extract channels. Parity example: `graphics_canvas.wcn` / `graphics_openfl.wcn`.
 
 ### Inject-then-tick
 

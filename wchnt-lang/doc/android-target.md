@@ -13,7 +13,7 @@ WCHNT already separates platform from assemblage logic:
 - **Schema, Construction, Methods** — the game (or app) itself
 - **Target** — outer environment: input snapshot, frame loop, drawing surface
 
-Today we have `%terminal`, `%openfl`, and `%canvas`. Android would be another host. The same `.wcn` game logic should compile with only the Target section (and possibly Target Methods) differing — exactly as `pollution_openfl.wcn` and `pollution_canvas.wcn` share Schema/Construction/Methods today.
+Today we have `%terminal`, `%openfl`, and `%canvas`. Android would be another host. The same `.wcn` game logic should compile with only the Target section (and, where platform APIs differ, selected Methods) differing — exactly as `pollution_openfl.wcn` and `pollution_canvas.wcn` share Schema/Construction today.
 
 Pollution in WCHNT was adapted from the original Android app at `~/Documents/PRODUCTION/games/newpollution`. That project is a useful reference for the harness shape: `SurfaceView`, game thread, `Canvas` drawing, swipe input via `GestureDetector`.
 
@@ -33,10 +33,10 @@ Regardless of backend path:
 Target follows the established inject-then-tick pattern (see `target.md`):
 
 1. Read input (keyboard, touch, swipe) and `inject` into `>` mailboxes.
-2. Call `assemblage.time.update()` once per frame.
+2. Call `assemblage.time.update_mutates()` once per frame.
 3. Draw via a portable graphics handle (`wchntGraphics`).
 
-Methods must not embed Android APIs directly; platform handles pass through Target or `@Type/name` Target Methods.
+Methods must not embed Android APIs directly; platform handles pass through Target or `@Type/name` parameters, with their signatures declared in `%requires`.
 
 ## Current infrastructure (relevant pieces)
 
@@ -124,7 +124,7 @@ Keep the seam small — mirror OpenFL/canvas:
 |----------|----------------|
 | `GameAssemblage.factory()` | Construction IR → root assemblage instance |
 | `%init` | One-time setup (listeners, dimensions) |
-| `%step` | Each frame: inject input → `time.update()` → draw |
+| `%step` | Each frame: inject input → `time.update_mutates()` → draw |
 | `wchntGraphics` | `clear`, `beginFill`, `endFill`, `lineStyle`, `drawRect`, `drawCircle`, `moveTo`, `lineTo`, `fillText` |
 | `%name` helpers | Optional Haxe/Java fragments callable from Methods |
 

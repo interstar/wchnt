@@ -17,7 +17,7 @@ The first line of `## Target` must name a host (required — there is no default
 | `%canvas` | JavaScript | `%init` + `%step` | `bounce_canvas.wcn`, `pollution_canvas.wcn` |
 
 - **`%name` helpers** — Haxe fragments callable from Methods as `%name(...)` (e.g. `%trace`).
-- **`## Target Methods`** — methods with `@Type/name` parameters (platform handles passed from Target). See **`method.md`**.
+- **`%requires`** — target-provided external classes and WCHNT-visible method signatures used by Methods, including imported methods. See **`method.md`**.
 
 Target owns loops, imports, frame callbacks, and harness objects (`wchntGraphics`, `wchntConsole`, `wchntMaths`, `input.keys` on canvas). Methods must not embed platform APIs except via `@` parameters supplied by Target.
 
@@ -105,10 +105,10 @@ When simulation is driven only by the clock, Target ticks the root’s observabl
 
 ```haxe
 // OpenFL %step
-assemblage.time.update();
+assemblage.time.update_mutates();
 ```
 
-`Time::update` increments `t`, notifies subscribers, and `Game::update` runs with no arguments. Target does **not** call `Game::update` directly.
+`Time::update!` increments `t`, notifies subscribers, and `Game::update!` runs with no arguments. Target does **not** call `Game::update!` directly.
 
 Examples: `bounce_openfl_time.wcn`, `bounce_loop.wcn`, `bounce_canvas.wcn` (Methods use `step`; canvas Target calls `assemblage.step()` instead).
 
@@ -117,15 +117,15 @@ Examples: `bounce_openfl_time.wcn`, `bounce_loop.wcn`, `bounce_canvas.wcn` (Meth
 When a game needs **continuous motion** and **held keyboard input**, Target follows a fixed two-step pattern each frame:
 
 1. **Inject** the full snapshot into every `>` mailbox (schema field order), including all-false when nothing is held.
-2. **Tick** `$Time` once with `time.update()`.
+2. **Tick** `$Time` once with `time.update_mutates()`.
 
-Target must **not** call `Game::update` directly. Injection runs the mailbox’s `update`; ticking Time notifies Game via `$`.
+Target must **not** call `Game::update!` directly. Injection runs the mailbox’s `update!`; ticking Time notifies Game via `$`.
 
 ### Why this shape
 
 - **`>Keys`** (mailbox) — the keyboard snapshot cannot be computed inside Methods. Target reads held keys and `inject`s them.
-- **`$Time`** (observable) — the frame clock. One tick per frame drives `Game::update`.
-- **No `$Keys` on Game** when `$Time` already drives the frame — otherwise Game would be notified twice per frame (once from inject→mailbox notify, once from Time). Game reads `keys.left` etc. inside `Game::update` instead.
+- **`$Time`** (observable) — the frame clock. One tick per frame drives `Game::update!`.
+- **No `$Keys` on Game** when `$Time` already drives the frame — otherwise Game would be notified twice per frame (once from inject→mailbox notify, once from Time). Game reads `keys.left` etc. inside `Game::update!` instead.
 
 Schema: `Game = … $Time Keys` (Time reactive, Keys a plain slot). Not `Game = … $Time $Keys`.
 
@@ -139,7 +139,7 @@ function step() {
     assemblage.keys.inject(
         !!k["ArrowLeft"], !!k["ArrowRight"],
         !!k["ArrowUp"], !!k["ArrowDown"]);
-    assemblage.time.update();
+    assemblage.time.update_mutates();
     // … draw from assemblage fields …
 }
 ```
@@ -155,7 +155,7 @@ function step():Void {
     assemblage.keys.inject(
         held(Keyboard.LEFT), held(Keyboard.RIGHT),
         held(Keyboard.UP), held(Keyboard.DOWN));
-    assemblage.time.update();
+    assemblage.time.update_mutates();
     // … draw …
 }
 ```
@@ -168,13 +168,15 @@ Always **inject, then tick**. If you tick Time before injecting keys, Game sees 
 
 ## Drawing
 
-Target (or Target Methods with `@Graphics/g`) performs drawing after the tick:
+Target or a Methods function receiving `@Graphics/g` performs drawing after the tick:
 
 - **bounce** — draw calls live in Target Haxe/JS (`bounce_openfl.wcn`, `bounce_canvas.wcn`).
 - **shapes** — `Shape::draw(@Graphics/g)` in Methods; Target passes `graphics` (`shapes_openfl.wcn`).
 
-The **`wchntGraphics`** surface is shared by both hosts (same API, same visual result): `background`, `clear`, `beginFill`, `endFill`, `lineStyle`, `noStroke`, `moveTo`, `lineTo`, `drawLine`, `drawRect`, `drawCircle`, `drawEllipse`, `fillText`. Shapes fill and/or stroke from the current state; `moveTo`/`lineTo`…`endFill` draws a filled/stroked path. OpenFL `%step` receives `wchntGraphics:WCHNTGraphics` on `Main` (does not shadow `Sprite.graphics`); Canvas `%step` receives the same name from `WCHNTHarness`. Parity example: `graphics_openfl.wcn` / `graphics_canvas.wcn`. See `live.md` and `website/content/wchntgraphics.md`.
+The **`wchntGraphics`** surface is shared by both hosts (same API, same visual result): `color`, `red`, `green`, `blue`, `alpha`, `background`, `clear`, `beginFill`, `endFill`, `lineStyle`, `noStroke`, `moveTo`, `lineTo`, `drawLine`, `drawRect`, `drawCircle`, `drawEllipse`, `fillText`. Shapes fill and/or stroke from the current state; `moveTo`/`lineTo`…`endFill` draws a filled/stroked path. OpenFL `%step` receives `wchntGraphics:WCHNTGraphics` on `Main` (does not shadow `Sprite.graphics`); Canvas `%step` receives the same name from `WCHNTHarness`. Parity example: `graphics_openfl.wcn` / `graphics_canvas.wcn`. See `live.md` and `website/content/wchntgraphics.md`.
 
-## Identity in update (Target perspective)
+`color(r, g, b)` and `color(r, g, b, a)` return a packed ARGB integer (`0xAARRGGBB`), with channels in the range `0..255`; `color(x)` is grayscale (`color(x, x, x)`). The component helpers extract the corresponding channel. Drawing methods accept these packed values and use their embedded alpha when no separate alpha argument is supplied. Existing `0xRRGGBB` values remain valid.
 
-Target only calls `inject` and `time.update()`. It never replaces mailbox or `$` objects. Inside `Game::update`, Methods name existing slots (`time`, `keys`) or construct the same class in place (`[:Keys …]` patches fields on `this.keys`). See **`method.md` §5** and **`schema.md`** (`$` / `>` identity).
+## Identity in update! (Target perspective)
+
+Target only calls `inject` and `time.update_mutates()`. It never replaces mailbox or `$` objects. Inside `Game::update!`, Methods name existing slots (`time`, `keys`) or construct the same class in place (`[:Keys …]` patches fields on `this.keys`). See **`method.md` §5** and **`schema.md`** (`$` / `>` identity).

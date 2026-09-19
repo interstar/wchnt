@@ -18,6 +18,10 @@
 
     function toCss(color, alpha) {
       var hex = hexColor(color);
+      if (alpha === undefined && (color > 0xffffff || color < 0)) {
+        alpha = ((color >>> 24) & 0xff) / 255;
+      }
+      if (alpha === undefined) alpha = 1;
       if (alpha >= 1) return hex;
       var r = (color >>> 16) & 0xff;
       var g = (color >>> 8) & 0xff;
@@ -51,9 +55,24 @@
     }
 
     return {
+      color: function (r, g, b, a) {
+        if (g === undefined) g = b = r;
+        if (a === undefined) a = 255;
+        r = Math.max(0, Math.min(255, r));
+        g = Math.max(0, Math.min(255, g));
+        b = Math.max(0, Math.min(255, b));
+        a = Math.max(0, Math.min(255, a));
+        return ((a << 24) | (r << 16) | (g << 8) | b);
+      },
+
+      red: function (color) { return (color >>> 16) & 0xff; },
+      green: function (color) { return (color >>> 8) & 0xff; },
+      blue: function (color) { return color & 0xff; },
+      alpha: function (color) { return (color >>> 24) & 0xff; },
+
       background: function (color, alpha) {
         bgColor = color;
-        bgAlpha = (alpha === undefined) ? 1 : alpha;
+        bgAlpha = alpha;
       },
 
       clear: function () {
@@ -64,7 +83,7 @@
       },
 
       beginFill: function (color, alpha) {
-        fill = { color: color, alpha: (alpha === undefined) ? 1 : alpha };
+        fill = { color: color, alpha: alpha };
         beginPath();
       },
 
@@ -83,7 +102,7 @@
           stroke = null;
           return;
         }
-        stroke = { width: width, color: color, alpha: (alpha === undefined) ? 1 : alpha };
+        stroke = { width: width, color: color, alpha: alpha };
       },
 
       noStroke: function () {
@@ -168,7 +187,7 @@
       Shift: false
     };
     for (var d = 0; d <= 9; d++) { keys[String(d)] = false; }
-    var mouse = { x: 0.5, y: 0.5 };
+    var mouse = { x: 0.5, y: 0.5, down: false };
     var active = false;
     var pointerEl = mouseEl || focusEl;
 
@@ -229,6 +248,16 @@
       mouse.y = clamp01((e.clientY - rect.top) / rect.height);
     }
 
+    function onMouseDown() {
+      if (!active) return;
+      mouse.down = true;
+    }
+
+    function onMouseUp() {
+      if (!active) return;
+      mouse.down = false;
+    }
+
     function clearKeys() {
       keys.ArrowLeft = false;
       keys.ArrowRight = false;
@@ -236,6 +265,7 @@
       keys.ArrowDown = false;
       keys.Shift = false;
       for (var d = 0; d <= 9; d++) { keys[String(d)] = false; }
+      mouse.down = false;
     }
 
     return {
@@ -252,6 +282,11 @@
         if (focusEl !== pointerEl) {
           focusEl.addEventListener("mousemove", onMove, true);
         }
+        pointerEl.addEventListener("mousedown", onMouseDown, true);
+        if (focusEl !== pointerEl) {
+          focusEl.addEventListener("mousedown", onMouseDown, true);
+        }
+        global.addEventListener("mouseup", onMouseUp, true);
       },
       detach: function () {
         active = false;
@@ -264,6 +299,11 @@
         if (focusEl !== pointerEl) {
           focusEl.removeEventListener("mousemove", onMove, true);
         }
+        pointerEl.removeEventListener("mousedown", onMouseDown, true);
+        if (focusEl !== pointerEl) {
+          focusEl.removeEventListener("mousedown", onMouseDown, true);
+        }
+        global.removeEventListener("mouseup", onMouseUp, true);
         clearKeys();
       },
       focus: function () {

@@ -28,7 +28,6 @@ The sections, in order:
 | `## Construction` | for programs | build the initial object graph |
 | `## Methods` | optional | pure-ish behaviour as expressions |
 | `## Public` | optional | list of methods and interfaces other pages may use |
-| `## Target Methods` | optional | methods taking platform types (`@Type/name`) |
 | `## Target` | for programs | name the host and its entry points |
 
 Each section appears at most once. A page may be:
@@ -111,7 +110,7 @@ type. Sigils attach to a single class type (`:Engine`, `$Time`, `@Db`,
 | `:` | context-specific | child belongs to this parent; gets a back-reference |
 | `+` | delegate | owned child whose fields and methods are promoted onto the parent |
 | `@` | external | borrowed from outside; across pages, an opaque handle |
-| `$` | reactive | observable / subscriber (see update) |
+| `$` | reactive | observable / subscriber (see update!) |
 
 ```wchnt
 Car = :Engine String/model
@@ -170,14 +169,15 @@ passed in at construction rather than built by this assemblage.
   (first appearance, left to right). It is never `_` and never an in-place
   `[:Type …]` construction. See `examples/factory_args.wcn`.
 - As a **Methods parameter** (`@Graphics/g`), it is a host type not defined in
-  Schema. These methods belong in `## Target Methods`. See
+  Schema. Put these methods in `## Methods`; the target's `%requires`
+  declarations provide their external signatures. See
   `examples/shapes_openfl.wcn`.
 
 #### Reactive (`$`)
 
 `Game = PlayArea Ball $Time` declares that `Time` is **observable** and `Game`
-**subscribes** to it. When `Time.update()` finishes, it notifies `Game`, which
-runs its own `update()` (no arguments). Reading `time` in `Game::update` is a
+**subscribes** to it. When `Time.update!()` finishes, it notifies `Game`, which
+runs its own `update!()` (no arguments). Reading `time` in `Game::update!` is a
 read, not another tick. The `$` slot type must be a schema class.
 
 ### Mailbox (`>`)
@@ -191,8 +191,8 @@ Game = PlayArea Square $Keys
 
 A mailbox is in the assemblage (Schema defines it, Construction births it), but
 the **Target** is allowed to fill it. Target calls `keys.inject(...)` (schema
-field order), which writes the fields then runs `Keys::update`. Methods cannot
-define or call `inject`. A mailbox class must define `update`.
+field order), which writes the fields then runs `Keys::update!`. Methods cannot
+define or call `inject`. A mailbox class must define `update!`.
 
 Mailbox (`>`) and observable (`$`) objects are **identity objects**: they are
 mutated in place and never replaced.
@@ -245,7 +245,9 @@ Target passes it: `SketchAssemblage.factory(pen)`.
 ## Methods
 
 A method is `ClassName::methodName = { body }`. The body is an expression; its
-value is the return value.
+value is the return value. Methods are pure by default. A method whose name
+ends in `!` is a mutating method: it updates its receiver in place and returns
+that same receiver.
 
 ```wchnt
 Rect::area = { width * height }
@@ -253,12 +255,14 @@ Rect::area = { width * height }
 Ball::move = { Rect/bounds |
   [:Ball (x + dx) (y + dy) dx dy rad]
 }
+
+Clock::advance! = { Int/delta | [:Clock (t + delta)] }
 ```
 
 - Arguments go before a `|` in a block.
 - Parameters may be bare names (`px`) or typed (`Rect/bounds`) — a type is
-  needed for field access. External host types are `@Type/name` and must live
-  in `## Target Methods`.
+  needed for field access. Target-provided external types are `@Type/name`;
+  their class and method signatures are declared in Target `%requires`.
 - Return types may be annotated after the block: `-> Void`, `-> Shape`.
 - Interface methods use an empty body: `Shape::step = { Int/width | } -> Shape`.
 - Fields of `this` are bare names (`width`, `dx`); calls on the receiver use
@@ -367,31 +371,45 @@ Dotted paths rebuild ordinary objects along the path and leave siblings alone.
 Unknown fields, a field plus a path under it, or a path into an array or map
 fail fast.
 
-### `update` and reactive dependencies
+### Mutating methods and reactive dependencies
 
-Ordinary methods are pure and return new objects. **`update`** is the one piece
-of mutation: it rewrites `this` in place and — if the object is observable —
-notifies its subscribers.
+Ordinary methods are pure and return new objects. A method whose name ends in
+**`!`** rewrites `this` in place and returns it. `update!` is the conventional
+reactive method: if the object is observable, it also notifies its subscribers.
 
 ```wchnt
-Time::update = { [:Time (t + 1)] }
+Time::update! = { [:Time (t + 1)] }
 
-Game::update = {
+Game::update! = {
   moved = [:Ball (ball.x + ball.dx) (ball.y + ball.dy) ball.dx ball.dy ball.rad].
   [:Game playArea moved time]
 }
 ```
 
-`$Time` on `Game` means: when `Time.update()` finishes, `Game.update()` runs
+`$Time` on `Game` means: when `Time.update!()` finishes, `Game.update!()` runs
 automatically (sideways notify, not a tree walk). Ordinary children do **not**
-update automatically — a parent ticks a child by writing `ball.update()` or
+update! automatically — a parent ticks a child by writing `ball.update!()` or
 constructing a new value.
 
 Identity objects (`$` observables and `>` mailboxes) mutate in place, never
-replaced. In any `update` construction, naming the slot (`time`, `keys`) keeps
+replaced. In any `update!` construction, naming the slot (`time`, `keys`) keeps
 the reference; constructing the same class (`[:Time (t + 1)]`, `[:Keys …]`)
 patches its fields on the existing instance; constructing a different class in
 that slot is a compile error.
+
+#### Method effect rules
+
+- A pure method may read fields, construct values, call pure methods, and use
+  permitted host operations. It may not call a mutating `!` method.
+- A mutating method may call pure methods and other mutating methods.
+- Every mutating method must reconstruct its own class, listing every field in
+  schema order, and returns `this`. `update!` is the special zero-argument
+  reactive method; other `!` methods may take arguments.
+- A class is mutable when it is the root class of a program, an observable, a
+  subscriber participating in a `$` relationship, or a `>` mailbox class. A
+  library with no Construction section has no root class. A `!` method on any
+  other class is rejected.
+- Haxe exposes the effect visibly by translating `foo!` to `foo_mutates()`.
 
 ### Target commands
 
@@ -431,11 +449,11 @@ each frame:
 
 1. **Inject** the full snapshot into every `>` mailbox (schema field order),
    including all-false when nothing is held.
-2. **Tick** `$Time` once with `time.update()`.
+2. **Tick** `$Time` once with `time.update_mutates()`.
 
 Do **not** put `$Keys` on Game if you also tick `$Time`, or Game updates twice
 per frame — inject into the mailbox (no `$` on that slot), then tick Time, and
-read `keys.left` etc. inside `Game::update`. See `examples/pollution_openfl.wcn`.
+read `keys.left` etc. inside `Game::update!`. See `examples/pollution_openfl.wcn`.
 
 ---
 
@@ -451,7 +469,7 @@ Public:
 ```
 make = { ... }
 addShape = { ... }
-update = { ... }
+describe = { ... }
 Shape
 ```
 
@@ -488,7 +506,7 @@ method. See `examples/importA.wcn` / `importB.wcn` and
 ## Where the detail lives
 
 - Schema, sigils, Import / Public: `doc/schema.md`, `doc/import.md`
-- Methods, `update`, write-paths, `tpl`: `doc/method.md`
+- Methods, `update!`, write-paths, `tpl`: `doc/method.md`
 - Target hosts, inject-then-tick: `doc/target.md`
 - The live interpreter: `doc/live.md`
 - Runnable programs: `examples/` (and `live-examples/` for the browser)

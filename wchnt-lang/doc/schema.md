@@ -6,7 +6,7 @@ This file is the working spec for Schema: design intent, what parses, what codeg
 
 **Current surface (2026-09):** five component sigils (`:` `@` `$` `+` and ordinary), mailbox `>` on the class name, sum types plus `Class : Interface =` for a **published** interface, and `## Import` / `## Public` for opaque reuse. `+` is delegation (has-a plus promotion), not inheritance. Read `Student = String/id +BasePerson` as: a Student is an id plus a BasePerson.
 
-**Background:** The ideas behind sigils and component types are developed at length in [`wchnt_dsl_relationships_and_reactive.md`](../../wchnt_dsl_relationships_and_reactive.md) (repo root). Philosophy and motivation also live in `intro.md`. Syntax primer: `language.md`. Construction: `construction_phase.md`. Methods (including `update` and interface signatures): **`method.md`**. Inter-page membrane: **`import.md`**.
+**Background:** The ideas behind sigils and component types are developed at length in [`wchnt_dsl_relationships_and_reactive.md`](../../wchnt_dsl_relationships_and_reactive.md) (repo root). Philosophy and motivation also live in `intro.md`. Syntax primer: `language.md`. Construction: `construction_phase.md`. Methods (including `update!` and interface signatures): **`method.md`**. Inter-page membrane: **`import.md`**.
 
 ---
 
@@ -53,7 +53,7 @@ A `.wcn` file is markdown prose plus optional compile sections. The compiler cla
 | Kind | Compile sections present | Result |
 |------|--------------------------|--------|
 | **Documentation** | none (prose only, or prose + ignored fences) | success, no IR |
-| **Library** | Schema (+ optional Methods / Public / Target Methods), no Construction | Haxe classes, no `Main` / factory |
+| **Library** | Schema (+ optional Methods / Public), no Construction | Haxe classes, no `Main` / factory |
 | **Program** | Schema + Construction (+ optional Import / Public / Target) | full compile |
 
 Prose headings like `## Notes` are ignored. Fenced blocks outside reserved sections are ignored.
@@ -156,7 +156,7 @@ The imported page **must** have `## Public`. Otherwise compile fails.
 
 ### `## Public`
 
-A list of **references**, not bodies. Bodies stay in Methods / Target Methods.
+A list of **references**, not bodies. Bodies stay in Methods.
 
 ```
 make = { ... }
@@ -169,7 +169,7 @@ make = { ... }
 Shape
 ```
 
-- A Public method must already exist in Methods (or Target Methods).
+- A Public method must already exist in Methods.
 - A bare **interface name** (`Shape`) publishes that sum so another page may implement it.
 - The class itself is **not** published. The importer cannot write `PlayArea = Rect`, `[:Rect 0 0 400 400]`, or `rect.width`.
 - A Public receiver (`Quest`, `Game`) is an **opaque handle** in the importer. Store it only as an `@` slot (`Chronicle = String/scribe @Quest`). Call only Public methods on it.
@@ -185,7 +185,7 @@ On the **importing** page, a composition line may name a published interface aft
 Pentagon : Shape = Int/x Int/y Int/side Int/dx
 ```
 
-That is **not** inheritance and **not** delegation. It means: this local class implements the imported sum. Methods on the importer must match the interface signatures (`Pentagon::step`, and `Pentagon::draw` in Target Methods if `Shape::draw` is published that way). Local sums still list their own variants with `|` on the defining page.
+That is **not** inheritance and **not** delegation. It means: this local class implements the imported sum. Methods on the importer must match the interface signatures (`Pentagon::step`, `Pentagon::draw`, etc.). Local sums still list their own variants with `|` on the defining page.
 
 Construction may pass a local implementer into a Public method: `flying.make().addShape([:Pentagon 640 90 36 4])`.
 
@@ -218,6 +218,27 @@ Sigils apply to **single schema class types** (`:Engine`, `$Time`, `@Db`, `+Base
 Sigils do **not** appear in Construction syntax; they are enforced by **codegen and wiring** (see `construction_phase.md`).
 
 The **`>`** mark is **not** a component sigil. It goes on the **class definition** (`>Keys = …`), not on a parent slot. See [Mailbox classes](#mailbox-classes-inward-from-the-host).
+
+### What sigils imply about mutability
+
+The compiler derives an identity/mutability set from the relationship sigils:
+
+- `$Time` makes `Time` an observable identity class and makes the containing
+  class a subscriber identity class. Both must support `update!`.
+- `>Keys` makes `Keys` a mailbox identity class. Target may inject its fields,
+  and its `update!` patches the existing object.
+- Ordinary, `:` and `+` components do not by themselves make their classes
+  mutable. They normally behave as replaceable values.
+- The root class produced by a program's Construction is also mutable. This
+  gives the application object a stable identity even when it has no `$` or
+  `>` fields. A pure root method may still return a new root value; root
+  mutability only makes `!` methods legal.
+- `@` is opaque to WCHNT. The compiler makes no claim about whether the host
+  object is mutable.
+
+Mutability here means stable object identity, not that every field may be
+changed arbitrarily. A mutating method must preserve identity slots and may
+not replace a `$` or `>` slot with an object of another class.
 
 ---
 
@@ -302,7 +323,7 @@ class Engine {
 
 - Child: `theParent` field + `setContext`.
 - **Construction wires the owned graph:** the factory builds parent and child and passes the child into the parent’s constructor (e.g. `new Car(engine, …)`). That is ordinary parent→child ownership.
-- **The reverse link is wired on first build:** the factory (and interpreter) call `child.setContext(parent)` after construction. `update()` also re-wires context children.
+- **The reverse link is wired on first build:** the factory (and interpreter) call `child.setContext(parent)` after construction. `update!()` also re-wires context children.
 - **Working** for field generation, update-time wiring, and Methods paths once context is set (`test_reaction_context_path.wcn`).
 
 **Examples:** `test_sigil.wcn`, `test_context.wcn`.
@@ -391,31 +412,31 @@ Time = Int/t
 **Meaning:**
 
 - `$Time` on `Game` → field `time: Time`.
-- **`Time`** = **observable** (subscribers, `notifySubscribers()` after `update()`).
-- **`Game`** = **subscriber** (must define `update()`; called when `Time` updates).
-- Reading `time` in `Game::update` is a **read**, not another tick.
+- **`Time`** = **observable** (subscribers, `notifySubscribers()` after `update!()`).
+- **`Game`** = **subscriber** (must define `update!()`; called when `Time` updates).
+- Reading `time` in `Game::update!` is a **read**, not another tick.
 
 **Object identity (in-place mutation):** The `$` marks a slot whose **type** is an identity object — one instance from Construction until teardown, never swapped for a different object. Factory subscribe wiring and any code holding a reference to `time` depend on this.
 
-In **`update`** (see **`method.md` §5**):
+In **`update!`** (see **`method.md` §5**):
 
 - **Name the slot** (`time` in `[:Game … time]`) → keep the same reference.
-- **Construct the same class on self** (`Time::update = { [:Time (t + 1)] }`) → patch fields on `this` in place (`this.t = …` in Haxe; interpreter merges into the live cell).
+- **Construct the same class on self** (`Time::update! = { [:Time (t + 1)] }`) → patch fields on `this` in place (`this.t = …` in Haxe; interpreter merges into the live cell).
 - **Construct a different class** in a `$` slot → compile error.
 
-Ordinary children (`Ball`, `PlayArea`) are **not** identity objects: `[:Ball …]` in `Game::update` correctly replaces the slot with a new instance.
+Ordinary children (`Ball`, `PlayArea`) are **not** identity objects: `[:Ball …]` in `Game::update!` correctly replaces the slot with a new instance.
 
 **Restrictions (enforced):** `$` type must be a schema class; not a primitive or collection.
 
 **Codegen today:** Observable infrastructure on the `$` type; factory emits `parent.time.subscribe(parent)`. **Working** — see `test_reactive.wcn`, `bounce_openfl_time.wcn`, `shapes_openfl.wcn`.
 
-**Methods contract:** Both observable and subscriber define `update` (see **`method.md`**). No automatic child propagation — parent ticks children only by writing `ball.update()` or constructing new values.
+**Methods contract:** Both observable and subscriber define `update!` (see **`method.md`**). No automatic child propagation — parent ticks children only by writing `ball.update!()` or constructing new values.
 
 ---
 
 ### Mailbox classes (`>` — inward from the host)
 
-**Purpose:** Some objects cannot compute their next value from themselves. `$Time` can (`t + 1`). Held keys cannot: the snapshot comes from the keyboard. **`>`** marks a class that Target is allowed to **fill**, then `update`.
+**Purpose:** Some objects cannot compute their next value from themselves. `$Time` can (`t + 1`). Held keys cannot: the snapshot comes from the keyboard. **`>`** marks a class that Target is allowed to **fill**, then `update!`.
 
 This is **not** `@`. `@` means the object is **declared elsewhere** (no `[:Keys …]` in this assemblage). A mailbox **is** in the assemblage: Schema defines it, Construction births it, `$` on a parent slot still means notify. Target only writes the next field picture.
 
@@ -428,18 +449,18 @@ Game = PlayArea Square $Keys
 
 - `>Keys` → Target may call `keys.inject(left, right, up, down)` (schema field order).
 - `inject` is **host-only**. It is generated on the class (Haxe and the live JS view). Methods cannot define or call `inject`.
-- `inject` writes the fields, then runs `Keys::update`. If Game has `$Keys`, that notify runs `Game::update`.
-- `Time` with only `$Time` (no `>`) cannot be injected. Target may only call `time.update()` with no payload.
+- `inject` writes the fields, then runs `Keys::update!`. If Game has `$Keys`, that notify runs `Game::update!`.
+- `Time` with only `$Time` (no `>`) cannot be injected. Target may only call `time.update_mutates()` with no payload.
 
-**Object identity (in-place mutation):** A `>` mailbox class is an **identity object** — same rule as `$` observables. Construction creates one `Keys` instance; Target `inject` and Methods `update` **patch its fields**, never allocate a replacement. Any reference to `keys` (from Game, subscribers, or the JS view) stays valid.
+**Object identity (in-place mutation):** A `>` mailbox class is an **identity object** — same rule as `$` observables. Construction creates one `Keys` instance; Target `inject` and Methods `update!` **patch its fields**, never allocate a replacement. Any reference to `keys` (from Game, subscribers, or the JS view) stays valid.
 
-In **`update`** (see **`method.md` §5**):
+In **`update!`** (see **`method.md` §5**):
 
 - **Name the slot** (`keys` in `[:Game … keys]`) → keep the same mailbox reference.
-- **Construct the same mailbox class** (`[:Keys left right up down]` in `Keys::update` or after reading injected values in `Game::update`) → patch `this.keys.left`, `this.keys.right`, … in place.
+- **Construct the same mailbox class** (`[:Keys left right up down]` in `Keys::update!` or after reading injected values in `Game::update!`) → patch `this.keys.left`, `this.keys.right`, … in place.
 - **Construct a different class** in a `>` slot → compile error.
 
-**Restrictions:** `>` is allowed on **composition** classes only, not sum types or enums. A mailbox class must define `update` (usually `[:Keys left right up down]` — pass the injected fields through).
+**Restrictions:** `>` is allowed on **composition** classes only, not sum types or enums. A mailbox class must define `update!` (usually `[:Keys left right up down]` — pass the injected fields through).
 
 **Examples:** `examples/square_openfl.wcn`, `examples/square_canvas.wcn`.
 
@@ -448,19 +469,19 @@ In **`update`** (see **`method.md` §5**):
 When a game needs **both** held input and a clock (e.g. `examples/pollution_openfl.wcn`), use **two mechanisms**:
 
 1. **`>Keys` (or another mailbox)** — Target injects the held-arrow snapshot **every frame** (including “all false” when nothing is held).
-2. **`$Time`** — Target calls `time.update()` once per frame. That notifies `Game::update`.
+2. **`$Time`** — Target calls `time.update_mutates()` once per frame. That notifies `Game::update!`.
 
-Do **not** put `$Keys` on Game if you also tick `$Time` — you would notify Game twice per frame. Instead: inject into the mailbox (no `$` on that slot), then tick Time; Game reads the mailbox fields inside `Game::update`. See **`doc/target.md`** (inject-then-tick).
+Do **not** put `$Keys` on Game if you also tick `$Time` — you would notify Game twice per frame. Instead: inject into the mailbox (no `$` on that slot), then tick Time; Game reads the mailbox fields inside `Game::update!`. See **`doc/target.md`** (inject-then-tick).
 
 **Examples:** `examples/pollution_openfl.wcn`, `examples/pollution_canvas.wcn`, `examples/bounce_openfl_time.wcn` (clock only).
 
-See also **Identity slots in `update`** below (summary of `$` + `>` together).
+See also **Identity slots in `update!`** below (summary of `$` + `>` together).
 
 ---
 
-#### Identity slots in `update` (summary)
+#### Identity slots in `update!` (summary)
 
-Mailbox (`>`) and observable (`$`) objects share one rule: **mutate in place, never replace**. In any class’s `update` construction:
+Mailbox (`>`) and observable (`$`) objects share one rule: **mutate in place, never replace**. In any class’s `update!` construction:
 
 | You write | Effect on identity slot |
 |-----------|-------------------------|
@@ -525,9 +546,9 @@ Key IR (`ast_to_ir.cljc`, `schema.cljc`):
 | Ordinary components | **Working** |
 | `+` — delegate; field/method promotion; must-override | **Working** (`test_delegate.wcn`) |
 | `:context` — `theParent`, `setContext` | **Working** (factory calls `setContext` on first build) |
-| `$` — subscribe / notify / `update` contract | **Working** |
-| `$` / `>` — identity slots patch in place in `update` | **Working** (Haxe + interpreter) |
-| `>` — mailbox class; Target `inject` then `update` | **Working** (`square_openfl.wcn`, `square_canvas.wcn`) |
+| `$` — subscribe / notify / `update!` contract | **Working** |
+| `$` / `>` — identity slots patch in place in `update!` | **Working** (Haxe + interpreter) |
+| `>` — mailbox class; Target `inject` then `update!` | **Working** (`square_openfl.wcn`, `square_canvas.wcn`) |
 | `## Import` / `## Public` — opaque handles, published interfaces | **Working** (`importA.wcn` / `importB.wcn`, `flyingA.wcn` / `flyingB.wcn`) |
 | `Class : Interface =` — implement a published sum | **Working** (`flyingB.wcn`) |
 | `@` — schema field factory parameter or import call | **Working** (`factory_args.wcn`; not `_`, not in-place construction) |

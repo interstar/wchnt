@@ -2,9 +2,9 @@
 
 The official heading in a `.wcn` file is **`## Methods`**.
 
-Platform-coupled methods (parameters using **`@Type/name`**, e.g. `@Graphics/g`) belong in **`## Target Methods`**, not in Methods. The compiler enforces this split. Example: `examples/shapes_openfl.wcn`.
+Methods may take target-provided external values using **`@Type/name`**, e.g. `@WCHNTGraphics/g`. These methods belong in the ordinary **`## Methods`** section. Declare the external class and any methods WCHNT calls in the target's **`%requires`** block. Example: `examples/shapes_openfl.wcn`.
 
-We still say “reaction” informally for this part of the language (immutable-ish methods, constructions, expressions). The file section is **Methods**. Mutation is handled through `update` constructions and identity slots, not a separate program phase.
+We still say “reaction” informally for this part of the language (immutable-ish methods, constructions, expressions). The file section is **Methods**. Mutation is handled through `update!` constructions and identity slots, not a separate program phase.
 
 `doc/reaction_phase.md` is an archived early sketch (superseded by this file). Language philosophy lives in `intro.md`. Schema rules for `$` and `>` slots live in `schema.md`. Target tick/inject patterns live in `target.md`.
 
@@ -18,9 +18,9 @@ Schema `$` (observable / subscriber) is a different idea from the Methods sectio
 2. **Calls on self.** `this.move()`. Bare `move()` is not allowed for now. We may add it as shorthand later.
 3. **Argument types.** Parameters may be bare names (`px`), schema types (`Rect/bounds`), or external types (`@Graphics/g`). Return types may be annotated after the block (`-> Void`, `-> Shape`). Inference still covers many cases; unknown names fail fast. A full WCHNT type checker is not v1.
 4. **Conditionals.** `if (cond) { … } else { … }` is an expression. Both branches are required. It transpiles to a Haxe `if` expression. `ifTrue` / `ifFalse` are not part of the language. `else if` chains are supported.
-5. **`$` and `update`.** `update` takes no arguments. When an observable finishes `update`, it calls `update()` on subscribers (sideways notify, not a tree walk). Naming a `$` field in a construction is a read; it does not tick that object again.
-6. **No automatic `update` of children.** Ordinary and `:context` children tick only if the parent writes `ball.update()` (or constructs a new child). Want automatic? Give that class its own `$` observable. Do not also call `ball.update()` from the parent or it ticks twice.
-7. **Identity slots mutate in place.** Mailbox (`>`) and observable (`$`) objects keep one instance for the life of the assemblage. In `update`, naming the slot keeps the reference; constructing the **same** class patches fields on `this.slot`, never `this.slot = new …`. Wrong class → compile error. See §5 and `schema.md`.
+5. **`$` and `update!`.** `update!` takes no arguments. When an observable finishes `update!`, it calls `update!()` on subscribers (sideways notify, not a tree walk). Naming a `$` field in a construction is a read; it does not tick that object again.
+6. **No automatic `update!` of children.** Ordinary and `:context` children tick only if the parent writes `ball.update!()` (or constructs a new child). Want automatic? Give that class its own `$` observable. Do not also call `ball.update!()` from the parent or it ticks twice.
+7. **Identity slots mutate in place.** Mailbox (`>`) and observable (`$`) objects keep one instance for the life of the assemblage. In `update!`, naming the slot keeps the reference; constructing the **same** class patches fields on `this.slot`, never `this.slot = new …`. Wrong class → compile error. See §5 and `schema.md`.
 
 ---
 
@@ -187,26 +187,42 @@ name.substring(0, 1)
 
 `substring(start, end)` is a half-open range. `times` takes a one-argument block; the argument is the index from 0. A statement-ending `.` glued to an `Int` literal is parsed as a method call (`4.n` is wrong); bind first: `n = ((((…))). n.times({ i | … })`. Array `concat` and index sugar are later.
 
-### 5. `update` (the one mutation) — Done
+### 5. Mutating methods (`!`) — Done
 
-`update` is the **only** mutation of live assemblage state. In source it looks like a construction of **the same class**, listing every field in schema order. Codegen installs those fields onto `this`, notifies subscribers if this object is observable, then `return this`. Ordinary methods still `return new Class(...)`.
+Methods whose names end in `!` mutate live assemblage state. They look like a construction of **the same class**, listing every field in schema order. Codegen installs those fields onto `this` and returns `this`. Ordinary methods remain pure and return new values.
 
-`update` takes no arguments (`notifySubscribers` calls `update()`). Every subscriber, every observable, and every `>` mailbox class must define it. `inject` is reserved: Target fills a mailbox, then `update` runs. Methods cannot define or call `inject`. See `target.md`.
+`update!` is the reactive entry point: it takes no arguments, and an observable calls `update!()` on its subscribers. Every subscriber, every observable, and every `>` mailbox class must define it. Other `!` methods may take arguments, but are still required to reconstruct their receiver and return it. `inject` is reserved: Target fills a mailbox, then `update!` runs. Methods cannot define or call `inject`. See `target.md`.
 
-There is **no implicit percolation** into children. `ball.update()` in the picture means: run Ball’s update in place; the slot value is that same Ball.
+#### Calling restrictions
+
+An ordinary method is pure: it may read fields, construct replacement values,
+and call other ordinary methods, but it may not call a mutating method whose
+name ends in `!`. A mutating method may call ordinary methods and other
+mutating methods. This gives the compiler a simple effect rule: mutation can
+flow outward through a `!` method, but a pure method cannot hide a mutation in
+its result.
+
+Every `!` method must belong to a mutable class — the root class of a program,
+an observable, a subscriber participating in `$`, or a `>` mailbox — and must
+return the receiver's own class. `update!` has no parameters because it is also
+the notification target; other `!` methods may accept parameters. In generated
+Haxe, `foo!` is emitted as `foo_mutates()` so the effect remains visible at the
+host boundary.
+
+There is **no implicit percolation** into children. `ball.update!()` in the picture means: run Ball’s update! in place; the slot value is that same Ball.
 
 #### Ordinary fields vs identity slots
 
-| Slot kind | Schema | In `Parent::update` | Codegen / interpreter |
+| Slot kind | Schema | In `Parent::update!` | Codegen / interpreter |
 |-----------|--------|---------------------|------------------------|
 | Ordinary (`Ball`, `Int`, …) | no `$` or `>` | `moved` or `[:Ball …]` | Replace: `this.ball = new Ball(…)` or assign evaluated value |
 | Observable (`$Time`) | `$` on parent slot | `time` (name only) | Keep reference: `this.time = this.time` |
-| Observable (self) | `$` type’s own `update` | `[:Time (t + 1)]` | Patch in place: `this.t = this.t + 1` |
+| Observable (self) | `$` type’s own `update!` | `[:Time (t + 1)]` | Patch in place: `this.t = this.t + 1` |
 | Mailbox (`>Keys`) | `>` class | `keys` or `[:Keys …]` | Keep reference or patch fields: `this.keys.left = …` |
 
 **Identity rule:** Types behind `$` slots and `>` mailbox classes are **identity objects** — one instance from Construction until teardown. They are never replaced by a different object. Subscribers, factory wiring, and Target `inject` all rely on stable references.
 
-In any `update` construction, for a slot whose type is observable or mailbox:
+In any `update!` construction, for a slot whose type is observable or mailbox:
 
 1. **Name the existing slot** (`time`, `keys`) → pass the reference through; no allocation.
 2. **Construct the same class** (`[:Time (t + 1)]`, `[:Keys left right up down]`) → **mutate fields in place** on the existing object. Haxe emits `this.time.t = …` or `this.keys.left = …`; the interpreter merges into the object’s live cell.
@@ -214,16 +230,16 @@ In any `update` construction, for a slot whose type is observable or mailbox:
 
 Replacing an identity slot with `new Keys(…)` (even the same class via a fresh construction that codegen would treat as replace) is forbidden when the construction class name does not match — and when it does match, patch-in-place is mandatory.
 
-**Ordinary slots** (`Ball`, `PlayArea`, …) are still **replaced** when `update` constructs a new value (`moved = [:Ball …]` → `this.ball = moved`). Listing an unchanged ordinary field by name (`playArea` in `[:Game playArea moved time]`) is a no-op; codegen omits the self-assignment (Haxe rejects `this.playArea = this.playArea`). That omit is not in-place mutation — only `$` and `>` slots patch fields on the existing object.
+**Ordinary slots** (`Ball`, `PlayArea`, …) are still **replaced** when a mutating method constructs a new value (`moved = [:Ball …]` → `this.ball = moved`). Listing an unchanged ordinary field by name (`playArea` in `[:Game playArea moved time]`) is a no-op; codegen omits the self-assignment (Haxe rejects `this.playArea = this.playArea`). That omit is not in-place mutation — only `$` and `>` slots patch fields on the existing object.
 
 #### Examples
 
 Target ticks the clock; Game moves on notify (`examples/bounce_loop.wcn`):
 
 ```
-Time::update = { [:Time (t + 1)] }
+Time::update! = { [:Time (t + 1)] }
 
-Game::update = {
+Game::update! = {
   ndx = this.bounceDx().
   ndy = this.bounceDy().
   moved = [:Ball (ball.x + ndx) (ball.y + ndy) ndx ndy ball.rad].
@@ -238,16 +254,16 @@ Game::update = {
 Mailbox pass-through after Target inject (`examples/square_openfl.wcn`):
 
 ```
-Keys::update = { [:Keys left right up down] }
+Keys::update! = { [:Keys left right up down] }
 ```
 
-Target `inject`s new bools; `Keys::update` copies the current fields back onto the same `Keys` instance (in place). Game reads `keys.left` in its own `update`.
+Target `inject`s new bools; `Keys::update!` copies the current fields back onto the same `Keys` instance (in place). Game reads `keys.left` in its own `update!`.
 
-Pollution game (`examples/pollution_openfl.wcn`): Game lists `time` and `keys` by name at the end of `Game::update` — both identity slots, no replacement.
+Pollution game (`examples/pollution_openfl.wcn`): Game lists `time` and `keys` by name at the end of `Game::update!` — both identity slots, no replacement.
 
 #### Notify contract
 
-When an **observable** finishes its own `update`, it calls `update()` on each subscriber with no arguments. That is sideways notify along `$` edges, not a recursive tree walk. Target drives the first tick (see `target.md`); Methods never loop.
+When an **observable** finishes its own `update!`, it calls `update!()` on each subscriber with no arguments. That is sideways notify along `$` edges, not a recursive tree walk. Target drives the first tick (see `target.md`); Methods never loop.
 
 ### 6. Arrays and maps inside methods
 
@@ -285,13 +301,13 @@ Positional `[:Ball x y dx dy rad]` still builds a new value from every field. A 
 
 - No source (`[:Rect | …]`) means `this`. The method’s class must be that class; otherwise name the source (`[:Ball ball | x = nx]`).
 - Dotted LHS paths rebuild ordinary objects along the path and leave sibling fields alone.
-- The form lowers to a full same-class construction, so `update` identity rules are unchanged: `$` / `>` slots that are not on the path stay the same reference; constructing the same identity class on a path still patches in place.
+- The form lowers to a full same-class construction, so `update!` identity rules are unchanged: `$` / `>` slots that are not on the path stay the same reference; constructing the same identity class on a path still patches in place.
 - Methods only. Construction must still write the whole positional picture.
 
 ```
-Time::update = { [:Time | t = (t + 1)] }
+Time::update! = { [:Time | t = (t + 1)] }
 
-Game::update = { [:Game | ball.x = (ball.x + ball.dx)] }
+Game::update! = { [:Game | ball.x = (ball.x + ball.dx)] }
 
 Game::widen = { [:Game | playArea.rect.width = (playArea.rect.width * 2)] }
 ```
@@ -348,7 +364,7 @@ See `examples/shapes_openfl.wcn`. Schema `@` fields (`Circle = … @Graphics`) a
 
 ## A small picture of the intended language
 
-`examples/bounce_loop.wcn` is the compiling version (PlayArea is Rect, bounce lives on Game, Target ticks `$Time`). A variant with `:PlayArea` and `ball.update()`:
+`examples/bounce_loop.wcn` is the compiling version (PlayArea is Rect, bounce lives on Game, Target ticks `$Time`). A variant with `:PlayArea` and `ball.update!()`:
 
 ## Schema
 
@@ -379,18 +395,18 @@ Ball::move = {
   [:Ball (x + dx) (y + dy) dx dy rad]
 }
 
-Ball::update = {
+Ball::update! = {
   hitX = (x < thePlayArea.x) or (x > (thePlayArea.x + thePlayArea.width)).
   ndx = if (hitX) { -dx } else { dx }.
   [:Ball (x + ndx) (y + dy) ndx dy rad]
 }
 
-Game::update = {
-  [:Game playArea this.ball.update() time]
+Game::update! = {
+  [:Game playArea this.ball.update!() time]
 }
 ```
 
-(`this.ball.update()` vs `ball.update()` for a field receiver is the same rule as field paths: `ball` is a field of Game, then `.update()`. `this` is for calling a method on the current object when there is no other receiver.)
+(`this.ball.update!()` vs `ball.update!()` for a field receiver is the same rule as field paths: `ball` is a field of Game, then `.update!()`. `this` is for calling a method on the current object when there is no other receiver.)
 
 That is enough, in principle, for a bouncing ball. Paddles, scores, and a Target `step` come after.
 
@@ -404,7 +420,7 @@ Each slice: an `examples/*.wcn` file, tests on Haxe strings, no Haxe compiler in
 2. **Field paths.** Done. `ball.x`, `playArea.rect.width`, `theCar.model`. Fail if a segment is not a component.
 3. **Method calls.** Done. Receiver required (`this.move()`, `ball.move()`, `playArea.rect.area()`). Arguments comma-separated. Fail if the method is not defined on that class or the arity is wrong.
 4. **`if` / `else` as an expression, and `map` / `filter` / `fold` on arrays.** Done.
-5. **`update` rules.** Done. In-place rewrite of `this`, identity slots patch not replace, `$` notify with no args, no child percolation.
+5. **`update!` rules.** Done. In-place rewrite of `this`, identity slots patch not replace, `$` notify with no args, no child percolation.
 6. **Array `concat` and index.** `times`, array `get(index)`, map `get`/`remove`, `head`/`tail`, and `substring` are done.
 6b. **Write paths.** Done. `[:Class | path = expr]` copies unspecified fields from `this` or a named source.
 7. **Target `%` expansion.** Done as expressions plus `%main` Haxe. Unknown `%name` fails. Methods are not auto-run.
@@ -419,7 +435,7 @@ Do not add a second grammar. Do not add `for` unless combinators on collections 
 - Whether Methods ever needs **`do { … }`** for sequential statements (see `doc/development_guideline.md`).
 - Bare `move()` as shorthand for `this.move()`.
 - A full WCHNT type checker.
-- Automatic `update` of `:context` children (explicitly not this).
+- Automatic `update!` of `:context` children (explicitly not this).
 - Schema `@` field construction/codegen (distinct from Methods `@Type/name`).
 - Index syntax sugar.
 - `Class::method()` with parentheses in the definition (old `reaction_phase.md` spelling).

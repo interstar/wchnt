@@ -1,6 +1,6 @@
 "use strict";
 
-const { app, BrowserWindow, protocol, net, shell } = require("electron");
+const { app, BrowserWindow, protocol, net, shell, Menu } = require("electron");
 const path = require("path");
 const { pathToFileURL } = require("url");
 
@@ -64,6 +64,61 @@ function createWindow() {
   win.loadURL("wchnt://live/index.html");
 }
 
+function buildMenu() {
+  const template = [
+    {
+      label: "File",
+      submenu: [
+        {
+          label: "Reset wiki…",
+          accelerator: "CmdOrCtrl+Shift+Alt+W",
+          click: (_item, focusedWindow) => {
+            if (focusedWindow) {
+              focusedWindow.webContents.executeJavaScript("wchntReset()");
+            }
+          }
+        },
+        { type: "separator" },
+        { role: "quit" }
+      ]
+    },
+    {
+      label: "Edit",
+      submenu: [
+        { role: "undo" },
+        { role: "redo" },
+        { type: "separator" },
+        { role: "cut" },
+        { role: "copy" },
+        { role: "paste" },
+        { role: "selectAll" }
+      ]
+    },
+    {
+      label: "View",
+      submenu: [
+        { role: "reload" },
+        { role: "forceReload" },
+        { role: "toggleDevTools" },
+        { type: "separator" },
+        { role: "resetZoom" },
+        { role: "zoomIn" },
+        { role: "zoomOut" },
+        { type: "separator" },
+        { role: "togglefullscreen" }
+      ]
+    },
+    {
+      label: "Window",
+      submenu: [
+        { role: "minimize" },
+        { role: "close" }
+      ]
+    }
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
 app.whenReady().then(() => {
   protocol.handle("wchnt", (request) => {
     const filePath = publicFile(request.url);
@@ -73,6 +128,7 @@ app.whenReady().then(() => {
     return net.fetch(pathToFileURL(filePath).href);
   });
 
+  buildMenu();
   createWindow();
 
   app.on("activate", () => {

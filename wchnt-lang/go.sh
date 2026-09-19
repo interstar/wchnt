@@ -37,6 +37,10 @@ if lein run "$WCHNT_FILE" > "$HAXE_FILE" < /dev/null; then
     echo "✅ WCHNT → Haxe: $HAXE_FILE"
 else
     echo "❌ WCHNT compilation failed"
+    if [ -s "$HAXE_FILE" ]; then
+        printf "Compiler diagnostic: " >&2
+        head -n 1 "$HAXE_FILE" >&2
+    fi
     exit 1
 fi
 

@@ -21,8 +21,8 @@ The program is then split into layers that change at different speeds:
 | Import / Public | what may *another* assemblage see? (optional membrane) |
 | Schema | what is this cluster of objects, and how are they related? |
 | Construction | what data does it start with? |
-| Methods | how does it behave? |
-| Target | which platform does it run on? |
+| Methods | how does it behave, including calls on host objects provided by Target? |
+| Target | which platform runs it, and how does the host drive each frame? |
 
 That layering is borrowed from the idea of **shearing layers**: things that evolve at different
 rates should live in different places.
@@ -35,9 +35,9 @@ relationship between the two objects. Five sigils capture the useful cases.
 | Sigil | Name | What it says |
 |-------|------|--------------|
 | *(none)* | **ordinary component** | the parent owns the child; they're built together and live together |
-| `:` | **context-specific component** | the child exists only inside this parent, and can see the whole assemblage through a back-reference |
+| `:` | **context-dependent component** | the child exists only inside this parent, and can see the whole assemblage through a back-reference |
 | `@` | **external** | the parent *uses* an object whose true home is elsewhere — borrowed, not owned; across pages, an opaque handle. Construction: a call, or a free name that becomes a factory argument (first appearance, left to right). Not `_`, not in-place construction |
-| `$` | **reactive** | the parent subscribes to the child; when the child updates, the parent updates too |
+| `$` | **reactive** | the parent subscribes to the child; when the child `update!`s, the parent `update!`s too |
 | `+` | **delegate** | the parent owns the child *and* promotes its fields and methods. Read `Student = String/id +BasePerson` as: a Student is an id plus a BasePerson. Not a subtype — write a sum if you need a shared type |
 
 A further mark, `>` on the class name itself, declares a **mailbox**: an object the Target (the
@@ -50,28 +50,49 @@ The guiding image is **multiple membranes**. Inside an assemblage, coupling is t
 Between an assemblage and the outside world, coupling is loose. WCHNT makes that distinction
 explicit instead of leaving it implicit in the code.
 
-## Purity, with one deliberate mutation
+## Values by default; identity where it matters
 
-Methods are deliberately small and mostly pure: they return new values rather than changing state.
-The single exception is **`update()`**, which rewrites an object in place.
+Most methods are pure: they return new values rather than changing state. Mutability is not a
+special privilege of one method name. The compiler marks certain classes as **mutable**
+(identity-bearing):
 
-That one mutation is what makes **reactive** dependencies work. A `$` slot marks an
-*observable*; when its `update()` finishes, it notifies its subscribers, and each subscriber's
-`update()` runs in turn. It's a sideways, explicit signal — not an implicit tree walk. Children
-don't update unless their parent says so.
+- the **root** class of Construction
+- **`$` observables** (e.g. `Time` behind `$Time`)
+- **`$` subscribers** (e.g. `Game` when it owns `$Time`)
+- **`>` mailbox** classes
 
-This gives you a functional-feeling core (easy to reason about) with just enough live identity
-to model a changing world (a clock, a keyboard, a moving ball).
+Only those classes may define methods whose names end in `!`. Ordinary classes (`Ball`,
+`Pollutant`, …) stay replaceable values.
+
+`update!` is the reactive entry point: it takes no arguments, rewrites `this` in place, and — if
+the receiver is an observable — notifies subscribers so their `update!` runs next. Other `!`
+methods may take arguments. Pure methods may not call `!` methods.
+
+`$` is a sideways notify edge, not a tree walk. Children do not `update!` unless their parent
+says so (or they have their own `$`). Mailboxes are filled by Target `inject`, then run their
+own `update!`.
 
 Methods stay expressions: `let` bindings, `if` / `else`, collection combinators, and
 **write-paths** (`[:Ball | x = nx]`) that copy unspecified fields. Strings do not use `+` for
 concatenation; they use `.concat` or **`tpl`**, which fills `{name}` holes from a
 `{String:String}` map.
 
-## Target: the shearing layer for the platform
+## Target: keep the host thin
 
 Schema, Construction, and Methods describe *your* assemblage. Target describes the *outer
 environment* — and it's the layer you swap when you move from a terminal to a window to a browser.
+
+Best practice for a frame-driven game:
+
+1. Put simulation in Methods (`Time::update!`, `Game::update!`, …).
+2. Put drawing in Methods (`Game::draw = { @WCHNTGraphics/g | … }`); declare required host APIs in Target.
+3. Leave Target as a short harness: create with `GameAssemblage.factory()`, inject mailboxes,
+   tick `$Time`, call `assemblage.draw(wchntGraphics)`.
+
+That way OpenFL and canvas Targets differ only in how they read keys and which `%` host they name.
+See [Pollution](pollution.html) and the lander / shapes examples.
+
+Current hosts:
 
 - **`%terminal`** — a Haxe program with a `main()`; `go.sh` compiles and runs it.
 - **`%cli`** / **`%cli-live`** — a line-oriented text host (`init` / `step(line)`), with
@@ -80,8 +101,8 @@ environment* — and it's the layer you swap when you move from a terminal to a 
 - **`%canvas`** — the browser interpreter, with JavaScript `init()` / `step()`. This is what the
   **[Play](play/)** page runs.
 
-The point: your Schema, Construction, and Methods stay identical across hosts. Only Target
-changes. That's the shearing-layer idea applied to deployment.
+The point: your Schema, Construction, and Methods stay identical across graphics
+hosts. Only Target changes. That's the shearing-layer idea applied to deployment.
 
 ## The live system
 
@@ -101,9 +122,9 @@ edit an assemblage and watch it run.
 The source repository keeps the precise, up-to-date specs in `doc/`. If this site and the code
 disagree, the code and its examples win. Key files:
 
-- `doc/schema.md` — Schema: five sigils, types, identity slots, Import / Public
+- `doc/schema.md` — Schema: five sigils, types, identity / mutability, Import / Public
 - `doc/import.md` — the inter-assemblage membrane
-- `doc/method.md` — Methods, `update`, write-paths, `tpl`, interfaces, `@` externs
+- `doc/method.md` — Methods, `update!`, write-paths, `tpl`, interfaces, `@` externs
 - `doc/target.md` — Target hosts and the inject-then-tick pattern
 - `doc/live.md` — the live interpreter and browser page
 - `doc/plan.md` — the compiler architecture and what's next

@@ -2,18 +2,20 @@
 
 A simple arcade game. As you move your yellow ball around with the arrow keys, you throw off red balls of waste. Try to survive for as long as possible without hitting any of it.
 
-Try it here : [Play](play/)
-
+Try it here: [Play](play/?page=pollution)
 
 ## Schema
 
-This schema defines all the classes used in the game. 
+This schema defines all the classes used in the game.
 
 ### Notes
-* `Keys` is a "mailbox" object, whose values are set by the external harness.
-* The `Game` class declares itself to be reactively dependent on `Time`, so the Game's `update` is automatically called whenever the Time object is updated.
-* `[Pollutant]/pollutants` uses square bracket notation that declares an array (or list). Arrays (and maps) must always be given an explicit name. 
 
+* `>Keys` is a **mailbox**: Target injects the held-arrow snapshot each frame.
+* `$Time` makes `Time` an **observable** and `Game` a **subscriber**. When Time finishes
+  `update!`, Game’s `update!` runs automatically.
+* `[Pollutant]/pollutants` declares an array. Array and map fields need an explicit name.
+* Ordinary classes (`Player`, `Pollutant`, `Rect`, …) stay **immutable values**. Only the root,
+  `$` participants, and `>` mailboxes may use `!` methods.
 
 ```
 >Keys = Bool/left Bool/right Bool/up Bool/down
@@ -27,13 +29,14 @@ Time = Int/t
 
 ## Construction
 
-The initial conditions of entire assemblage is declared here using *hiccup* notation.
+The initial conditions of the entire assemblage are declared here using *hiccup* notation.
 
 ### Notes
-* `[:Player 400 300 5 0 20]` is a simple object construction with the values mapped to fields in the same order as they are declared in the schema.
-* `[:PlayArea [0 0 800 600]]` uses a convenient shorthand. PlayArea contains a Rect which actually hold's the PlayArea's dimensions. But because it is unambiguous in this case, we can skip the `:Rect` label at the beginning of the inner list.
-* `[:Array/Pollutant]` is an empty list in this case.
-* Even though `Keys` is intended to have its values injected by the external harness, it's still a normal component of Game.
+
+* `[:Player 400 300 5 0 20]` maps values to fields in schema order.
+* `[:PlayArea [0 0 800 600]]` drops the unambiguous `:Rect` label on the inner object.
+* `[:Array/Pollutant]` is an empty list.
+* `Keys` is still constructed here even though Target will overwrite its fields via `inject`.
 
 ```
 [:Game
@@ -50,24 +53,24 @@ The initial conditions of entire assemblage is declared here using *hiccup* nota
 
 ## Methods
 
-This is where we write the behaviour of the assemblage
+Platform-independent behaviour lives here.
 
-Notes :
-* Methods are names bound to code blocks. A code block has the syntax { paramaters | expression}.
-* Almost all methods are expressions that return a new value which is either a primitive or an object. To construct a new return object we use the same syntax as the Construction phase of the program.
-* `update` is a special method. It's the one method of an object which is considered to mutate it "in place".
-* `Time`'s `update` is triggered from the clock in the harness. It looks like it's returning a new Time object, but because it's the update, this will be compiled into a mutation.
-* `Keys`, because it is a mailbox (`>`) object, actually has its values set from outside. Its update doesn't actually do anything, but needs to exist because the external harness will call an update after injecting new values into it. Target injects keys every frame, then ticks `$Time` so `Game::update` runs once.
-* Methods are either single expessions or a "let binding" ie. a sequence of further definitions, separated by `.` and then a final expression. 
-* The `if` in WCHNT is a conditional expression. Not a control structure.
-* Arrays have a `map` method which takes an anonymous code block / lambda and maps it across all members of the array. Eg. `movedObs = pollutants.map({ Pollutant/p | p.move(r) }).`
-* Arrays also have a `fold` (aka "reduce" in other languages) function. Which lets you reduce the whole collection to a single value. In `hit = movedObs.fold(false, { acc, o | if (acc) { true } else { movedP.collides(o) } }).` we are testing each of the pollutants in `movedObs` to see if the player in `movedP` collided with it. Note that the accumulator is the first argument to the fold, and the collection is the block.
+### Notes
 
+* Methods are names bound to code blocks: `{ parameters | expression }`.
+* Ordinary methods return new values. Mutating methods end in `!` and rewrite `this` in place.
+* `Time::update!` is ticked from Target. It looks like a construction, but installs fields on
+  the existing `Time` and then notifies `Game`.
+* `Keys::update!` is a pass-through after inject: the mailbox keeps identity; fields were just
+  written by Target.
+* Target injects keys every frame, then ticks `$Time`, so `Game::update!` runs once per frame.
+* Statements in a block are separated by `.`; the last expression is the result.
+* `if` is an expression. Arrays have `map`, `fold`, and `cons`.
 
 ```
-Time::update = { [:Time (t + 1)] }
+Time::update! = { [:Time (t + 1)] }
 
-Keys::update = { [:Keys left right up down] }
+Keys::update! = { [:Keys left right up down] }
 
 Player::speed = {
   ax = if (dx < 0) { -dx } else { dx }.
@@ -118,7 +121,7 @@ Game::makePollutant = { Player/p |
   [:Pollutant sx sy (-p.dx) (-p.dy) prad]
 }
 
-Game::update = {
+Game::update! = {
   r = playArea.rect.
   udx = (if (keys.right) { 1 } else { 0 }) + (if (keys.left) { -1 } else { 0 }).
   udy = (if (keys.down) { 1 } else { 0 }) + (if (keys.up) { -1 } else { 0 }).
@@ -145,9 +148,37 @@ Game::update = {
 }
 ```
 
+## Drawing methods
+
+Drawing needs a host graphics surface, so draw methods accept `@WCHNTGraphics/g` in the ordinary
+Methods section. Declare the graphics calls used in Target's `%requires`. These methods stay shareable
+between `%canvas` and `%openfl`. Draw helpers return the graphics handle so collections can
+`fold` them, matching the lander / shapes style.
+
+```
+Player::draw = { @WCHNTGraphics/g |
+  g.beginFill(13154404).drawCircle(x, y, rad).endFill()
+}
+
+Pollutant::draw = { @WCHNTGraphics/g |
+  g.beginFill(16737764).drawCircle(x, y, rad).endFill()
+}
+
+Game::draw = { @WCHNTGraphics/g |
+  r = playArea.rect.
+  bg = g.beginFill(0).drawRect(0, 0, r.width, r.height).endFill().
+  border = g.lineStyle(2, 65280).drawRect(r.x, r.y, r.width, r.height).noStroke().
+  afterObs = pollutants.fold(border, { acc, Pollutant/o | o.draw(acc) }).
+  player.draw(afterObs).beginFill(13154404).fillText("Score: {score}".tpl({String:String "score": score.str()}), 12, 24)
+} -> Void
+```
+
+Colours are packed RGB integers (`13154404` is `0xc8c864`, `16737764` is `0xff6464`,
+`65280` is `0x00ff00`).
+
 ## Target
 
-Almost 
+The host only wires input, ticks the clock, and asks the assemblage to draw.
 
 ```
 %canvas
@@ -156,31 +187,17 @@ Almost
 var assemblage;
 
 function init() {
-    assemblage = gameFactory();
+    assemblage = GameAssemblage.factory();
 }
 
 %step
 function step() {
     var k = input.keys;
     assemblage.keys.inject(!!k["ArrowLeft"], !!k["ArrowRight"], !!k["ArrowUp"], !!k["ArrowDown"]);
-    assemblage.time.update();
-    var r = assemblage.playArea.rect;
-    var p = assemblage.player;
+    assemblage.time["update!"]();
     wchntGraphics.clear();
-    wchntGraphics.beginFill(0x000000);
-    wchntGraphics.drawRect(0, 0, r.width, r.height);
-    wchntGraphics.endFill();
-    wchntGraphics.lineStyle(2, 0x00ff00);
-    wchntGraphics.drawRect(r.x, r.y, r.width, r.height);
-    for (var o of assemblage.pollutants) {
-        wchntGraphics.beginFill(0xff6464);
-        wchntGraphics.drawCircle(o.x, o.y, o.rad);
-        wchntGraphics.endFill();
-    }
-    wchntGraphics.beginFill(0xc8c864);
-    wchntGraphics.drawCircle(p.x, p.y, p.rad);
-    wchntGraphics.endFill();
-    wchntGraphics.fillText("Score: " + assemblage.score, 12, 24);
+    assemblage.draw(wchntGraphics);
 }
-
 ```
+
+Click the play area after Run so arrow keys reach the canvas.

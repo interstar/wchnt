@@ -37,7 +37,7 @@ WCHNT reorganizes traditional OO programming into Stewart Brand's "Shearing Laye
 
 #### In Reaction Phase (Platform-Independent):
 ```wchnt
-Ball::update() = 
+Ball::update! =
   trace(x)  // Abstract concept - we want to see this value
   [:Ball (x + dx) (y + dy) dx dy radius]
 ```
@@ -83,7 +83,7 @@ This pattern applies to many cross-cutting concerns:
 #### Performance Monitoring:
 ```wchnt
 // Reaction phase
-Game::update() = 
+Game::update! =
   profile("game-update")
   // ... update logic
 ```
@@ -91,7 +91,7 @@ Game::update() =
 #### UI Binding:
 ```wchnt
 // Reaction phase  
-Score::update() = 
+Score::update! =
   bind("score-display")
   [:Score newValue]
 ```
@@ -99,7 +99,7 @@ Score::update() =
 #### Network Communication:
 ```wchnt
 // Reaction phase
-Player::update() = 
+Player::update! =
   sync("player-state")
   [:Player newData]
 ```
@@ -115,4 +115,3 @@ The Target phase serves as a **code generation template** that defines how abstr
 ### Future Extensibility
 
 As WCHNT evolves, new abstract concepts can be added in the first four phases, then implemented appropriately for each target platform in the Target phase. This provides a clean separation between language features and platform capabilities.
-

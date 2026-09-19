@@ -4,9 +4,9 @@ This tutorial walks through a complete, runnable WCHNT program — a ball bounci
 You can follow along in the **[Play](play/)** page: paste each piece, press **Run**, and watch it
 move. **This first draft is written by AI. But will shortly be rewritten by a human**
 
-By the end you'll have seen the four layers that make up every WCHNT program: **Schema**,
-**Construction**, **Methods**, and **Target**. Optional **Import** / **Public** sections
-let one page reuse another; the [Guide](guide.html) covers those.
+By the end you'll have seen the layers that make up every WCHNT program: **Schema**,
+**Construction**, **Methods**, and **Target**. Optional **Import** /
+**Public** sections let one page reuse another; the [Guide](guide.html) covers those.
 
 ## 1. The file is markdown
 
@@ -21,10 +21,10 @@ code blocks under a few reserved headings:
 … the initial data …
 
 ## Methods
-… behaviour …
+… behaviour, including calls to host APIs declared by Target …
 
 ## Target
-… how to run it …
+… how the host drives each frame …
 ```
 
 Order matters, and each section appears at most once. `## Import` (if present) comes first.
@@ -54,7 +54,7 @@ Read it like this:
 - `Ball` has a position (`x`, `y`), a velocity (`dx`, `dy`), and a radius `rad`.
 
 The `:` in front of `Ball` is a **relationship sigil**. It makes the ball a
-*context-specific component*: the ball belongs to this particular game, and it gets an automatic
+*context-dependent component*: the ball belongs to this particular game, and it gets an automatic
 back-reference called `theGame` so its methods can reach the rest of the assemblage. We use that
 below when the ball bounces off the play area.
 
@@ -127,16 +127,44 @@ Things to unpack:
 - **`if` is an expression**, so it returns a value directly. `or` and `and` combine conditions.
 - **Constructor arguments are spaced, not comma-separated**, so `(ball.x + ndx)` needs parentheses.
 
-`Game::step` returns a **new** `Game` — same `playArea`, new `ball`. Methods are mostly pure:
-they return new data rather than mutating.
+`Game::step` returns a **new** `Game` — same `playArea`, new `ball`. Ordinary methods are pure:
+they return new data rather than mutating. In-place mutation is reserved for **mutable**
+classes (the Construction root, `$` observables and their subscribers, and `>` mailboxes)
+and is written with a method name ending in `!` — most often `update!`. See the Guide.
 
 > **Typed arguments.** A method parameter is just a name (`px`), but you can annotate it with a
 > type when the compiler needs it for field access: `Rect/bounds`. More on this in the Guide.
 
-## 5. Target — where it runs
+## 5. Methods — drawing with the host surface
+
+Drawing needs a host graphics object, so the draw methods accept an
+`@WCHNTGraphics/g` parameter in the ordinary **Methods** section. Declare the
+graphics calls used in the Target's `%requires` subsection. This lets `%canvas`
+and `%openfl` share the same draw code.
+
+````markdown
+```
+Ball::draw = { @WCHNTGraphics/g |
+  g.beginFill(15921906).drawCircle(x, y, rad).endFill()
+}
+
+Game::draw = { @WCHNTGraphics/g |
+  r = playArea.
+  bg = g.beginFill(2769450).drawRect(r.x, r.y, r.width, r.height).endFill().
+  ball.draw(g)
+} -> Void
+```
+````
+
+Colours are packed RGB integers (`2769450` is `0x2a2a2a`, `15921906` is `0xf2f2f2`).
+`Ball::draw` returns the graphics handle so callers can chain; `Game::draw` is
+annotated `-> Void` because it is only called for its side effect.
+
+## 6. Target — where it runs
 
 The last layer names the *outer environment*. That's what changes when you move from a terminal
-to a window to a browser. The **[Play](play/)** page uses the `%canvas` host:
+to a window to a browser. Keep it thin: build the assemblage, advance it, hand it the
+graphics surface. The **[Play](play/)** page uses the `%canvas` host:
 
 ````markdown
 ## Target
@@ -148,39 +176,42 @@ to a window to a browser. The **[Play](play/)** page uses the `%canvas` host:
 var assemblage;
 
 function init() {
-    assemblage = gameFactory();
+    assemblage = GameAssemblage.factory();
 }
 
 %step
 function step() {
     assemblage = assemblage.step();
-    var r = assemblage.playArea;
-    var b = assemblage.ball;
     wchntGraphics.clear();
-    wchntGraphics.beginFill(0x2a2a2a);
-    wchntGraphics.drawRect(r.x, r.y, r.width, r.height);
-    wchntGraphics.endFill();
-    wchntGraphics.beginFill(0xf2f2f2);
-    wchntGraphics.drawCircle(b.x, b.y, b.rad);
-    wchntGraphics.endFill();
+    assemblage.draw(wchntGraphics);
 }
 ```
 ````
 
-The browser harness runs `init` once and `step` every frame. `gameFactory()` builds your
-assemblage; `assemblage.step()` advances it; [`wchntGraphics`](wchntgraphics.html) draws it. Target code is real
-JavaScript here — but Schema, Construction, and Methods stay exactly the same across hosts.
+The browser harness runs `init` once and `step` every frame.
+`GameAssemblage.factory()` builds your assemblage (the name comes from the
+Construction root class); `assemblage.step()` advances it by returning a new
+`Game` value; `assemblage.draw(wchntGraphics)` paints via Methods.
+[`wchntGraphics`](wchntgraphics.html) is the portable drawing surface. Target
+code is real JavaScript here — Schema, Construction, and Methods
+stay the same across graphics hosts.
 
-## 6. Run it
+This tutorial uses a pure `step` that returns a new root. The root class is
+also allowed to define mutating `!` methods (see the Guide). For a reactive
+clock, Schema would add `$Time`, both `Time` and `Game` would define
+`update!`, and Target would tick `assemblage.time["update!"]()` instead of
+assigning `assemblage = assemblage.step()`.
+
+## 7. Run it
 
 Open **[Play](play/)**, then click **New** and give the page a name (e.g. `bounce`) so you get a
 fresh page to work in — the editor opens a blank page ready to edit. Paste the full program
 above into that page and press **Run**. A grey ball should bounce inside the box. Try changing
-the ball's radius or velocity in Construction, or the wall colour in Target.
+the ball's radius or velocity in Construction, or the colours in its draw method.
 
-## 7. More of the language
+## 8. More of the language
 
-The bounce program uses ordinary fields and one context-specific `:` ball. The rest of
+The bounce program uses ordinary fields and one context-dependent `:` ball. The rest of
 the language is in the **[Guide](guide.html)**. A short map:
 
 **Delegation (`+`).** A class can be its extras *plus* an inner object. Fields and
@@ -207,10 +238,14 @@ concatenate — use `.concat` or `tpl`.
 methods (`realm.make(...)`). A published interface can be implemented locally:
 `Pentagon : Shape = Int/x …`.
 
-**Reactive `update` and mailboxes.** `$Time` notifies `Game::update`. `>Keys` is a
-mailbox Target may `inject`. The [Pollution](pollution.html) game uses both.
+**Reactive `update!` and mailboxes.** `$Time` makes `Time` an observable: its
+`update!` notifies subscribers such as `Game::update!`. A class marked `>Keys`
+is a mailbox — Target may `inject` a snapshot, then the mailbox’s `update!`
+runs. The [Pollution](pollution.html) game uses both. Ordinary classes like
+`Ball` stay immutable values unless they are also the root or participate in `$`
+/ `>`.
 
 ## Where next
 
 The **[Guide](guide.html)** is the full language tour — all five relationship sigils,
-Import / Public, write-paths, `tpl`, collections, `update()`, and the Target hosts.
+Import / Public, write-paths, `tpl`, collections, mutability / `update!`, and the Target hosts.

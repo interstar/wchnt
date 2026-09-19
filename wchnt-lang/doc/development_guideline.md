@@ -8,7 +8,7 @@ This file collects **implementation gotchas**: places where the two backends (Ha
 
 ---
 
-## Interpreter vs Haxe: identity and `update`
+## Interpreter vs Haxe: identity and `update!`
 
 ### What the language says
 
@@ -16,11 +16,11 @@ WCHNT distinguishes:
 
 | Role | Example | Contract |
 |------|---------|----------|
-| **Observable** | `Time` behind `$Time` | After `update`, notifies subscribers |
-| **Subscriber** | `Game` (parent of a `$` slot) | Defines `update`; called when an observable ticks |
+| **Observable** | `Time` behind `$Time` | After `update!`, notifies subscribers |
+| **Subscriber** | `Game` (parent of a `$` slot) | Defines `update!`; called when an observable ticks |
 | **Identity slot** | `$` observables, `>` mailboxes | One instance for the life of the assemblage; fields patch in place |
 
-Ordinary children (`Player`, `Ball`, `Pollutant`, …) are **not** identity objects: `Game::update` may replace them with new constructions each frame.
+Ordinary children (`Player`, `Ball`, `Pollutant`, …) are **not** identity objects: `Game::update!` may replace them with new constructions each frame.
 
 See `method.md` §5 and `schema.md` for the user-facing rules.
 
@@ -29,7 +29,7 @@ See `method.md` §5 and `schema.md` for the user-facing rules.
 **Haxe** (`ir_to_haxe.cljc`):
 
 - Subscriber classes such as `Game` are **normal classes** with public fields.
-- `Game::update` assigns `this.player = …`, `this.score = …`, etc. on the same `this`.
+- `Game::update!` assigns `this.player = …`, `this.score = …`, etc. on the same `this`.
 - **Identity-slot** rules apply only to **child types** that are observables or mailboxes (`identity-slot-type?` = `$` type or `>` class).
 - Only **observable** classes get `subscribe` / `notifySubscribers` infrastructure.
 
@@ -37,13 +37,13 @@ See `method.md` §5 and `schema.md` for the user-facing rules.
 
 - `identity-object?` is broader: observables **and** subscribers **and** mailboxes.
 - Those classes are stored as `{:wchnt/class … :wchnt/cell (atom fields) …}`.
-- All `update` calls go through `apply-update`, which mutates the atom and (for observables) notifies subscribers.
+- All `update!` calls go through `apply-mutating-method`, which mutates the atom and (for observables) notifies subscribers.
 
 So `Game` is an “identity object” in the interpreter’s storage model, but **not** in the language spec or Haxe codegen. That is intentional: the interpreter needs a uniform mutable handle; Haxe already has `this`.
 
 ### Safe to ignore for normal WCHNT
 
-If code stays on the intended surface — Methods `update` constructions, Target `inject` / `time.update()`, live JS view property reads — both backends agree. No game author or Target author needs to know about `:wchnt/cell`.
+If code stays on the intended surface — Methods `update!` constructions, Target `inject` / `time.update_mutates()`, live JS view property reads — both backends agree. No game author or Target author needs to know about `:wchnt/cell`.
 
 The asymmetry only matters when **tooling or tests bypass the public API**.
 
@@ -52,7 +52,7 @@ The asymmetry only matters when **tooling or tests bypass the public API**.
 #### Do
 
 - Drive behaviour through **`interpret/call`** and **`interpret/get-field`** (JVM) or the **JS view** (`js-view/as-js`, `js-view/wrap`) in browser tests.
-- Tick reactive games the way Target does: **`interpret/call` … `"update"` on the observable** (e.g. `time`), not by calling `Game::update` directly unless you are explicitly testing that entry point.
+- Tick reactive games the way Target does: **`interpret/call` … `"update!"` on the observable** (e.g. `time`), not by calling `Game::update!` directly unless you are explicitly testing that entry point.
 - For live/canvas tests, treat **`assemblage.pollutants`** as a **JavaScript array** after the view layer (see `js_view.cljc`); use `for…of` or indexed access, not assumptions about Clojure vectors.
 - Put shared semantics in **`test/wchnt_lang/semantics_test.cljc`** (`#?(:clj …)` / `#?(:cljs …)`) when both backends should match.
 - Reset observable state via **`reset!` on `(:wchnt/cell time)`** (or the relevant slot) when a test needs a specific clock frame — see existing pollution tests.
@@ -60,7 +60,7 @@ The asymmetry only matters when **tooling or tests bypass the public API**.
 #### Do not
 
 - Read interpreter fields with **`(:player root)`** or **`get-in` without `get-field`**. On identity objects, fields live inside **`(:wchnt/cell obj)`**, not on the outer map.
-- Mutate game state with **`assoc` / `swap!` on the root map** outside `install-update` / `call`. Use `get-field` + `call`, or `swap!` on the **cell** only when simulating host injection (and document why).
+- Mutate game state with **`assoc` / `swap!` on the root map** outside `install-update!` / `call`. Use `get-field` + `call`, or `swap!` on the **cell** only when simulating host injection (and document why).
 - Assume **`Game` is a plain map of fields** in the interpreter because Haxe exposes `game.player` as a public var.
 - Assume **subscriber classes** get the same identity-slot codegen as `$Time` or `>Keys` in Haxe — they do not; only their **child** observable/mailbox slots do.
 - Write tests that depend on **`:wchnt/cell`**, **`:wchnt/subscribers`**, or other interpreter internals unless the test namespace is explicitly `#?(:clj …)` and the test is **about** the interpreter implementation.
@@ -71,7 +71,7 @@ The asymmetry only matters when **tooling or tests bypass the public API**.
 (let [{:keys [schema-ir methods-ir root]} (load-example "pollution_canvas")
       time (interpret/get-field root "time")]
   (reset! (:wchnt/cell time) {:t 399})
-  (interpret/call schema-ir methods-ir time "update" [])
+  (interpret/call schema-ir methods-ir time "update!" [])
   (is (= 1 (count (interpret/get-field root "pollutants")))))
 ```
 
@@ -82,7 +82,7 @@ The asymmetry only matters when **tooling or tests bypass the public API**.
 (is (= 1 (count (:pollutants root))))
 
 ;; Bypasses reactive notify chain unless you know exactly why.
-(interpret/call schema-ir methods-ir root "update" [])
+(interpret/call schema-ir methods-ir root "update!" [])
 ```
 
 ### When to fix the backend instead of the test
@@ -96,6 +96,29 @@ If a test uses `get-field` / `call` / the JS view and **Haxe and the interpreter
 When you hit a recurring foot-gun (pipeline cargo, grammar edge cases, Target JS subset, live wiki storage, …), add a short section here: **what users expect**, **what the code actually does**, **what test authors must do**.
 
 Keep user-facing semantics in the main doc set; keep this file for **maintainer** concerns only.
+
+---
+
+## Numeric type parity
+
+The implemented numeric lattice is `Int <: Float`.
+
+- `type-join` in `reaction.cljc` gives mixed numeric branches the type `Float`.
+- `type-assignable?` and method argument checking allow automatic `Int` to
+  `Float` widening, but never implicit Float to Int narrowing.
+- Parameter inference carries a numeric context through arithmetic,
+  comparisons, and negation, so an explicit or contextual Float is not
+  re-inferred as Int.
+- Float narrowing is explicit through `toInt`, `floor`, `ceil`, and `round`.
+  These are language built-ins, not a dependency on `WCHNTMaths`.
+- The interpreter implements the operations directly. Haxe emission lowers
+  them to `Std.int`, `Math.floor`, `Math.ceil`, and `Math.round`. Live builds
+  use the corresponding ClojureScript/JavaScript operations.
+
+When changing numeric inference or expression emission, test both a Float
+conditional involving negation and the explicit conversion methods. A passing
+Haxe-string test is useful, but runtime coverage should exercise the JVM
+interpreter and the live ClojureScript compilation path as well.
 
 ---
 
@@ -151,14 +174,14 @@ The open design question is whether Methods needs **`do { … }`** for sequentia
 **Pros of `do`:**
 
 - Natural order for side-effectful host calls (`g.beginFill(); g.drawRect(); g.endFill()`) without chained-call workarounds.
-- Target Methods with `@Graphics` read more like the host API.
+- Methods that take `@Graphics` can keep platform-facing behavior together; `%requires` documents the host API surface they rely on.
 - Local debugging / logging sequences without nested `let` chains.
 
 **Cons:**
 
 - Second evaluation model beside “one expression per method / branch”.
 - Complicates the interpreter and Haxe backends (statement vs expression).
-- Invites imperative style in Methods, which the language has deliberately kept functional + `update` for mutation.
+- Invites imperative style in Methods, which the language has deliberately kept functional + `update!` for mutation.
 
 **Current stance:** keep Methods as **expression + `let` bindings + final value**; use chained calls (Haxe Void unroll) or separate methods for host drawing. Revisit `do` only if Void unrolling and `let` chains prove insufficient in real examples (shapes, Pong, Gbloink!).
 

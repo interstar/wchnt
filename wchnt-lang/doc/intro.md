@@ -14,10 +14,9 @@ The four core sections are:
 - Methods
 - Target
 
-Plus three optional sections:
+Plus two optional sections:
 - **Import** (must come first)
 - **Public**
-- **Target Methods**
 
 ### Class relationships in the Schema
 
@@ -106,13 +105,13 @@ Game = PlayArea Ball $Time
 
 In this context, while PlayArea and Ball are components of the Game, the Time is taken to be an external and changeable value. It is visible anywhere within the Game object using the name time. 
 
-When a slot is marked with the `$` sigil, its class becomes an "observable" class that maintains a list of subscribers. Like other classes in WCHNT, it only changes its value through its `update()` method. When the observable class updates itself, it automatically sends messages to all subscribers to call their own `update()` methods.
+When a slot is marked with the `$` sigil, its class becomes an "observable" class that maintains a list of subscribers. Like other classes in WCHNT, it only changes its value through its `update!()` method. When the observable class updates itself, it automatically sends messages to all subscribers to call their own `update!()` methods.
 
-This creates a reactive chain where changes in one object automatically propagate to dependent objects. `$` is live: factory subscribe, `update` rewrites `this` and notifies subscribers. Identity slots mutate in place — see **`doc/method.md` §5** and **`doc/schema.md`**. Examples: `examples/bounce_openfl_time.wcn`.
+This creates a reactive chain where changes in one object automatically propagate to dependent objects. `$` is live: factory subscribe, `update!` rewrites `this` and notifies subscribers. Identity slots mutate in place — see **`doc/method.md` §5** and **`doc/schema.md`**. Examples: `examples/bounce_openfl_time.wcn`.
 
-A leading `>` on the **class name** (`>Keys = Bool/left …`) marks a **mailbox**. The class is still in the assemblage (Construction births it; `$Keys` still notifies). Target may `inject` the next field picture, then `update` runs. `Time` with only `$Time` cannot be injected — it computes `t + 1` itself. See `doc/schema.md` and `examples/square_openfl.wcn`.
+A leading `>` on the **class name** (`>Keys = Bool/left …`) marks a **mailbox**. The class is still in the assemblage (Construction births it; `$Keys` still notifies). Target may `inject` the next field picture, then `update!` runs. `Time` with only `$Time` cannot be injected — it computes `t + 1` itself. See `doc/schema.md` and `examples/square_openfl.wcn`.
 
-See more about methods, particularly the update method, below.
+See more about methods, particularly the update! method, below.
 
 #### Sum Type or Interfaces
 
@@ -198,7 +197,7 @@ A construction would look like
   {String:Discipline
      "M1":[:Discipline "Maths 1" [:Person "Steve"]],
      "E3":[:Discipline "English 3" [:Person "Mike"]]
-     }  
+     }
     ]
 
 Like the outermost (root) class label, the type labels of Arrays and Maps are NOT optional. The School construction could be reduced to 
@@ -257,7 +256,7 @@ A single expression can get quite complex - it can include sub-expressions which
 
 WCHNT is an OO language so behaviour is in the form of methods of classes which are invoked by sending messages to objects of those classes in a traditional way.
 
-The official section heading is **Methods**. (Informally we still say "reaction" for this expression language.) Mutation is handled through `update` constructions and identity slots, not a separate program phase.
+The official section heading is **Methods**. (Informally we still say "reaction" for this expression language.) Mutation is handled through `update!` constructions and identity slots, not a separate program phase.
 
 In this section there is (almost) no mutation of objects. Methods are (almost) pure functions which return new data.
 
@@ -298,7 +297,7 @@ will evaluate to 43
 
 A code block demarcated by { } is like a block in Smalltalk. It's a first class citizen of the language. And can take arguments, becoming a lambda expression. Schema often derives field names from types (`PlayArea` → `playArea`); method arguments cannot, so the names are always written.
 
-Arguments may be a bare name (`y`), a schema type (`Rect/bounds`, `Shape/s`), or an external type (`@Graphics/g`). Return types may be annotated after the block (`-> Shape`, `-> Void`). Platform-coupled methods (those using `@Type/name` parameters) belong in the optional **Target Methods** section rather than **Methods**.
+Arguments may be a bare name (`y`), a schema type (`Rect/bounds`, `Shape/s`), or a target-provided external type (`@Graphics/g`). Return types may be annotated after the block (`-> Shape`, `-> Void`). All methods, including those using target externals, belong in **Methods**; `%requires` in **Target** declares the external signatures available to the whole program.
 
 {x | x * 2}
 
@@ -338,13 +337,13 @@ Strings have `length()`, `concat`, `str`, `substring(start, end)`, and `tpl` (`{
 
 Ints have `times`: `3.times({ i | i * 2 })` returns an array. The block takes the index from 0.
 
-#### The update method.
+#### Mutating methods.
 
-`update` is the one mutation of object identity. In source it looks like a construction of the same class, listing every field. Codegen rewrites `this` in place, then notifies subscribers if this object is observable, then returns `this`. Ordinary methods stay immutable (`return new Ball(...)`).
+Methods ending in `!` mutate object identity. In source they look like a construction of the same class, listing every field. Codegen rewrites `this` in place and returns `this`; `update!` additionally notifies subscribers if this object is observable. Ordinary methods stay immutable (`return new Ball(...)`).
 
-`update` takes no arguments. `$Time` makes Time observable and Game a subscriber: when Time finishes `update`, it calls `Game.update()` with no arguments. Naming `time` in Game's update picture is a read, not another tick.
+`update!` takes no arguments. `$Time` makes Time observable and Game a subscriber: when Time finishes `update!`, it calls `Game.update!()` with no arguments. Other `!` methods may take arguments. Naming `time` in Game's update! picture is a read, not another tick.
 
-Children do not update automatically. A parent ticks a child only by writing `ball.update()` (or by constructing a new child). Give a class its own `$` if you want sideways notify instead.
+Children do not update! automatically. A parent ticks a child only by writing `ball.update!()` (or by constructing a new child). Give a class its own `$` if you want sideways notify instead.
 
 The first Target is a dumb loop that ticks the root's `$` component(s). See `examples/bounce_loop.wcn`. For the schema
 
@@ -356,12 +355,12 @@ Ball = Int/x Int/y Int/dx Int/dy Int/rad
 Time = Int/t
 ```
 
-the update methods look like:
+the update! methods look like:
 
 ```
-Time::update = { [:Time (t + 1)] }
+Time::update! = { [:Time (t + 1)] }
 
-Game::update = {
+Game::update! = {
   [:Game playArea [:Ball (ball.x + ball.dx) (ball.y + ball.dy) ball.dx ball.dy ball.rad] time]
 }
 ```
@@ -401,7 +400,7 @@ Public contains static method definitions and bare interface names:
 ```
 make = { ... }
 addShape = { ... }
-update = { ... }
+update! = { ... }
 Shape
 ```
 

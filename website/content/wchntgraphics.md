@@ -25,8 +25,12 @@ Schema / Construction / Methods stay platform-independent; only the Target draws
 `clear()` resets the style and paints the whole surface with the background colour;
 `background(color[, alpha])` sets that colour first.
 
-Colours are **24-bit integers written in hex**: `0xRRGGBB` (`0xf2f2f2` is light grey,
-`0x00ff00` is green). `alpha` is `0..1` and is honoured on **both** hosts.
+Colours can be written as existing **24-bit integers** in hex: `0xRRGGBB` (`0xf2f2f2` is
+light grey, `0x00ff00` is green). For constructed colours, `color(r, g, b)` and
+`color(r, g, b, a)` return packed ARGB integers in `0xAARRGGBB` format, with channels in
+the range `0..255`; `color(x)` is shorthand for `color(x, x, x)`. Use `red(colour)`,
+`green(colour)`, `blue(colour)`, and `alpha(colour)` to extract channels. `alpha` arguments
+to drawing methods remain in the range `0..1` and override packed alpha when supplied.
 
 A translucent `background(color, alpha < 1)` gives a motion-trail fade on both hosts. On the
 browser canvas that is a pixel blend; on OpenFL the previous frame's vectors are retained
@@ -36,6 +40,8 @@ browser canvas that is a pixel blend; on OpenFL the previous frame's vectors are
 
 | Method | What it does |
 |---|---|
+| `color(r, g, b[, a])` | Construct a packed ARGB colour; `color(x)` creates grayscale. |
+| `red(colour)` / `green(colour)` / `blue(colour)` / `alpha(colour)` | Extract a `0..255` channel. |
 | `background(color[, alpha])` | Set the clear colour (used by the next `clear()`). |
 | `clear()` | Reset style and paint the whole surface with the background colour. |
 | `beginFill(color[, alpha])` | Turn fill on (opaque by default). |
@@ -98,15 +104,15 @@ wchntGraphics.endFill();
 `examples/graphics_openfl.wcn` and `live-examples/graphics_canvas.wcn` draw the same scene
 with identical calls — a smoke test that the two hosts agree.
 
-## Passing wchntGraphics to Target Methods
+## Passing wchntGraphics to Methods
 
-You can hand `wchntGraphics` into a `@Graphics/g` method and call it there. The calls chain in
+You can hand `wchntGraphics` into a `@WCHNTGraphics/g` method and call it there. The calls chain in
 source; the compiler unrolls the `Void` chain for you:
 
 ```wchnt
-Shape::draw = { @Graphics/g | } -> Void
+Shape::draw = { @WCHNTGraphics/g | } -> Void
 
-Circle::draw = { @Graphics/g |
+Circle::draw = { @WCHNTGraphics/g |
   g.beginFill(15316448).drawCircle(x, y, radius).endFill()
 } -> Void
 ```

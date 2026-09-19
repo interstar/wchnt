@@ -10,6 +10,46 @@ Construction: `construction_phase.md`. Methods: `method.md`.
 
 ---
 
+## Cross-platform section transclusion
+
+Transclusion is a separate, compile-time mechanism for sharing the common
+parts of assemblages between target-platform pages. It is not runtime reuse;
+use `## Import` when one assemblage needs to use another assemblage as an
+object.
+
+A section heading may name the page from which its contents should be copied:
+
+```markdown
+## Schema [[myapp]]
+## Construction [[myapp]]
+## Methods [[myapp]]
+
+## Target
+```haxe
+// platform-specific target
+```
+```
+
+The compiler performs this textual section replacement before parsing the
+WCHNT sections. The section title and heading level come from the destination;
+the section body comes from the matching heading on the named page. The
+mechanism is generic and can be used on any Markdown section, including
+documentation sections. `[[myapp]]` remains a normal wiki link for editors;
+the compiler uses it as the transclusion directive when it occurs at the end of
+a section heading.
+
+Transclusion is intentionally one level deep. The named page and named section
+must exist, and the source section must not itself be transcluded (including a
+transclusion nested inside that section). Missing pages, missing sections, and
+nested transclusions are compilation errors. There is no concatenation or
+extension operation here.
+
+The source page is read independently for each transcluded section. It does
+not merge schemas, constructions, methods, or targets into the destination in
+any other way; after replacement, the resulting page is compiled normally.
+
+---
+
 ## The model
 
 ### An assemblage is an object

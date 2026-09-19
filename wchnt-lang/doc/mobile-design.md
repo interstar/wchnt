@@ -56,7 +56,7 @@ Ladder (cheap → deep):
 | Construction | typed form/inspector | easy |
 | Schema | class list; field = name + type picker + sigil | easy–moderate |
 | Methods | statement/expr templates, operator buttons, field-path pickers | hard, high value |
-| Target / Target Methods | host JS/Haxe: text + key-cap bar | text-first |
+| Target / Methods with `@` handles | host JS/Haxe: text + key-cap bar | text-first |
 
 ---
 

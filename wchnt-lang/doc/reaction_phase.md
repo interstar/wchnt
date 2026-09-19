@@ -1,10 +1,13 @@
 ## The Reaction phase in the WCHNT program
 
-> **Archived sketch (superseded).** The working Methods spec is **`method.md`**. This file is kept for archaeology only.
+> **Archived sketch (superseded).** The working Methods spec is **`method.md`**.
+> This file is kept for archaeology only; the rules below are not the current
+> grammar or semantics.
 
-The reaction phase is a set of methods or functions whose job is to transform and construct data. 
-
-In this phase all data is immutable.
+The old reaction sketch described methods or functions whose job was to
+transform and construct data. The current Methods phase keeps that pure style
+for ordinary methods, while method names ending in `!` explicitly mark
+in-place mutation.
 
 And it consists of a set of method definitions which are themselves, constructors for new objects
 
@@ -16,12 +19,15 @@ MethodDef = ClassName <"::"> MethodName <"("> (Arg <WSP>+)*  <")"> <WSP>* <"="> 
 
 So
 
-Game::update() =
+Game::update! =
    
   [:Game [:Ball (x + dx) (y + dy) dx dy rad] ...]
 
 
-Update is a special method which ALWAYS creates a new copy of the object it belongs to.
+In the current language, `update!` is a special mutating method. It reconstructs
+the same class, patches the receiver in place, notifies subscribers when the
+receiver is observable, and returns the receiver. It does not create a new
+identity object.
 
 =====
 
@@ -37,11 +43,13 @@ In other words, construction might not be a separate phase at all. Just a narrow
 
 Also ties in with reactive variables.
 
-Game = Rect Ball $time 
+Game = Rect Ball $Time
 
-This makes update automatically take a time param  in haxe
+The `$` relationship makes `Time` observable and `Game` a subscriber. The
+compiler requires both to define `update!`; generated Haxe calls it as
+`update_mutates()`.
 
-public function update(t:Time) {
+public function update_mutates():Game {
 
 }
 
@@ -64,15 +72,17 @@ Ball = Int/x Int/y Int/dx Int/dy Int/radius
 
 ## Reaction 
 
-Rect::area() = 
+Rect::area =
   width * height
 
-Ball::move() =
+Ball::move =
   [:Ball (x+dx) (y+dy) dx dy radius]
   
-Ball::update() = move()
+Ball::update! = { [:Ball (x + dx) (y + dy) radius] }
 
-The Rect::area function returns the area of the Rect object. The Ball::move returns a new Ball with an updated position.
+The Rect::area function returns the area of the Rect object. The Ball::move
+method returns a new Ball with an updated position. A `Ball::update!` method,
+if the class is mutable, would instead update that Ball in place.
 
 But really, there is a huge overlap between what we want to say in a construction and a reaction. We might as well eliminate redundancy and have a generic but common grammar / parser for them both. 
 
