@@ -4,7 +4,7 @@ Steer the player ball with arrow keys. It leaves a trail of smaller pollutant ba
 
 Player bounces off walls; pollutants wrap around the play area.
 
-**WCHNT shape:** `>Keys` is a mailbox — Target injects the held-arrow snapshot each frame (`square_openfl.wcn`). `$Time` ticks the clock; Game moves because `$` notifies (`bounce_openfl_time.wcn`). Target does **not** call `Game::update`; Methods hold all simulation logic.
+**WCHNT shape:** `>Keys` is a mailbox — Target injects the held-arrow snapshot each frame. `$Time` ticks the clock; Game moves because `$` notifies. Drawing is in `Game::draw` (`@WCHNTGraphics/g`). Target only injects, ticks, and calls `draw`.
 
 ## Schema
 
@@ -36,9 +36,9 @@ Time = Int/t
 ## Methods
 
 ```
-Time::update = { [:Time (t + 1)] }
+Time::update! = { [:Time (t + 1)] }
 
-Keys::update = { [:Keys left right up down] }
+Keys::update! = { [:Keys left right up down] }
 
 Player::speed = {
   ax = if (dx < 0) { -dx } else { dx }.
@@ -89,7 +89,7 @@ Game::makePollutant = { Player/p |
   [:Pollutant sx sy (-p.dx) (-p.dy) prad]
 }
 
-Game::update = {
+Game::update! = {
   r = playArea.rect.
   udx = (if (keys.right) { 1 } else { 0 }) + (if (keys.left) { -1 } else { 0 }).
   udy = (if (keys.down) { 1 } else { 0 }) + (if (keys.up) { -1 } else { 0 }).
@@ -114,7 +114,24 @@ Game::update = {
   nextTier = if (hit) { 0 } else if (spawning) { (spawnTier + 1) } else { spawnTier }.
   [:Game playArea nextP nextObs nextScore nextTier spawnEvery time keys]
 }
+
+Player::draw = { @WCHNTGraphics/g |
+  g.beginFill(13154404).drawCircle(x, y, rad).endFill()
+}
+
+Pollutant::draw = { @WCHNTGraphics/g |
+  g.beginFill(16737764).drawCircle(x, y, rad).endFill()
+}
+
+Game::draw = { @WCHNTGraphics/g |
+  r = playArea.rect.
+  bg = g.beginFill(0).drawRect(0, 0, r.width, r.height).endFill().
+  border = g.lineStyle(2, 65280).drawRect(r.x, r.y, r.width, r.height).noStroke().
+  afterObs = pollutants.fold(border, { acc, Pollutant/o | o.draw(acc) }).
+  player.draw(afterObs).beginFill(13154404).fillText("Score: {score}".tpl({String:String "score": score.str()}), 12, 24)
+} -> Void
 ```
+
 
 ## Target
 
@@ -142,25 +159,9 @@ function held(code:Int):Bool {
 %step
 function step():Void {
     assemblage.keys.inject(held(Keyboard.LEFT), held(Keyboard.RIGHT), held(Keyboard.UP), held(Keyboard.DOWN));
-    assemblage.time.update();
-    var r = assemblage.playArea.rect;
-    var p = assemblage.player;
+    assemblage.time.update_mutates();
     wchntGraphics.clear();
-    wchntGraphics.beginFill(0x000000);
-    wchntGraphics.drawRect(0, 0, r.width, r.height);
-    wchntGraphics.endFill();
-    wchntGraphics.lineStyle(2, 0x00ff00);
-    wchntGraphics.drawRect(r.x, r.y, r.width, r.height);
-    wchntGraphics.noStroke();
-    for (o in assemblage.pollutants) {
-        wchntGraphics.beginFill(0xff6464);
-        wchntGraphics.drawCircle(o.x, o.y, o.rad);
-        wchntGraphics.endFill();
-    }
-    wchntGraphics.beginFill(0xc8c864);
-    wchntGraphics.drawCircle(p.x, p.y, p.rad);
-    wchntGraphics.endFill();
-    wchntGraphics.fillText("Score: " + assemblage.score, 12, 24);
+    assemblage.draw(wchntGraphics);
 }
 
 ```

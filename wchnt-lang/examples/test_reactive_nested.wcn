@@ -18,8 +18,8 @@ Time = Int/t
 ## Methods
 
 ```
-Time::update = { [:Time t] }
-Game::update = { [:Game playArea time] }
+Time::update! = { [:Time t] }
+Game::update! = { [:Game playArea time] }
 ```
 
 ## Target
@@ -32,7 +32,7 @@ public static function main():Void {
     var assemblage = GameAssemblage.factory();
     var helper = new WCHNTHelper();
     trace(assemblage.toConstruction(0, helper));
-    assemblage.time.update();
+    assemblage.time.update_mutates();
     trace(assemblage.toConstruction(0, helper));
 }
 ```

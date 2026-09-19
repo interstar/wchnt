@@ -34,6 +34,10 @@ Roll::wave = { maths.sin(0) }
 ```
 %cli-live
 
+%requires
+WCHNTMaths::randInt(Int) -> Int
+WCHNTMaths::sin(Float) -> Float
+
 %init
 var assemblage;
 

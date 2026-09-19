@@ -31,20 +31,20 @@ Pentagon::step = { Int/width |
   nx = (x + dx) % width.
   [:Pentagon nx y side dx]
 }
-```
 
-## Target Methods
-
-```
 Pentagon::draw = { @Graphics/g |
   g.beginFill(10183653).moveTo(x, y).lineTo(x + side, y).lineTo(x + side, y + side).lineTo(x + (side / 2), y + side + (side / 2)).lineTo(x, y).lineTo(x, y).endFill()
 } -> Void
 ```
 
+
 ## Target
 
 ```
 %canvas
+
+%requires
+Graphics
 
 %init
 var assemblage;
@@ -55,7 +55,7 @@ function init() {
 
 %step
 function step() {
-    assemblage.game.time.update();
+    assemblage.game.time["update!"]();
     var r = assemblage.game.playArea.rect;
     wchntGraphics.clear();
     wchntGraphics.beginFill(0x1a1a2e);

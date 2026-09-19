@@ -22,7 +22,7 @@ few headings — `## Schema`, `## Construction`, `## Methods`, and `## Target`.
   arrow keys.
 - **[[adventure]]** — a ten-room text world. Type `N` `E` `S` `W` and press Enter.
 - **[[writepaths]]** — a six-level world. Type `jets`, `ocean`, `resize`, or a fountain name.
-- **[[flyingA]]** — a shape box that publishes `Shape`, `make`, `addShape`, and `update`.
+- **[[flyingA]]** — a shape box that publishes `Shape`, `make`, `addShape`, and `update!`.
 - **[[flyingB]]** — imports flyingA and adds a `Pentagon`. Run this page to see the membrane.
 - **[[factory_args]]** — Target builds a `Pen` and passes it into `SketchAssemblage.factory(pen)`.
 - **[[combinators]]** — `map` / `filter` / `fold` on arrays and maps. Press Enter; `println` formats the values.

@@ -1,4 +1,4 @@
-# Orrery
+# Orrery (OpenFL)
 
 *(Thanks to Berkan)*
 
@@ -63,7 +63,7 @@ Planet::draw = { @Graphics/g, Sun/sun, Int/t, @WCHNTMaths/m |
   a = phase + (t * (0.35 / period)).
   px = sun.x + (m.cos(a) * orbit).
   py = sun.y + (m.sin(a) * orbit).
-  ring = g.lineStyle(1, 2236962).drawCircle(sun.x, sun.y, orbit).noStroke().
+  ring = g.lineStyle(1, 2236962).drawCircle(sun.x, sun.y, orbit).lineStyle().
   body = g.beginFill(colour).drawCircle(px, py, size).endFill().
   moons.fold(g, { acc, Moon/mo | drawn = mo.draw(acc, px, py, t, m). acc })
 } -> Void
@@ -78,7 +78,7 @@ System::draw = { @Graphics/g, @WCHNTMaths/m |
 ## Target
 
 ```
-%canvas
+%openfl
 
 %requires
 Graphics
@@ -86,17 +86,17 @@ WCHNTMaths::sin(Float) -> Float
 WCHNTMaths::cos(Float) -> Float
 
 %init
-var assemblage;
+var assemblage:System;
 
-function init() {
+function init():Void {
     assemblage = SystemAssemblage.factory();
-    wchntGraphics.background(0x05070d, 0.5);
+    wchntGraphics.background(0x05070d, 1);
 }
 
 %step
-function step() {
+function step():Void {
     assemblage = assemblage.tick();
     wchntGraphics.clear();
-    assemblage.draw(wchntGraphics, wchntMaths);
+    assemblage.draw(graphics, wchntMaths);
 }
 ```

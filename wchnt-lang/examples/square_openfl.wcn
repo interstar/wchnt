@@ -1,6 +1,6 @@
 # Steer a square (OpenFL)
 
-`>Keys` is a mailbox: Target may `inject` the held-arrow snapshot, then `Keys::update` notifies Game. Arrows move the square; it stays inside the play area.
+`>Keys` is a mailbox: Target may `inject` the held-arrow snapshot, then `Keys::update!` notifies Game. Arrows move the square; it stays inside the play area.
 
 ## Schema
 
@@ -25,7 +25,7 @@ Square = Int/x Int/y Int/size
 ## Methods
 
 ```
-Keys::update = { [:Keys left right up down] }
+Keys::update! = { [:Keys left right up down] }
 
 Square::nudge = {
   Int/dx, Int/dy, Int/minX, Int/minY, Int/maxX, Int/maxY |
@@ -37,7 +37,7 @@ Square::nudge = {
     size]
 }
 
-Game::update = {
+Game::update! = {
   r = playArea.rect.
   rightN = if (keys.right) { 6 } else { 0 }.
   leftN = if (keys.left) { -6 } else { 0 }.

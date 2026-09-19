@@ -32,9 +32,9 @@ Time = Int/t
 ## Methods
 
 ```
-Time::update = { [:Time (t + 1)] }
+Time::update! = { [:Time (t + 1)] }
 
-Keys::update = { [:Keys left right up down] }
+Keys::update! = { [:Keys left right up down] }
 
 PlayArea::paddleMaxY = { Int/paddleH | ((y + height) - paddleH) }
 
@@ -103,7 +103,7 @@ Paddle::hitsBall = { Ball/b |
   (b.x + b.rad > x) and (b.x - b.rad < (x + w)) and (b.y + b.rad > y) and (b.y - b.rad < (y + h))
 }
 
-Game::update = {
+Game::update! = {
   p1 = paddlePlayer.stepForPlayer(keys.up, keys.down, playArea).
   p2 = paddleAi.stepForAi(ball, playArea).
   b1 = ball.withDy().
@@ -143,7 +143,7 @@ function held(code:Int):Bool {
 %step
 function step():Void {
     assemblage.keys.inject(held(Keyboard.LEFT), held(Keyboard.RIGHT), held(Keyboard.UP), held(Keyboard.DOWN));
-    assemblage.time.update();
+    assemblage.time.update_mutates();
     var area = assemblage.playArea;
     var b = assemblage.ball;
     wchntGraphics.clear();

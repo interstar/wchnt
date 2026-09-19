@@ -87,6 +87,12 @@ Wall::init = {
 ```
 %canvas
 
+%requires
+WCHNTGraphics
+WCHNTMaths::sin(Float) -> Float
+WCHNTMaths::cos(Float) -> Float
+WCHNTMaths::pi() -> Float
+
 %init
 var assemblage;
 var mode = 1;

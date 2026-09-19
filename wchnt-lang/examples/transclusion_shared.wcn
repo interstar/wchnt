@@ -1,0 +1,35 @@
+# Shared assemblage page
+
+This page contains the platform-independent part of the example. The runnable
+page [[transclusion_terminal]] transcludes these sections and supplies its own
+Target.
+
+## Schema
+
+```
+Game = Int/value
+```
+
+## Construction
+
+```
+[:Game 21]
+```
+
+## Methods
+
+```
+Game::double = { value + value }
+```
+
+## Target
+
+```
+%terminal
+
+%main
+public static function main():Void {
+    var assemblage = GameAssemblage.factory();
+    trace(assemblage.double());
+}
+```

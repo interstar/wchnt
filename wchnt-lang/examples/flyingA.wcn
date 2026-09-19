@@ -36,7 +36,7 @@ Time = Int/t
 ## Methods
 
 ```
-Time::update = { [:Time (t + 1)] }
+Time::update! = { [:Time (t + 1)] }
 
 Shape::step = { Int/width | } -> Shape
 
@@ -59,21 +59,11 @@ Game::addShape = { Shape/s |
   [:Game playArea shapes.cons(s) time]
 }
 
-Game::update = {
+Game::update! = {
   moved = shapes.map({ Shape/s | s.step(playArea.rect.width) }).
   [:Game playArea moved time]
 }
-```
 
-## Public
-
-```
-Shape
-```
-
-## Target Methods
-
-```
 Shape::draw = { @Graphics/g | } -> Void
 
 Circle::draw = { @Graphics/g |
@@ -89,10 +79,20 @@ Triangle::draw = { @Graphics/g |
 } -> Void
 ```
 
+## Public
+
+```
+Shape
+```
+
+
 ## Target
 
 ```
 %openfl
+
+%requires
+Graphics
 
 %init
 var assemblage:Game;
@@ -103,7 +103,7 @@ function init():Void {
 
 %step
 function step():Void {
-    assemblage.time.update();
+    assemblage.time.update_mutates();
     var r = assemblage.playArea.rect;
     wchntGraphics.clear();
     wchntGraphics.beginFill(0x1a1a2e);

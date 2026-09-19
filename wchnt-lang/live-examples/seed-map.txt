@@ -17,6 +17,8 @@ factory_args         factory_args
 combinators_cli      combinators
 origin_canvas        origin
 maths_cli            maths
+transclusion_shared  transclusion_shared
+transclusion_cli     transclusion_cli
 bikes_canvas         bikes
 flies_canvas         fliesonthewall
 orrery               orrery

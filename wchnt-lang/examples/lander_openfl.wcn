@@ -1,4 +1,4 @@
-# Lander
+# Lander (OpenFL)
 
 *(Thanks to Berkan)*
 
@@ -7,7 +7,7 @@ Bring the ship down on the green pad. Arrow keys: **left / right** rotate,
 new crater. **Down** after a landing or a crash starts a fresh game on freshly
 rolled terrain.
 
-Click the play area after Run so the arrow keys reach the program.
+Windowed (OpenFL) version; the arrow keys reach the program directly.
 
 What this page shows about WCHNT:
 
@@ -162,8 +162,9 @@ Game::scoreLine = {
 }
 
 Terrain::draw = { @Graphics/g |
-  ground = segments.fold(g.lineStyle(2, 11184810), { acc, Segment/s | acc.drawLine(s.x1, s.y1, s.x2, s.y2) }).
-  g.lineStyle(4, 5232783).drawLine(pad.x, pad.y, pad.x + pad.width, pad.y)
+  lined = g.lineStyle(2, 11184810).
+  ground = segments.fold(g, { acc, Segment/s | acc.moveTo(s.x1, s.y1).lineTo(s.x2, s.y2) }).
+  g.lineStyle(4, 5232783).moveTo(pad.x, pad.y).lineTo(pad.x + pad.width, pad.y)
 } -> Void
 
 Game::draw = { @Graphics/g |
@@ -203,7 +204,7 @@ Ship::draw = { @Graphics/g, Int/hull |
 ## Target
 
 ```
-%canvas
+%openfl
 
 %requires
 Graphics
@@ -215,21 +216,31 @@ WCHNTMaths::floor(Float) -> Int
 WCHNTMaths::round(Float) -> Int
 
 %init
-var assemblage;
+var assemblage:Game;
+var down:Map<Int, Bool> = new Map();
 
-function init() {
+function init():Void {
     assemblage = GameAssemblage.factory(wchntMaths);
     wchntGraphics.background(0x05070d, 1);
+    stage.addEventListener(KeyboardEvent.KEY_DOWN, function(e:KeyboardEvent) {
+        down.set(e.keyCode, true);
+    });
+    stage.addEventListener(KeyboardEvent.KEY_UP, function(e:KeyboardEvent) {
+        down.set(e.keyCode, false);
+    });
+}
+
+function held(code:Int):Bool {
+    return down.exists(code) && down.get(code);
 }
 
 %step
-function step() {
-    var k = input.keys;
-    assemblage.keys.inject(!!k["ArrowLeft"], !!k["ArrowRight"], !!k["ArrowUp"], !!k["ArrowDown"]);
-    assemblage.time["update!"]();
+function step():Void {
+    assemblage.keys.inject(held(Keyboard.LEFT), held(Keyboard.RIGHT), held(Keyboard.UP), held(Keyboard.DOWN));
+    assemblage.time.update_mutates();
 
     wchntGraphics.clear();
-    assemblage.draw(wchntGraphics);
+    assemblage.draw(graphics);
     wchntGraphics.noStroke();
 
     wchntGraphics.beginFill(0xd8dee9);

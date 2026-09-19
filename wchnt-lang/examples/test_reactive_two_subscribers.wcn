@@ -18,9 +18,9 @@ t = [:Time 0].
 ## Methods
 
 ```
-Time::update = { [:Time t] }
-World::update = { [:World time scene] }
-Scene::update = { [:Scene time] }
+Time::update! = { [:Time t] }
+World::update! = { [:World time scene] }
+Scene::update! = { [:Scene time] }
 ```
 
 ## Target
@@ -33,7 +33,7 @@ public static function main():Void {
     var assemblage = WorldAssemblage.factory();
     var helper = new WCHNTHelper();
     trace(assemblage.toConstruction(0, helper));
-    assemblage.time.update();
+    assemblage.time.update_mutates();
     trace(assemblage.toConstruction(0, helper));
 }
 ```

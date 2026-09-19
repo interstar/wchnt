@@ -1,0 +1,41 @@
+# Shared assemblage page
+
+This page contains the platform-independent part of the example. The runnable
+page [[transclusion_cli]] transcludes these sections and supplies its own
+Target.
+
+## Schema
+
+```
+Game = Int/value
+```
+
+## Construction
+
+```
+[:Game 21]
+```
+
+## Methods
+
+```
+Game::double = { value + value }
+```
+
+## Target
+
+```
+%cli-live
+
+%init
+var assemblage;
+
+function init() {
+    assemblage = GameAssemblage.factory();
+}
+
+%step
+function step(line) {
+    wchntConsole.println(assemblage.double());
+}
+```

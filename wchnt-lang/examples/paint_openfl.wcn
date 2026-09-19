@@ -1,0 +1,150 @@
+# Paint (OpenFL)
+
+Simple painting. Keys **1–9** pick the colour (1 black, 2 red, 3 green,
+4 blue, 5 yellow, 6 magenta, 7 cyan, 8 orange, 9 white). This is the
+OpenFL counterpart of `live-examples/paint.wcn`: the WCHNT schema and
+painting logic match; the Target section adapts input and drawing to OpenFL.
+
+## Schema
+
+```
+Paint = Canvas Palette Input Brush/brush1 Brush/brush2
+Canvas = Int/width Int/height
+Brush = Int/x Int/y Int/rad Int/colour Bool/painting
+>Input = Int/x Int/y Bool/down Int/colour
+Colour = "Black" | "White" | "Red" | "Green" | "Blue" | "Yellow" | "Cyan" | "Magenta" | "Orange"
+Palette = {Colour:Int} 
+```
+
+## Construction
+
+```
+[:Paint
+  [:Canvas 700 700]
+  [:Palette
+    {Colour:Int}
+  ]
+  [:Input 0 0 false 0]
+  [:Brush 0 0 5 0 false]
+  [:Brush 0 0 5 0 false]
+]
+```
+
+## Methods
+
+```
+
+Paint::step = {
+  nextBrush1 = [:Brush input.x input.y brush1.rad input.colour input.down].
+  nextBrush2 = [:Brush input.y input.x brush2.rad input.colour input.down].
+  [:Paint canvas palette input nextBrush1 nextBrush2]
+}
+
+Input::update! = { [:Input x y down colour] }
+
+Palette::makePalette = {@WCHNTGraphics/g |
+   [:Palette 
+     {Colour:Int
+       Black:g.color(0)
+       Red:g.color(255,0,0)
+       Green:g.color(0,255,0)
+       Blue:g.color(0,0,255)
+       Yellow:g.color(255,255,0)
+       Magenta:g.color(255,0,255)
+       Cyan:g.color(0,255,255)
+       Orange:g.color(255,128,0)
+       White:g.color(255)
+     }
+   ]
+}
+
+Palette::colourForKey = { Int/key |
+   if (key == 1) { colourToInt.get(Black) }
+   else if (key == 2) { colourToInt.get(Red) }
+   else if (key == 3) { colourToInt.get(Green) }
+   else if (key == 4) { colourToInt.get(Blue) }
+   else if (key == 5) { colourToInt.get(Yellow) }
+   else if (key == 6) { colourToInt.get(Magenta) }
+   else if (key == 7) { colourToInt.get(Cyan) }
+   else if (key == 8) { colourToInt.get(Orange) }
+   else { colourToInt.get(White) }
+}
+
+Brush::paint = {@WCHNTGraphics/g |
+   g.beginFill(colour).drawCircle(x, y, rad).endFill()
+} -> Void
+
+
+Canvas::paint = {@WCHNTGraphics/g |
+    g.beginFill(g.color(255)).drawRect(0,0,width,height).endFill()
+} -> Void
+
+```
+
+
+## Target
+
+```
+%openfl
+
+
+%requires
+WCHNTGraphics
+WCHNTGraphics::color(Int,Int,Int,Int) -> Int
+WCHNTGraphics::color(Int,Int,Int) -> Int
+WCHNTGraphics::color(Int) -> Int
+
+%init
+var assemblage:Paint;
+var down:Map<Int, Bool> = new Map();
+var pointerX:Int = 0;
+var pointerY:Int = 0;
+var mouseDown:Bool = false;
+var colour:Int = 0;
+
+function init():Void {
+    assemblage = PaintAssemblage.factory();
+    assemblage.palette = assemblage.palette.makePalette(wchntGraphics);
+    colour = assemblage.palette.colourForKey(1);
+    assemblage.canvas.paint(wchntGraphics);
+    stage.addEventListener(KeyboardEvent.KEY_DOWN, function(e:KeyboardEvent) {
+        down.set(e.keyCode, true);
+    });
+    stage.addEventListener(KeyboardEvent.KEY_UP, function(e:KeyboardEvent) {
+        down.set(e.keyCode, false);
+    });
+    stage.addEventListener(MouseEvent.MOUSE_MOVE, function(e:MouseEvent) {
+        pointerX = Std.int(e.stageX);
+        pointerY = Std.int(e.stageY);
+    });
+    stage.addEventListener(MouseEvent.MOUSE_DOWN, function(e:MouseEvent) {
+        pointerX = Std.int(e.stageX);
+        pointerY = Std.int(e.stageY);
+        mouseDown = true;
+    });
+    stage.addEventListener(MouseEvent.MOUSE_UP, function(e:MouseEvent) {
+        pointerX = Std.int(e.stageX);
+        pointerY = Std.int(e.stageY);
+        mouseDown = false;
+    });
+}
+
+function held(code:Int):Bool {
+    return down.exists(code) && down.get(code);
+}
+
+%step
+function step():Void {
+    for (n in 1...10) {
+        if (held(48 + n)) { colour = assemblage.palette.colourForKey(n); }
+    }
+    assemblage.input.inject(pointerX, pointerY, mouseDown, colour);
+    assemblage = assemblage.step();
+    if (assemblage.brush1.painting) {
+        assemblage.brush1.paint(wchntGraphics);
+    }
+    if (assemblage.brush2.painting) {
+        assemblage.brush2.paint(wchntGraphics);
+    }
+}
+```

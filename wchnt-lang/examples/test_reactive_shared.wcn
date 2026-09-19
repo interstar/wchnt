@@ -17,8 +17,8 @@ t = [:Time 0].
 ## Methods
 
 ```
-Time::update = { [:Time t] }
-Game::update = { [:Game time] }
+Time::update! = { [:Time t] }
+Game::update! = { [:Game time] }
 ```
 
 ## Target
@@ -31,7 +31,7 @@ public static function main():Void {
     var assemblage = GameAssemblage.factory();
     var helper = new WCHNTHelper();
     trace(assemblage.toConstruction(0, helper));
-    assemblage.time.update();
+    assemblage.time.update_mutates();
     trace(assemblage.toConstruction(0, helper));
 }
 ```

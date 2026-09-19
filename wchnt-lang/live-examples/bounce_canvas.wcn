@@ -1,6 +1,6 @@
 # Bounce on canvas (live interpreter)
 
-Same Schema, Construction, and Methods as `bounce_openfl.wcn`. Target is `%canvas`: JavaScript `%init` / `%step` for the browser harness. The Haxe backend does not emit this host; use `compile-to-ir` and the interpreter (`doc/live.md`).
+Same Schema, Construction, and Methods as `bounce_openfl.wcn`. Target is `%canvas`: step the game, then `draw`. The Haxe backend does not emit this host; use `compile-to-ir` and the interpreter (`doc/live.md`).
 
 ## Schema
 
@@ -38,7 +38,18 @@ Game::step = {
   ndy = this.bounceDy().
   [:Game playArea [:Ball (ball.x + ndx) (ball.y + ndy) ndx ndy ball.rad]]
 }
+
+Ball::draw = { @WCHNTGraphics/g |
+  g.beginFill(15921906).drawCircle(x, y, rad).endFill()
+}
+
+Game::draw = { @WCHNTGraphics/g |
+  r = playArea.rect.
+  bg = g.beginFill(2769450).drawRect(r.x, r.y, r.width, r.height).endFill().
+  ball.draw(g)
+} -> Void
 ```
+
 
 ## Target
 
@@ -55,14 +66,7 @@ function init() {
 %step
 function step() {
     assemblage = assemblage.step();
-    var r = assemblage.playArea.rect;
-    var b = assemblage.ball;
     wchntGraphics.clear();
-    wchntGraphics.beginFill(0x2a2a2a);
-    wchntGraphics.drawRect(r.x, r.y, r.width, r.height);
-    wchntGraphics.endFill();
-    wchntGraphics.beginFill(0xf2f2f2);
-    wchntGraphics.drawCircle(b.x, b.y, b.rad);
-    wchntGraphics.endFill();
+    assemblage.draw(wchntGraphics);
 }
 ```

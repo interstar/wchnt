@@ -1,6 +1,6 @@
 # Bounce on OpenFL with $Time
 
-Same window as `bounce_openfl.wcn`, but the clock lives in the assemblage. Target ticks `Time`; Game moves because `$` notifies. Do not also call `Game::update` from `%step`.
+Same window as `bounce_openfl.wcn`, but the clock lives in the assemblage. Target ticks `Time`; Game moves because `$` notifies. Do not also call `Game::update!` from `%step`.
 
 ## Schema
 
@@ -25,7 +25,7 @@ Time = Int/t
 ## Methods
 
 ```
-Time::update = { [:Time (t + 1)] }
+Time::update! = { [:Time (t + 1)] }
 
 Ball::bounceDx = { Rect/playAreaRect |
   if ((x < playAreaRect.x) or (x > (playAreaRect.x + playAreaRect.width))) { -dx } else { dx }
@@ -35,7 +35,7 @@ Ball::bounceDy = { Rect/playAreaRect |
   if ((y < playAreaRect.y) or (y > (playAreaRect.y + playAreaRect.height))) { -dy } else { dy }
 }
 
-Game::update = {
+Game::update! = {
   ndx = ball.bounceDx(playArea.rect).
   ndy = ball.bounceDy(playArea.rect).
   moved = [:Ball (ball.x + ndx) (ball.y + ndy) ndx ndy ((ball.rad+1)% 50)].
@@ -57,7 +57,7 @@ function init():Void {
 
 %step
 function step():Void {
-    assemblage.time.update();
+    assemblage.time.update_mutates();
     var r = assemblage.playArea.rect;
     var b = assemblage.ball;
     wchntGraphics.clear();

@@ -1,6 +1,6 @@
 # Moving shapes on OpenFL
 
-Three concrete shapes in an `Array<Shape>`. Each frame `$Time` ticks; `Game::update` maps `Shape::step` across the array (polymorphic via the sum type). Positions wrap with `%` at the play-area width. `%step` calls `Shape::draw` with OpenFL `Graphics` (`@Graphics` — extrinsic, supplied by Target).
+Three concrete shapes in an `Array<Shape>`. Each frame `$Time` ticks; `Game::update!` maps `Shape::step` across the array (polymorphic via the sum type). Positions wrap with `%` at the play-area width. `%step` calls `Shape::draw` with OpenFL `Graphics` (`@Graphics` — extrinsic, supplied by Target).
 
 ## Schema
 
@@ -32,7 +32,7 @@ Time = Int/t
 ## Methods
 
 ```
-Time::update = { [:Time (t + 1)] }
+Time::update! = { [:Time (t + 1)] }
 
 Shape::step = { Rect/bounds | } -> Shape
 
@@ -51,15 +51,11 @@ Triangle::step = { Rect/bounds |
   [:Triangle nx y base height dx]
 }
 
-Game::update = {
+Game::update! = {
   moved = shapes.map({ Shape/s | s.step(playArea.rect) }).
   [:Game playArea moved time]
 }
-```
 
-## Target Methods
-
-```
 Shape::draw = { @Graphics/g | } -> Void
 
 Circle::draw = { @Graphics/g |
@@ -75,10 +71,14 @@ Triangle::draw = { @Graphics/g |
 } -> Void
 ```
 
+
 ## Target
 
 ```
 %openfl
+
+%requires
+Graphics
 
 %init
 var assemblage:Game;
@@ -89,7 +89,7 @@ function init():Void {
 
 %step
 function step():Void {
-    assemblage.time.update();
+    assemblage.time.update_mutates();
     var r = assemblage.playArea.rect;
     wchntGraphics.clear();
     wchntGraphics.beginFill(0x1a1a2e);

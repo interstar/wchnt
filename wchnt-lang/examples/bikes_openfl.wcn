@@ -65,6 +65,9 @@ Game::step = {
 ```
 %openfl
 
+%requires
+WCHNTMaths::randInt(Int) -> Int
+
 %init
 var assemblage:Game;
 

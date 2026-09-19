@@ -27,7 +27,7 @@ Square = Int/x Int/y Int/size
 ## Methods
 
 ```
-Keys::update = { [:Keys dx dy] }
+Keys::update! = { [:Keys dx dy] }
 
 Square::nudge = {
   Int/dx, Int/dy, Int/minX, Int/minY, Int/maxX, Int/maxY |
@@ -39,7 +39,7 @@ Square::nudge = {
     size]
 }
 
-Game::update = {
+Game::update! = {
   r = playArea.rect.
   moved = square.nudge(keys.dx, keys.dy, r.x, r.y, ((r.x + r.width) - square.size), ((r.y + r.height) - square.size)).
   [:Game playArea moved keys]

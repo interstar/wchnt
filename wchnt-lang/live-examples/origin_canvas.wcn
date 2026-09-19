@@ -39,7 +39,7 @@ Game = Params $Pointer @WCHNTMaths/maths Int/w Int/h
 ## Methods
 
 ```
-Pointer::update = { [:Pointer x y shift] }
+Pointer::update! = { [:Pointer x y shift] }
 
 Game::layout = {
   m = maths.floor(params.mode).
@@ -95,7 +95,7 @@ Game::cells = {
   n.times({ i | this.cellAt(i, lay) }).filter({ Cell/c | c.rgb > 0 })
 }
 
-Game::update = {
+Game::update! = {
   movedX = maths.abs(pointer.x - params.lastX) > 0.000001.
   movedY = maths.abs(pointer.y - params.lastY) > 0.000001.
   hue = if ((not pointer.shift) and movedX) { pointer.x } else { params.hue }.
@@ -111,6 +111,15 @@ Game::update = {
 
 ```
 %canvas
+
+%requires
+WCHNTMaths::sin(Float) -> Float
+WCHNTMaths::sqrt(Float) -> Float
+WCHNTMaths::abs(Float) -> Float
+WCHNTMaths::floor(Float) -> Int
+WCHNTMaths::hsv(Float, Float, Float) -> Int
+WCHNTMaths::max(Float, Float) -> Float
+WCHNTMaths::min(Float, Float) -> Float
 
 %init
 var assemblage;

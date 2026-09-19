@@ -1,0 +1,23 @@
+# Section transclusion on the Haxe target
+
+The Schema, Construction, and Methods come from [[transclusion_shared]]. Only
+the Target is specific to this page.
+
+## Schema [[transclusion_shared]]
+
+## Construction [[transclusion_shared]]
+
+## Methods [[transclusion_shared]]
+
+## Target
+
+```
+%terminal
+
+%main
+public static function main():Void {
+    var assemblage = GameAssemblage.factory();
+    trace(assemblage.double());
+}
+```
+

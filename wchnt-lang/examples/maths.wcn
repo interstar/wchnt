@@ -37,6 +37,10 @@ Roll::wave = { maths.sin(0) }
 ```
 %terminal
 
+%requires
+WCHNTMaths::randInt(Int) -> Int
+WCHNTMaths::sin(Float) -> Float
+
 %main
 public static function main():Void {
     var assemblage = RollAssemblage.factory(wchntMaths);

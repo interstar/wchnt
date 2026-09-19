@@ -83,6 +83,13 @@ Wall::init = {
 ```
 %terminal
 
+%requires
+WCHNTMaths::rand() -> Float
+WCHNTMaths::randInt(Int) -> Int
+WCHNTMaths::sin(Float) -> Float
+WCHNTMaths::cos(Float) -> Float
+WCHNTMaths::pi() -> Float
+
 %main
 public static function main():Void {
     var assemblage = WallAssemblage.factory(wchntMaths).init();

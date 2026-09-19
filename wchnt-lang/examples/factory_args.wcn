@@ -29,6 +29,9 @@ Sketch::caption = { name.concat(" drawn in ").concat(pen.ink) }
 ```
 %terminal
 
+%requires
+Pen
+
 %main
 public static function main():Void {
     var pen = new Pen("blue");

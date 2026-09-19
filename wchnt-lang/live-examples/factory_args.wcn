@@ -29,6 +29,9 @@ Sketch::caption = { name.concat(" ").concat(pen.ink) }
 ```
 %canvas
 
+%requires
+Pen
+
 %init
 var assemblage;
 var palette;

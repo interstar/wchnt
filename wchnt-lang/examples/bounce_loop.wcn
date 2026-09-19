@@ -1,6 +1,6 @@
 # Bounce with a Time tick
 
-`$Time` notifies Game after Time::update. Game::update lists every field. Ball moves only because Game names a new Ball. Target's `%main` is Haxe: it ticks Time, not Game.
+`$Time` notifies Game after Time::update!. Game::update! lists every field. Ball moves only because Game names a new Ball. Target's `%main` is Haxe: it ticks Time, not Game.
 
 ## Schema
 
@@ -25,7 +25,7 @@ Time = Int/t
 ## Methods
 
 ```
-Time::update = { [:Time (t + 1)] }
+Time::update! = { [:Time (t + 1)] }
 
 Game::bounceDx = {
   r = playArea.rect.
@@ -37,7 +37,7 @@ Game::bounceDy = {
   if ((ball.y < r.y) or (ball.y > (r.y + r.height))) { -ball.dy } else { ball.dy }
 }
 
-Game::update = {
+Game::update! = {
   ndx = this.bounceDx().
   ndy = this.bounceDy().
   moved = [:Ball (ball.x + ndx) (ball.y + ndy) ndx ndy ball.rad].
@@ -58,7 +58,7 @@ public static function main():Void {
     var helper = new WCHNTHelper();
     trace(assemblage.toConstruction(0, helper));
     for (i in 0...10) {
-        assemblage.time.update();
+        assemblage.time.update_mutates();
         trace(assemblage.toConstruction(0, helper));
     }
 }

@@ -1,0 +1,30 @@
+# Section transclusion on the live target
+
+The Schema, Construction, and Methods come from [[transclusion_shared]]. Only
+the Target is specific to this page.
+
+## Schema [[transclusion_shared]]
+
+## Construction [[transclusion_shared]]
+
+## Methods [[transclusion_shared]]
+
+## Target
+
+```
+%cli-live
+
+%init
+var assemblage;
+
+function init() {
+    assemblage = GameAssemblage.factory();
+    wchntConsole.println("press enter to double 21");
+}
+
+%step
+function step(line) {
+    wchntConsole.println(assemblage.double());
+}
+```
+

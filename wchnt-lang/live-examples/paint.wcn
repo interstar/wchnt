@@ -1,0 +1,82 @@
+# Paint
+
+Simple painting. Keys **1–9** pick the colour (1 black, 2 red, 3 green,
+4 blue, 5 yellow, 6 magenta, 7 cyan, 8 orange, 9 white). The brush always
+follows the mouse but only paints while the button is held.
+
+## Schema
+
+```
+Paint = Canvas Input :Brush
+Canvas = Int/width Int/height
+Brush = Int/x Int/y Int/rad Int/colour Bool/painting
+>Input = Int/x Int/y Bool/down Int/colour
+```
+
+## Construction
+
+```
+[:Paint
+  [:Canvas 800 600]
+  [:Input 0 0 false 0]
+  [:Brush 0 0 5 0 false]
+]
+```
+
+## Methods
+
+```
+Paint::step = {
+  nextBrush = [:Brush input.x input.y brush.rad input.colour input.down].
+  [:Paint canvas input nextBrush]
+}
+
+Input::update! = { [:Input x y down colour] }
+```
+
+## Target
+
+```
+%canvas
+
+%init
+var assemblage;
+var palette = [
+    wchntGraphics.color(0, 0, 0),        // 1 black
+    wchntGraphics.color(255, 0, 0),      // 2 red
+    wchntGraphics.color(0, 255, 0),      // 3 green
+    wchntGraphics.color(0, 0, 255),      // 4 blue
+    wchntGraphics.color(255, 255, 0),    // 5 yellow
+    wchntGraphics.color(255, 0, 255),    // 6 magenta
+    wchntGraphics.color(0, 255, 255),    // 7 cyan
+    wchntGraphics.color(255, 128, 0),    // 8 orange
+    wchntGraphics.color(255, 255, 255)   // 9 white
+];
+var colour = palette[0];
+
+function init() {
+    assemblage = PaintAssemblage.factory();
+    var c = assemblage.canvas;
+    wchntGraphics.clear();
+    wchntGraphics.beginFill(0xffffff);
+    wchntGraphics.drawRect(0, 0, c.width, c.height);
+    wchntGraphics.endFill();
+}
+
+%step
+function step() {
+    for (var n = 1; n <= 9; n++) {
+        if (input.keys[String(n)]) { colour = palette[n - 1]; }
+    }
+    var mx = Math.round(input.mouse.x * 800);
+    var my = Math.round(input.mouse.y * 600);
+    assemblage.input.inject(mx, my, input.mouse.down, colour);
+    assemblage = assemblage.step();
+    var p = assemblage.brush;
+    if (p.painting) {
+        wchntGraphics.beginFill(p.colour);
+        wchntGraphics.drawCircle(p.x, p.y, p.rad);
+        wchntGraphics.endFill();
+    }
+}
+```
