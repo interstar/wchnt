@@ -68,7 +68,8 @@
                     (second val-type-node)
                     (throw (ex-info "Map construction missing value type node"
                                     {:inner-expression inner-expression})))
-         key-value-list (nth inner-expression 3)
+         ;; KeyValueList is optional in the grammar for an empty map literal.
+         key-value-list (nth inner-expression 3 nil)
          ctx (assoc ctx :root-class-name val-type)
          structured-args (if (ast-utils/node-type? key-value-list :KeyValueList)
                            (map-indexed
@@ -245,4 +246,3 @@
           ctx (build-extract-args-context schema-ir root-class-name)]
       (extract-args-from-arg-list ctx arg-list))
     []))
-

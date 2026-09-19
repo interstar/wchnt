@@ -1,4 +1,4 @@
-(ns wchnt-lang.haxe-helpers
+(ns wchnt-lang.targets.haxe-std
   "Haxe-side helper templates used by the IR -> Haxe generator.")
 
 (def iwchnt-helper-interface
@@ -180,6 +180,7 @@ class WCHNTRuntime {
 import openfl.display.Graphics;
 import openfl.events.Event;
 import openfl.events.KeyboardEvent;
+import openfl.events.MouseEvent;
 import openfl.text.TextField;
 import openfl.text.TextFormat;
 import openfl.text.TextFieldAutoSize;
@@ -206,7 +207,7 @@ class WCHNTGraphics {
 
     public function background(color:Int, ?alpha:Float):Void {
         bgColor = color;
-        bgAlpha = (alpha == null ? 1 : alpha);
+        bgAlpha = (alpha == null ? packedAlpha(color) : alpha);
     }
 
     public function clear():Void {
@@ -217,14 +218,37 @@ class WCHNTGraphics {
         } else {
             g.lineStyle();
         }
-        g.beginFill(bgColor, bgAlpha);
+        g.beginFill(rgbColor(bgColor), bgAlpha);
         g.drawRect(0, 0, sprite.stage.stageWidth, sprite.stage.stageHeight);
         g.endFill();
     }
 
     public function beginFill(color:Int, ?alpha:Float):Void {
         fillColor = color;
-        g.beginFill(color, (alpha == null ? 1 : alpha));
+        g.beginFill(rgbColor(color), (alpha == null ? packedAlpha(color) : alpha));
+    }
+
+    public inline function color(r:Int, ?g:Int, ?b:Int, ?a:Int):Int {
+        var gray = (g == null);
+        var red = clampByte(r);
+        var green = clampByte(gray ? r : g);
+        var blue = clampByte(gray ? r : b);
+        var alpha = clampByte(a == null ? 255 : a);
+        return (alpha << 24) | (red << 16) | (green << 8) | blue;
+    }
+
+    public inline function red(color:Int):Int return (color >>> 16) & 0xff;
+    public inline function green(color:Int):Int return (color >>> 8) & 0xff;
+    public inline function blue(color:Int):Int return color & 0xff;
+    public inline function alpha(color:Int):Int return (color >>> 24) & 0xff;
+
+    static inline function clampByte(value:Int):Int {
+        return value < 0 ? 0 : (value > 255 ? 255 : value);
+    }
+
+    static inline function rgbColor(color:Int):Int return color & 0xffffff;
+    static inline function packedAlpha(color:Int):Float {
+        return (color > 0xffffff || color < 0) ? ((color >>> 24) & 0xff) / 255 : 1;
     }
 
     public inline function endFill():Void g.endFill();
@@ -235,7 +259,7 @@ class WCHNTGraphics {
         if (thickness == null) {
             g.lineStyle();
         } else {
-            g.lineStyle(thickness, color, (alpha == null ? 1 : alpha));
+            g.lineStyle(thickness, rgbColor(color), (alpha == null ? packedAlpha(color) : alpha));
         }
     }
 
@@ -416,4 +440,3 @@ class WCHNTMaths {
 interface IWCHNTObject {
     public function toConstruction(depth:Int = 0, helper:IWCHNTHelper):String;
 }")
-

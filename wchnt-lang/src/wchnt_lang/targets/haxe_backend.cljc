@@ -1,8 +1,8 @@
-(ns wchnt-lang.ir-to-haxe
+(ns wchnt-lang.targets.haxe-backend
   "Transform WCHNT IR to Haxe code"
   (:require [wchnt-lang.ir :as ir]
             [clojure.string :as str]
-            [wchnt-lang.haxe-helpers :as haxe-helpers]))
+            [wchnt-lang.targets.haxe-std :as haxe-helpers]))
 
 ;; =============================================================================
 ;; IR to Haxe Transformation
@@ -135,7 +135,7 @@
        "\n"
        "    public function notifySubscribers(): Void {\n"
        "        for (subscriber in subscribers) {\n"
-       "            Reflect.callMethod(subscriber, Reflect.field(subscriber, 'update'), []);\n"
+       "            Reflect.callMethod(subscriber, Reflect.field(subscriber, 'update_mutates'), []);\n"
        "        }\n"
        "    }"))
 
@@ -285,7 +285,7 @@
 
 (defn- haxe-dot-call
   [expr]
-  (str (expr-ir-to-haxe (:receiver expr)) "." (:method expr) "("
+  (str (expr-ir-to-haxe (:receiver expr)) "." (ir/haxe-method-name (:method expr)) "("
        (str/join ", " (map expr-ir-to-haxe (:args expr)))
        ")"))
 
@@ -305,7 +305,8 @@
 (defn- haxe-call
   [expr]
   (if (= :import-alias (:expr (:receiver expr)))
-    (str (or (:import-assemblage expr) (:import-class expr)) "." (:method expr) "("
+    (str (or (:import-assemblage expr) (:import-class expr)) "."
+         (ir/haxe-method-name (:method expr)) "("
          (str/join ", " (map expr-ir-to-haxe (:args expr)))
          ")")
     (case (:method expr)
@@ -540,36 +541,41 @@
                      :else
                      [(str "        return " (expr-ir-to-haxe body) ";")])
         kind (if static? "public static function" "public function")]
-    (str "\n    " kind " " method-name "(" params "): " return-type " {\n"
+        (str "\n    " kind " " (ir/haxe-method-name method-name) "(" params "): " return-type " {\n"
          (str/join "\n" (concat (method-let-lines lets)
                                 (method-let-lines branch-lets)
                                 body-lines))
          "\n    }")))
 
-(defn- generate-update-method
-  "Install the construction onto this, then notify if this class is observable."
-  [{:keys [class body lets]} {:keys [components observable? schema-ir class-name]}]
+(defn- generate-mutating-method
+  "Install the construction onto this, then return this. update! also notifies."
+  [{:keys [class method-name parameters body lets]}
+   {:keys [components observable? schema-ir class-name]}]
   (let [class-name (or class-name class)
+        parameters (or parameters [])
+        params (str/join ", " (map #(str (:name %) ":" (:type %)) parameters))
         args (:args body)]
     (when-not (= :construct (:expr body))
-      (throw (ex-info "update method body must be a construction"
+      (throw (ex-info "mutating method body must be a construction"
                       {:class-name class-name})))
     (when (not= (count components) (count args))
-      (throw (ex-info (str class-name "::update construction does not match class fields")
+      (throw (ex-info (str class-name "::" method-name
+                           " construction does not match class fields")
                       {:class-name class-name
                        :expected (count components)
                        :got (count args)})))
-    (str "\n    public function update(): " class-name " {\n"
+    (str "\n    public function " (ir/haxe-method-name method-name) "(" params "): " class-name " {\n"
          (str/join "\n" (concat
                          (method-let-lines lets)
                          (update-field-lines schema-ir components args)
                          (update-context-lines components schema-ir class-name)
-                         (when observable? ["        this.notifySubscribers();"])
+                         (when (and observable? (= "update!" method-name))
+                           ["        this.notifySubscribers();"])
                          ["        return this;"]))
          "\n    }")))
 
 (defn- generate-inject-method
-  "Host-only: write schema fields, then update(). Not callable from Methods."
+  "Host-only: write schema fields, then update!(). Not callable from Methods."
   [class-name components]
   (let [params (str/join ", " (map #(str (:component-name %) ":" (:type-name %))
                                   components))
@@ -578,11 +584,11 @@
                      components)]
     (str "\n    public function inject(" params "): " class-name " {\n"
          (str/join "\n" assigns)
-         "\n        return this.update();\n"
+         "\n        return this.update_mutates();\n"
          "    }")))
 
 (defn generate-method
-  "Generate a Haxe method from methods IR. update rewrites this in place."
+  "Generate a Haxe method from methods IR. ! methods rewrite this in place."
   ([method]
    (generate-method method {:components []
                             :observable? false
@@ -592,8 +598,8 @@
    (when (:interface-signature? method)
      (throw (ex-info "Interface signatures are not emitted on concrete classes"
                      {:class (:class method) :method-name (:method-name method)})))
-   (if (= "update" (:method-name method))
-     (generate-update-method method ctx)
+   (if (:mutating? method)
+     (generate-mutating-method method ctx)
      (generate-ordinary-method method false))))
 
 (defn- methods-for-class
@@ -612,8 +618,8 @@
   (let [params (str/join ", " (map #(str (:name %) ":" (:type %)) parameters))
         args (str/join ", " (map :name parameters))
         recv (str "this." (str/join "." via-fields))]
-    (str "\n    public function " method-name "(" params "): " return-type " {\n"
-         "        return " recv "." method-name "(" args ");\n"
+    (str "\n    public function " (ir/haxe-method-name method-name) "(" params "): " return-type " {\n"
+         "        return " recv "." (ir/haxe-method-name method-name) "(" args ");\n"
          "    }")))
 
 (defn- collect-promoted-methods
@@ -708,7 +714,7 @@
 (defn- generate-interface-method-signature
   [{:keys [method-name parameters return-type]}]
   (let [params (str/join ", " (map #(str (:name %) ":" (:type %)) parameters))]
-    (str "    public function " method-name "(" params "): " return-type ";")))
+    (str "    public function " (ir/haxe-method-name method-name) "(" params "): " return-type ";")))
 
 (defn generate-haxe-interface
   "Generate Haxe interface from IR interface and optional interface method signatures."

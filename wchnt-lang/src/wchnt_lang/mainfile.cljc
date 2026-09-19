@@ -3,15 +3,158 @@
             [wchnt-lang.pipeline :as p]))
 
 (def section-order
-  ["import" "schema" "construction" "methods" "public" "target-methods" "target"])
+  ["import" "schema" "construction" "methods" "public" "target"])
 
 (def compile-sections
-  #{"schema" "construction" "methods" "public" "target-methods" "target"})
+  #{"schema" "construction" "methods" "public" "target"})
 
 (defn normalize-section-name
-  "Normalize a section heading to a key (e.g. \"Target Methods\" → \"target-methods\")."
+  "Normalize a Markdown section heading to its key."
   [heading]
   (-> heading str/trim str/lower-case (str/replace #"\s+" "-")))
+
+(defn- markdown-heading
+  [line]
+  (when-let [[_ hashes title] (re-matches #"^(#{1,3})\s+(.+?)\s*$" (str/trim line))]
+    {:level (count hashes)
+     :title (str/trim title)}))
+
+(defn- transclusion-heading
+  [heading]
+  (when-let [[_ title page] (re-matches #"(?s)(.+?)\s+\[\[([^\]]+)\]\]$"
+                                        (:title heading))]
+    {:level (:level heading)
+     :title (str/trim title)
+     :page (str/trim page)}))
+
+(defn- markdown-section-headings
+  "Find Markdown headings outside fenced code blocks."
+  [lines]
+  (loop [remaining lines
+         index 0
+         in-fence? false
+         headings []]
+    (if (empty? remaining)
+      headings
+      (let [line (first remaining)
+            trimmed (str/trim line)
+            fence-start? (boolean (re-matches #"^```(?:\w+)?\s*$" trimmed))
+            fence-end? (boolean (re-matches #"^```\s*$" trimmed))]
+        (cond
+          (and in-fence? fence-end?)
+          (recur (rest remaining) (inc index) false headings)
+
+          in-fence?
+          (recur (rest remaining) (inc index) true headings)
+
+          fence-start?
+          (recur (rest remaining) (inc index) true headings)
+
+          :else
+          (recur (rest remaining)
+                 (inc index)
+                 false
+                 (if-let [heading (markdown-heading line)]
+                   (conj headings (assoc heading :index index))
+                   headings)))))))
+
+(defn- markdown-sections
+  "Return sections with their raw bodies, using normal Markdown heading nesting."
+  [content]
+  (let [lines (vec (str/split-lines (or content "")))
+        headings (markdown-section-headings lines)]
+    (mapv (fn [heading-index heading]
+            (let [next-heading (some #(when (<= (:level %) (:level heading)) %)
+                                     (subvec headings (inc heading-index)))
+                  end-index (or (:index next-heading) (count lines))]
+              (assoc heading
+                     :body (str/join "\n"
+                                     (subvec lines (inc (:index heading)) end-index))
+                     :transclusion (transclusion-heading heading))))
+          (range (count headings))
+          headings)))
+
+(defn- transclusion-in-content?
+  [content]
+  (some :transclusion (markdown-sections content)))
+
+(defn- source-section
+  [page-name source-content section-title]
+  (let [matches (filter #(= (normalize-section-name section-title)
+                            (normalize-section-name (or (get-in % [:transclusion :title])
+                                                        (:title %))))
+                        (markdown-sections source-content))]
+    (cond
+      (empty? matches)
+      (throw (ex-info (str "Transclusion section '" (normalize-section-name section-title)
+                           "' not found in page '" page-name "'")
+                      {:page page-name :section section-title}))
+
+      (> (count matches) 1)
+      (throw (ex-info (str "Transclusion section '" (normalize-section-name section-title)
+                           "' occurs more than once in page '" page-name "'")
+                      {:page page-name :section section-title}))
+
+      :else
+      (let [section (first matches)]
+        (when (or (:transclusion section)
+                  (transclusion-in-content? (:body section)))
+          (throw (ex-info (str "Nested transclusion of section '"
+                               (normalize-section-name section-title)
+                               "' in page '" page-name "' is not supported")
+                          {:page page-name :section section-title})))
+        section))))
+
+(declare valid-page-name?)
+
+(defn expand-transclusions
+  "Replace `## Section [[page]]` sections with the matching raw section body.
+
+   Expansion is deliberately one level deep. The resolver returns raw Markdown;
+   it is never called recursively while expanding a source section."
+  ([content]
+   (expand-transclusions content nil))
+  ([content resolve-page]
+   (let [lines (vec (str/split-lines (or content "")))
+         sections (markdown-sections content)
+         transcluded (filter :transclusion sections)]
+     (if (empty? transcluded)
+       content
+       (do
+         (when-not resolve-page
+           (throw (ex-info "Transclusion requires a page resolver" {})))
+         (let [replacements
+               (into {}
+                     (map (fn [section]
+                            (let [{:keys [page title level]} (:transclusion section)]
+                              (when-not (valid-page-name? page)
+                                (throw (ex-info (str "Invalid transclusion page name '" page "'")
+                                                {:page page})))
+                              (let [source-content (resolve-page page)]
+                                (when-not source-content
+                                  (throw (ex-info (str "Transclusion page not found: '" page "'")
+                                                  {:page page})))
+                                (let [source (source-section page source-content title)]
+                                  [(:index section)
+                                   (vec (concat
+                                         [(str (apply str (repeat level "#")) " " title)]
+                                         (when (seq (:body source))
+                                           (str/split-lines (:body source)))))]))))
+                          transcluded))]
+           (loop [index 0
+                  output []]
+             (if (>= index (count lines))
+               (str/join "\n" output)
+               (if-let [section (some #(when (= index (:index %)) %) transcluded)]
+                 (let [end-index (or (:index (some #(when (and (> (:index %) index)
+                                                                  (<= (:level %) (:level section)))
+                                                           %)
+                                                     sections))
+                                     (count lines))
+                       [replacement-start & replacement-lines]
+                       (get replacements index)]
+                   (recur end-index (into output (cons replacement-start replacement-lines))))
+                 (recur (inc index) (conj output (nth lines index))))))))))))
 
 (defn reserved-section?
   [section-name]
@@ -161,7 +304,7 @@
       {:error "Import with nothing to compile"}
 
       (and (not (has? "schema"))
-           (some has? #{"construction" "methods" "public" "target-methods" "target"}))
+           (some has? #{"construction" "methods" "public" "target"}))
       {:error "Compile sections require a Schema section"}
 
       (empty? compile-present)
@@ -252,10 +395,14 @@
   (let [section-map (into {} sections)]
     (:error (classify-page section-map))))
 
-(defn parse-mainfile [content]
-  "Parse a WCHNT mainfile (markdown with embedded code blocks) and extract sections"
-  (try
-    (let [sections (extract-code-blocks content)
+(defn parse-mainfile
+  "Parse a WCHNT mainfile, expanding section transclusions before extraction."
+  ([content]
+   (parse-mainfile content {}))
+  ([content {:keys [resolve-page]}]
+   (try
+    (let [expanded-content (expand-transclusions content resolve-page)
+          sections (extract-code-blocks expanded-content)
           validation-error (validate-sections sections)]
       (if validation-error
         (p/fail-cargo validation-error)
@@ -267,10 +414,9 @@
                             :construction (get section-map "construction" "")
                             :methods (get section-map "methods" "")
                             :public (get section-map "public" "")
-                            :target-methods (get section-map "target-methods" "")
                             :target (get section-map "target" "")}))))
     (catch #?(:clj Exception :cljs :default) e
-      (p/fail-cargo (or (ex-message e) (str e))))))
+      (p/fail-cargo (or (ex-message e) (str e)))))))
 
 #?(:clj
    (defn read-mainfile [file-path]

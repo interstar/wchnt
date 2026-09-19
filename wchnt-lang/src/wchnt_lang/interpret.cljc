@@ -5,10 +5,10 @@
             [wchnt-lang.ir :as ir]
             [wchnt-lang.pipeline :as p]
             [wchnt-lang.template :as template]
-            [wchnt-lang.host :as host]))
+            [wchnt-lang.targets.interpreter-std :as host]))
 
 (declare eval-expr instantiate wire-subscriptions wire-context wire-new
-         apply-update eval-map-construction eval-construction-arg)
+         apply-mutating-method eval-map-construction eval-construction-arg)
 
 (defn- class-of
   [obj]
@@ -21,9 +21,7 @@
 
 (defn- identity-object?
   [schema-ir class-name]
-  (or (ir/is-observable? schema-ir class-name)
-      (ir/is-subscriber? schema-ir class-name)
-      (ir/mailbox-class? schema-ir class-name)))
+  (ir/mutable-class? schema-ir class-name))
 
 (defn- make-instance
   [schema-ir class-name values]
@@ -205,6 +203,30 @@
 (defn- field-store
   [obj]
   (if-let [cell (:wchnt/cell obj)] @cell obj))
+
+(defn materialize
+  "Return a snapshot of an interpreter object graph for inspection/debugging.
+   Identity objects keep their live fields in :wchnt/cell; this removes that
+   implementation detail without changing the live object itself."
+  [value]
+  (letfn [(walk [value path]
+            (cond
+              (vector? value)
+              (mapv #(walk % path) value)
+
+              (and (map? value) (:wchnt/cell value))
+              (if (some #(identical? value %) path)
+                {:wchnt/class (:wchnt/class value)}
+                (into {:wchnt/class (:wchnt/class value)}
+                      (map (fn [[k v]] [k (walk v (conj path value))])
+                           @(:wchnt/cell value))))
+
+              (map? value)
+              (into {} (map (fn [[k v]] [k (walk v path)]) value))
+
+              :else
+              value))]
+    (walk value [])))
 
 (defn get-field
   "Read a schema field. Identity objects store live values in :wchnt/cell.
@@ -733,27 +755,28 @@
     (doseq [[component arg-expr] (map vector components (:args body-expr))]
       (install-update-field! schema-ir this-obj component arg-expr ctx))))
 
-(defn- apply-update
-  [schema-ir methods-ir obj]
+(defn- apply-mutating-method
+  [schema-ir methods-ir obj method-name args]
   (when-not (:wchnt/cell obj)
-    (throw (ex-info (str (class-of obj) "::update needs an identity object")
+    (throw (ex-info (str (class-of obj) "::" method-name
+                         " needs an identity object")
                     {:class-name (class-of obj)})))
-  (let [method (lookup-method methods-ir (class-of obj) "update")
+  (let [method (lookup-method methods-ir (class-of obj) method-name)
         ctx {:schema-ir schema-ir
              :methods-ir methods-ir
              :this obj
-             :params {}
+             :params (bind-params method args)
              :locals {}}
         inner (eval-lets (:lets method) (assoc ctx :locals {}))]
     (install-update! schema-ir obj (:body method) inner)
     (wire-new schema-ir obj)
-    (when (ir/is-observable? schema-ir (class-of obj))
+    (when (= "update!" method-name)
       (doseq [sub @(:wchnt/subscribers obj)]
-        (apply-update schema-ir methods-ir sub)))
+        (apply-mutating-method schema-ir methods-ir sub "update!" [])))
     obj))
 
 (defn inject
-  "Host-only: write mailbox fields (schema order), then update()."
+  "Host-only: write mailbox fields (schema order), then update!()."
   [schema-ir methods-ir obj args]
   (let [class-name (class-of obj)
         fields (field-names schema-ir class-name)]
@@ -768,13 +791,13 @@
                        :expected (count fields)
                        :got (count args)})))
     (reset! (:wchnt/cell obj) (zipmap (map keyword fields) args))
-    (apply-update schema-ir methods-ir obj)))
+    (apply-mutating-method schema-ir methods-ir obj "update!" [])))
 
 (defn call
   "Invoke a method on an interpreter object. args is a vector of already-evaled values."
   [schema-ir methods-ir obj method-name args]
-  (if (= "update" method-name)
-    (apply-update schema-ir methods-ir obj)
+  (if (ir/mutating-method-name? method-name)
+    (apply-mutating-method schema-ir methods-ir obj method-name args)
     (let [class-name (class-of obj)
           method (lookup-method-or-delegate schema-ir methods-ir class-name method-name)
           via (or (ir/delegate-path schema-ir class-name (:class method)) [])

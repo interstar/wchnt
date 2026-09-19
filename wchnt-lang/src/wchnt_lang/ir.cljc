@@ -48,6 +48,28 @@
   [schema-ir class-name]
   (contains? (set (get-mailbox-classes schema-ir)) class-name))
 
+(defn get-mutable-classes
+  "Classes whose instances have stable identity in the current IR."
+  [schema-ir]
+  (or (:mutable-classes schema-ir) []))
+
+(defn mutable-class?
+  [schema-ir class-name]
+  (contains? (set (get-mutable-classes schema-ir)) class-name))
+
+(defn mutating-method-name?
+  "True when a WCHNT method name carries the mutating `!` suffix."
+  [method-name]
+  (and (string? method-name)
+       (str/ends-with? method-name "!")))
+
+(defn haxe-method-name
+  "Map a WCHNT method name to a valid, mutation-visible Haxe name."
+  [method-name]
+  (if (mutating-method-name? method-name)
+    (str (subs method-name 0 (dec (count method-name))) "_mutates")
+    method-name))
+
 (defn get-observable-classes
   "Get list of classes that need observable infrastructure"
   [schema-ir]

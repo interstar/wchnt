@@ -1,6 +1,7 @@
-(ns wchnt-lang.target
+(ns wchnt-lang.targets.core
   "Parse the Target section: host, lifecycle Haxe, and %name bindings."
-  (:require [clojure.string :as str]))
+  (:require [clojure.string :as str]
+            [wchnt-lang.targets.requires :as requires]))
 
 (def known-hosts
   #{"terminal" "cli" "cli-live" "openfl" "canvas"})
@@ -128,6 +129,10 @@
   (when block
     {:haxe (:haxe block)}))
 
+(defn- requires-block
+  [blocks]
+  (some #(when (= "requires" (:name %)) %) blocks))
+
 (defn parse-target
   "Turn Target section text into a host, lifecycle bodies, and % bindings.
    Blank input is empty. Non-empty input must start with %name.
@@ -146,14 +151,21 @@
                         {:text text})))
       (assert-unique-names blocks)
       (let [host (extract-host blocks)
+            requires (requires-block blocks)
             other (remove #(or (contains? lifecycle-names (:name %))
-                               (host-block? %))
+                               (host-block? %)
+                               (= "requires" (:name %)))
                           blocks)]
         (assert-lifecycle host blocks)
         (assert-function-named (block-named blocks "init") "init")
         (assert-function-named (block-named blocks "step") "step")
-        {:host host
+        (let [requires-ir (requires/parse (or (:haxe requires) ""))]
+          (requires/assert-no-duplicate-method-signatures! requires-ir)
+          {:host host
+           :requires requires-ir
+           :external-types (requires/provided-types requires-ir)
+           :requires-text (some :haxe [requires])
          :bindings (into {} (map binding-from-block other))
          :main (haxe-block (block-named blocks "main"))
          :init (haxe-block (block-named blocks "init"))
-         :step (haxe-block (block-named blocks "step"))}))))
+           :step (haxe-block (block-named blocks "step"))})))))

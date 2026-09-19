@@ -34,6 +34,7 @@
         (update :enums into (:enums overlay))
         (update :observable-classes into (:observable-classes overlay))
         (update :subscriber-classes into (:subscriber-classes overlay))
+        (update :mutable-classes into (:mutable-classes overlay))
         (update :public-methods #(into (or % #{}) (or (:public-methods overlay) #{})))
         (update :static-public-methods #(into (or % #{}) (or (:static-public-methods overlay) #{})))
         (update :mailbox-classes into (:mailbox-classes overlay))
@@ -94,7 +95,8 @@
     (throw (ex-info (str "Invalid page name '" name "'") {:page name})))
   (when-not (resolve-page name)
     (throw (ex-info (str "Import page not found: '" name "'") {:page name})))
-  (let [parsed (mainfile/parse-mainfile (resolve-page name))]
+  (let [parsed (mainfile/parse-mainfile (resolve-page name)
+                                       {:resolve-page resolve-page})]
     (when (p/failed? parsed)
       (throw (ex-info (str "Import page '" name "' parse error: "
                            (first (:errors parsed)))

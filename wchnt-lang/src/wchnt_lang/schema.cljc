@@ -30,7 +30,6 @@
    [:construction string?]
    [:methods string?]
    [:public {:optional true} string?]
-   [:target-methods string?]
    [:target string?]])
 
 
@@ -183,6 +182,7 @@
    [:interface-implementers [:map-of string? [:or string? set?]]]
    [:observable-classes [:sequential string?]]
    [:subscriber-classes [:sequential string?]]
+   [:mutable-classes {:optional true} [:sequential string?]]
    [:mailbox-classes {:optional true} [:sequential string?]]
    [:debug-methods [:sequential DebugMethod]]
    [:external-types {:optional true} [:set string?]]
@@ -276,6 +276,7 @@
   [:map
    [:class string?]
    [:method-name string?]
+   [:mutating? {:optional true} boolean?]
    [:parameters [:sequential Parameter]]
    [:return-type string?]
    [:interface-signature {:optional true} boolean?]

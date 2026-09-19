@@ -1,9 +1,9 @@
-(ns wchnt-lang.canvas
+(ns wchnt-lang.targets.live-canvas
   "Run a %canvas program: construct the heap, eval Target JS, record draws."
   (:require [wchnt-lang.interpret :as interpret]
             [wchnt-lang.js-view :as js-view]
-            [wchnt-lang.host :as host]
-            [wchnt-lang.target-js :as target-js]))
+            [wchnt-lang.targets.interpreter-std :as host]
+            [wchnt-lang.targets.live-js :as target-js]))
 
 (defn make-graphics
   "Host graphics object. Methods append to an atom log.
@@ -12,7 +12,21 @@
   (let [log (atom [])]
     {:wchnt/host :graphics
      :log log
-     :methods {"background" (fn [& [color alpha]]
+     :methods {"color" (fn [& [r g b a]]
+                          (let [gray? (nil? g)
+                                clamp (fn [value] (max 0 (min 255 (int value))))
+                                g (if gray? r g)
+                                b (if gray? r b)
+                                a (if (nil? a) 255 a)]
+                            (bit-or (bit-shift-left (clamp a) 24)
+                                    (bit-shift-left (clamp r) 16)
+                                    (bit-shift-left (clamp g) 8)
+                                    (clamp b))))
+               "red" (fn [color] (bit-and (unsigned-bit-shift-right color 16) 0xff))
+               "green" (fn [color] (bit-and (unsigned-bit-shift-right color 8) 0xff))
+               "blue" (fn [color] (bit-and color 0xff))
+               "alpha" (fn [color] (bit-and (unsigned-bit-shift-right color 24) 0xff))
+               "background" (fn [& [color alpha]]
                               (swap! log conj (if (nil? alpha)
                                                 [:background color]
                                                 [:background color alpha])))

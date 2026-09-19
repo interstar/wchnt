@@ -1,4 +1,4 @@
-(ns wchnt-lang.target-js
+(ns wchnt-lang.targets.live-js
   "Tiny JavaScript subset for %canvas %init/%step. Not a JS engine.
    Enough for bounce_canvas.wcn; unknown syntax fails fast."
   (:require [instaparse.core :as insta]

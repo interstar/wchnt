@@ -1,4 +1,4 @@
-(ns wchnt-lang.host
+(ns wchnt-lang.targets.interpreter-std
   "Compiler-owned host types (WCHNTMaths). Query methods have return
    types; types not in the table stay fluent (return the receiver).")
 
@@ -24,6 +24,15 @@
    "max" {:arity 2 :return "Float" :arg-types ["Float" "Float"]}
    "atan2" {:arity 2 :return "Float" :arg-types ["Float" "Float"]}
    "hsv" {:arity 3 :return "Int" :arg-types ["Float" "Float" "Float"]}})
+
+(def ^:private graphics-query-methods
+  {"color" {:arities #{1 3 4} :arg-types {1 ["Int"]
+                                             3 ["Int" "Int" "Int"]
+                                             4 ["Int" "Int" "Int" "Int"]}}
+   "red" {:arities #{1} :arg-types {1 ["Int"]}}
+   "green" {:arities #{1} :arg-types {1 ["Int"]}}
+   "blue" {:arities #{1} :arg-types {1 ["Int"]}}
+   "alpha" {:arities #{1} :arg-types {1 ["Int"]}}})
 
 (def host-api
   {"WCHNTMaths" maths-specs})
@@ -51,6 +60,23 @@
   [class-name method]
   (when-let [spec (get-in host-api [class-name method])]
     (not= "Void" (:return spec))))
+
+(defn query-spec
+  "Return the typed specification for a value-returning host query, or nil.
+   Graphics drawing methods remain fluent; only colour construction and
+   component extraction have a non-receiver result type."
+  [class-name method arity]
+  (when-let [method-spec (and (= class-name "WCHNTGraphics")
+                              (get graphics-query-methods method))]
+    (when-not (contains? (:arities method-spec) arity)
+      (throw (ex-info (str class-name "::" method " expected one of "
+                           (sort (:arities method-spec))
+                           " argument(s), got " arity)
+                      {:class-name class-name :method method
+                       :expected (:arities method-spec) :got arity})))
+    {:arity arity
+     :return "Int"
+     :arg-types (get-in method-spec [:arg-types arity])}))
 
 (defn- d
   [x]

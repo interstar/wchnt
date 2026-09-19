@@ -8,10 +8,10 @@
             [wchnt-lang.pipeline :as p]
             [wchnt-lang.ast-to-ir :as ast-to-ir]
             [wchnt-lang.reaction :as reaction]
-            [wchnt-lang.ir-to-haxe :as ir-to-haxe]
-            [wchnt-lang.target :as target]
+            [wchnt-lang.targets.haxe-backend :as ir-to-haxe]
+            [wchnt-lang.targets.plugins :as target]
+            [wchnt-lang.targets.requires :as target-requires]
             [wchnt-lang.importing :as importing]
-            [wchnt-lang.haxe-helpers :as haxe-helpers]
             [clojure.string :as str]))
 
 (defn- schema-stages
@@ -34,21 +34,29 @@
    (p/processor target/parse-target "parse Target % blocks")
    (p/stash :target-ir)])
 
+(defn- schema-ir-with-target-types
+  [schema-ir target-ir]
+  (-> schema-ir
+      (assoc :target-ir target-ir)
+      (update :external-types
+              #(into (or % #{})
+                     (target-requires/provided-types (:requires target-ir))))))
+
 (defn- parse-methods-text
-  [text section schema-ir target-ir]
+  [text schema-ir target-ir]
   (if (str/blank? text)
     {:methods [] :schema-ir schema-ir}
-    (let [parsed (parser/parse-reaction-unified text)]
+    (let [schema-ir (schema-ir-with-target-types schema-ir target-ir)
+          parsed (parser/parse-reaction-unified text)]
       (when (p/failed? parsed)
         (throw (ex-info (or (first (:errors parsed)) "Methods parse failed")
-                        {:section section})))
+                        {})))
       (let [reaction-ast (:value parsed)
             schema-with-ext (reaction/merge-external-types
                              schema-ir
                              (reaction/collect-external-types-from-reaction-ast reaction-ast))
             methods (reaction/reaction-ast-to-ir reaction-ast schema-with-ext target-ir
                                                  {:skip-checks? true})]
-        (reaction/assert-methods-section-placement! methods schema-with-ext section)
         {:methods methods :schema-ir schema-with-ext}))))
 
 (defn- parse-public-methods-text
@@ -61,7 +69,8 @@
       (let [construction (parser/parse-construction-unified construction-text)]
         (when (p/failed? construction)
           (throw (ex-info (or (first (:errors construction)) "Construction parse failed") {})))
-        (let [root (ast-to-ir/root-class-from-construction (:value construction) schema-ir)
+        (let [schema-ir (schema-ir-with-target-types schema-ir target-ir)
+              root (ast-to-ir/root-class-from-construction (:value construction) schema-ir)
               public-ast (importing/public-methods-ast root text)
               schema-with-ext (reaction/merge-external-types
                                schema-ir
@@ -86,26 +95,47 @@
    (p/cargo-processor
     (fn [cargo]
       (let [codeblocks (:value cargo)
+            construction-text (:construction codeblocks)]
+        (if (str/blank? construction-text)
+          cargo
+          (let [parsed (parser/parse-construction-unified construction-text)]
+            (if (p/failed? parsed)
+              cargo
+              (try
+                (let [schema-ir (get-in cargo [:stash :schema-ir])
+                      root-class (ast-to-ir/root-class-from-construction
+                                  (:value parsed)
+                                  schema-ir)
+                      mutable-classes (vec (distinct
+                                            (conj (or (:mutable-classes schema-ir) [])
+                                                  root-class)))]
+                  (assoc-in cargo [:stash :schema-ir]
+                            (assoc schema-ir
+                                   :root-class root-class
+                                   :mutable-classes mutable-classes)))
+                (catch #?(:clj Exception :cljs :default) _
+                  cargo)))))))
+    "infer mutable root class")
+   (p/cargo-processor
+    (fn [cargo]
+      (let [codeblocks (:value cargo)
             target-ir (get-in cargo [:stash :target-ir])
             after-methods (parse-methods-text (:methods codeblocks)
-                                              :methods
                                               (get-in cargo [:stash :schema-ir])
                                               target-ir)
-            after-target-methods (parse-methods-text (:target-methods codeblocks)
-                                                     :target-methods
-                                                     (:schema-ir after-methods)
-                                                     target-ir)
             after-public-methods (parse-public-methods-text (:public codeblocks)
-                                                            (:schema-ir after-target-methods)
+                                                            (:schema-ir after-methods)
                                                             target-ir
                                                             (:construction codeblocks))
             schema-ir (:schema-ir after-public-methods)
-            combined (into (into (:methods after-methods) (:methods after-target-methods))
+            combined (into (:methods after-methods)
                            (:methods after-public-methods))]
+        (target-requires/assert-external-types!
+         schema-ir target-ir)
         (reaction/assert-methods-complete! combined schema-ir)
         (-> (p/success-cargo combined)
             (assoc-in [:stash :schema-ir] schema-ir))))
-    "methods + target-methods -> IR")
+    "methods -> IR")
    (p/stash :methods-ir)
    (p/validator schema/valid-methods-ir? "Methods IR matches schema")])
 
@@ -212,22 +242,22 @@
   (apply p/run codeblocks (ir-stages-from-codeblocks)))
 
 (defn- import-codeblocks
-  "Imported program pages retain their Construction so the root assemblage and factory are compiled.
-   Their Target is deliberately omitted: importing a page never runs its host lifecycle."
-  [codeblocks]
+  "Imported pages compile against the importing Target, but never run its lifecycle."
+  [codeblocks target-text]
   (assoc codeblocks
-         :target ""
+         :target (or target-text "")
          :page-kind :program))
 
 (defn- compile-import-page
-  [page-name resolve-page]
+  [page-name resolve-page target-text]
   (let [markdown (resolve-page page-name)
-        parsed (mainfile/parse-mainfile markdown)]
+        parsed (mainfile/parse-mainfile markdown {:resolve-page resolve-page})]
     (when (p/failed? parsed)
       (throw (ex-info (str "Import page '" page-name "' parse error: "
                            (first (:errors parsed)))
                       {:page page-name})))
-    (let [cargo (compile-codeblocks-to-ir (import-codeblocks (:value parsed)))]
+    (let [cargo (compile-codeblocks-to-ir
+                 (import-codeblocks (:value parsed) target-text))]
       (when (p/failed? cargo)
         (throw (ex-info (str "Import page '" page-name "' compile error: "
                              (first (:errors cargo)))
@@ -236,8 +266,9 @@
       cargo)))
 
 (defn- compile-import-cargos-by-page
-  [import-order resolve-page]
-  (into {} (map (fn [name] [name (compile-import-page name resolve-page)])
+  [import-order resolve-page target-text]
+  (into {} (map (fn [name]
+                  [name (compile-import-page name resolve-page target-text)])
                 import-order)))
 
 (defn- merge-import-cargos
@@ -272,7 +303,7 @@
    (compile-to-ir wchnt-markdown {}))
   ([wchnt-markdown {:keys [resolve-page]}]
    (try
-     (let [parsed (mainfile/parse-mainfile wchnt-markdown)]
+     (let [parsed (mainfile/parse-mainfile wchnt-markdown {:resolve-page resolve-page})]
        (if (p/failed? parsed)
          parsed
          (let [codeblocks (:value parsed)]
@@ -286,7 +317,8 @@
                                    resolve-page))
                    cargos-by-page (when (seq import-order)
                                     (compile-import-cargos-by-page
-                                     import-order resolve-page))
+                                     import-order resolve-page
+                                     (:target codeblocks)))
                    import-env (when (seq import-specs)
                                 (importing/env-from-import-cargos
                                  import-specs cargos-by-page))
@@ -305,122 +337,6 @@
 (defn- haxe-stages
   []
   (concat (schema-haxe-stages) (construction-haxe-stages)))
-
-(defn- class-body
-  [& parts]
-  (str/join "\n" (remove str/blank? parts)))
-
-(defn- emit-terminal-main
-  [helpers main]
-  (when (str/blank? (or main ""))
-    (throw (ex-info "Construction programs must define %main in Target" {})))
-  (str "class Main {\n"
-       (class-body haxe-helpers/wchnt-console-binding
-                   haxe-helpers/wchnt-maths-binding
-                   helpers main)
-       "\n}"))
-
-(defn- emit-openfl-main
-  [helpers init step]
-  (when (or (str/blank? (or init "")) (str/blank? (or step "")))
-    (throw (ex-info "%openfl requires %init and %step" {})))
-  (str "class Main extends Sprite {\n"
-       (class-body haxe-helpers/wchnt-console-binding
-                   haxe-helpers/wchnt-maths-binding
-                   helpers init step
-                   haxe-helpers/openfl-lifecycle)
-       "\n}"))
-
-(defn- emit-cli-main
-  [helpers init step]
-  (when (or (str/blank? (or init "")) (str/blank? (or step "")))
-    (throw (ex-info "%cli requires %init and %step" {})))
-  (str "class Main {\n"
-       (class-body haxe-helpers/wchnt-console-binding
-                   haxe-helpers/wchnt-maths-binding
-                   helpers init step
-                   haxe-helpers/cli-lifecycle)
-       "\n}"))
-
-(defn- emit-main-class
-  [target-ir]
-  (if (nil? (:host target-ir))
-    ""
-    (let [host (:host target-ir)]
-      (when-not host
-        (throw (ex-info (str "Target must name a host ("
-                             "terminal, cli, cli-live, openfl, or canvas)")
-                        {:target-ir target-ir})))
-      (let [helpers (str/join "\n" (map :haxe (vals (:bindings (or target-ir {:bindings {}})))))
-            main (get-in target-ir [:main :haxe])
-            init (get-in target-ir [:init :haxe])
-            step (get-in target-ir [:step :haxe])]
-        (case host
-          "terminal" (emit-terminal-main helpers main)
-          "openfl" (emit-openfl-main helpers init step)
-          "cli" (emit-cli-main helpers init step)
-          "canvas" (throw (ex-info "%canvas is for the live interpreter, not the Haxe backend"
-                                   {:host host}))
-          "cli-live" (throw (ex-info "%cli-live is for the live interpreter, not the Haxe backend"
-                                     {:host host}))
-          (throw (ex-info (str "Unknown Target host '" host "'") {:host host})))))))
-
-(defn- haxe-artifacts-for-cargo
-  [cargo include-helpers?]
-  (let [schema-ir (get-in cargo [:stash :schema-ir])
-        construction-ir (get-in cargo [:stash :construction-ir])
-        methods-ir (or (get-in cargo [:stash :methods-ir]) [])]
-    (if construction-ir
-      (let [schema-ir (assoc schema-ir :root-class (:root-class construction-ir))
-            methods-for-codegen (into methods-ir (vals (or (:imported-methods schema-ir) {})))
-            classes (ir-to-haxe/schema-ir-to-haxe schema-ir methods-for-codegen include-helpers?)
-            factory (ir-to-haxe/generate-construction-factory construction-ir schema-ir)
-            wrapper (ir-to-haxe/generate-haxe-assemblage-class schema-ir methods-ir factory)]
-        {:classes classes :wrapper wrapper})
-      {:classes (ir-to-haxe/schema-ir-to-haxe schema-ir methods-ir include-helpers?)
-       :wrapper ""})))
-
-(defn- cargo->full-program
-  [cargo]
-  (let [codeblocks (get-in cargo [:stash :codeblocks])
-        target-ir (get-in cargo [:stash :target-ir])
-        host (:host target-ir)
-        page-kind (or (:page-kind codeblocks) :program)
-        construction-ir (get-in cargo [:stash :construction-ir])
-        has-construction? (boolean construction-ir)
-        local-artifacts (haxe-artifacts-for-cargo cargo true)
-        imported-artifacts (for [imported (vals (get-in cargo [:stash :imported-cargos] {}))]
-                             (haxe-artifacts-for-cargo imported false))
-        classes (str/join "\n" (concat [(:classes local-artifacts)
-                                            (:wrapper local-artifacts)]
-                                           (map :classes imported-artifacts)
-                                           (map :wrapper imported-artifacts)))
-        factory ""
-        main (or (get-in target-ir [:main :haxe]) "")
-        main-class (if has-construction?
-                     (emit-main-class target-ir)
-                     "")]
-    {:classes classes
-     :factory factory
-     :main main
-     :init (or (get-in target-ir [:init :haxe]) "")
-     :step (or (get-in target-ir [:step :haxe]) "")
-     :preamble (case host
-                 "openfl" (str haxe-helpers/openfl-imports "\n\n"
-                               haxe-helpers/openfl-graphics-wrapper "\n\n"
-                               haxe-helpers/wchnt-console-class "\n\n"
-                               haxe-helpers/wchnt-maths-class)
-                 "cli" (str haxe-helpers/wchnt-console-class "\n\n"
-                            haxe-helpers/wchnt-maths-class)
-                 "terminal" (str haxe-helpers/wchnt-console-class "\n\n"
-                                 haxe-helpers/wchnt-maths-class)
-                 "")
-     :main-class main-class
-     :has-construction? has-construction?
-     :page-kind page-kind
-     :host host
-     :codeblocks codeblocks
-     :warnings []}))
 
 (defn compile
   "Haxe backend: IR pipeline plus class/factory/Main emission."
@@ -452,7 +368,7 @@
          (let [haxe-cargo (apply p/continue ir-cargo (haxe-stages))]
            (if (p/failed? haxe-cargo)
              haxe-cargo
-             (assoc haxe-cargo :value (cargo->full-program haxe-cargo))))
+             (assoc haxe-cargo :value (target/emit haxe-cargo))))
          (catch #?(:clj Exception :cljs :default) e
            (-> ir-cargo
                (assoc :success false :value nil)

@@ -5,7 +5,8 @@
             [instaparse.core :as insta]
             [wchnt-lang.grammars :as grammars]))
 
-(def ^:private highlight-sections #{"schema" "construction" "methods"})
+(def ^:private highlight-sections
+  #{"schema" "construction" "methods"})
 
 (def ^:private tag-kind
   {:ClassName :class
@@ -157,8 +158,7 @@
   (re-matches #"^```(?:\w+)?\s*$" trimmed))
 
 (defn- section-name
-  "Match the compiler's heading rule: 1-3 hashes, any name, normalized
-   (e.g. \"## Target Methods\" -> \"target-methods\")."
+  "Match the compiler's heading rule: 1-3 hashes, any name, normalized."
   [trimmed]
   (when-let [m (re-matches #"^#{1,3}\s*(.+?)\s*$" trimmed)]
     (-> (second m) str/trim str/lower-case (str/replace #"\s+" "-"))))

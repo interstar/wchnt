@@ -3,7 +3,7 @@
   (:require [clojure.string :as str]
             [wchnt-lang.ast-utils :as ast-utils]
             [wchnt-lang.ir :as ir]
-            [wchnt-lang.host :as host]
+            [wchnt-lang.targets.requires :as target-requires]
             [wchnt-lang.template :as template]))
 
 (defn- unwrap-expr
@@ -126,8 +126,8 @@
 
     :else
     (or (resolve-enum-ctor name schema-ir class-name)
-        (throw (ex-info (str "Unknown name '" name "' in " class-name
-                             " method (not a field, parameter, or let)")
+        (throw (ex-info (str "Unknown name '" name
+                             "' (not a field, parameter, or let)")
                         {:name name :class-name class-name})))))
 
 (declare ast->expr process-statements assert-fresh-let-name value-type make-arith
@@ -241,9 +241,17 @@
               item))
           (rest arg-list))))
 
+(defn- call-method-name
+  [item]
+  (cond
+    (string? item) item
+    (and (vector? item) (= :CallMethodName (first item))) (second item)
+    :else nil))
+
 (defn- take-call-step
   [items]
-  (let [[names more] (split-with string? items)]
+  (let [[name-nodes more] (split-with #(some? (call-method-name %)) items)
+        names (mapv call-method-name name-nodes)]
     (when (or (empty? names) (empty? more))
       (throw (ex-info "Method call is missing a name or argument list"
                       {:items items})))
@@ -927,16 +935,31 @@
    :external-type class-name
    :type (:return spec)})
 
+(defn- external-method-spec
+  [ctx class-name method arity]
+  (try
+    (target-requires/method-spec
+     (get-in (:schema-ir ctx) [:target-ir :requires])
+     class-name method arity)
+    (catch #?(:clj Exception :cljs :default) e
+      (throw (ex-info
+              (str (:class-name ctx) "::" (:method-name ctx)
+                   ": " (ex-message e))
+              (merge (ex-data e)
+                     {:class-name (:class-name ctx)
+                      :method-name (:method-name ctx)
+                      :external-class class-name
+                      :external-method method}))))))
+
 (defn- external-call
-  "Passthrough call on an @ type. Host-table types use declared returns;
-   other externals stay fluent (type is the receiver)."
+  "Call an @ type using only the method declarations supplied by Target.
+   Undeclared external methods remain opaque/fluent: the compiler does not
+   invent a return type or inspect the platform class."
   [receiver class-name method arg-nodes ctx]
   (when (ir/external-type? (:schema-ir ctx) class-name)
     (let [args (mapv #(convert-call-arg % ctx) arg-nodes)]
-      (if (host/known-host? class-name)
-        (typed-external-call receiver class-name method args
-                             (host/lookup class-name method (count args))
-                             ctx)
+      (if-let [spec (external-method-spec ctx class-name method (count args))]
+        (typed-external-call receiver class-name method args spec ctx)
         {:expr :call
          :receiver receiver
          :method method
@@ -1026,6 +1049,11 @@
                (not (:static? callee)))
       (throw (ex-info (str class-name "::" method
                            " is an instance method; call it on the handle returned by factory")
+                       {:class-name class-name :method-name method})))
+    (when (and (ir/mutating-method-name? method)
+               (not (:mutating? ctx)))
+      (throw (ex-info (str "Pure method cannot call mutating method "
+                           class-name "::" method)
                       {:class-name class-name :method-name method})))
     {:expr :call
      :receiver receiver
@@ -1045,9 +1073,14 @@
       (or (builtin-call receiver class-name method arg-nodes ctx)
           (and (not (imported-handle? (:schema-ir ctx) class-name))
                (external-call receiver class-name method arg-nodes ctx))
-          (let [args (mapv #(convert-call-arg % ctx) arg-nodes)
+            (let [args (mapv #(convert-call-arg % ctx) arg-nodes)
                 callee (lookup-callee class-name method (count args) ctx)
                 via (or (ir/delegate-path (:schema-ir ctx) class-name (:class callee)) [])]
+            (when (and (ir/mutating-method-name? (:method-name callee))
+                       (not (:mutating? ctx)))
+              (throw (ex-info (str "Pure method cannot call mutating method "
+                                   class-name "::" method)
+                              {:class-name class-name :method-name method})))
             (doseq [[arg param] (map vector args (:parameters callee))]
               (assert-assignable! (:schema-ir ctx) (:type param) (value-type arg ctx)
                                   (str class-name "::" method)))
@@ -1691,26 +1724,6 @@
   [schema-ir extra-types]
   (update schema-ir :external-types #(into (or % #{}) extra-types)))
 
-(defn- method-has-external-param?
-  [schema-ir method]
-  (some #(ir/external-type? schema-ir (:type %)) (:parameters method)))
-
-(defn assert-methods-section-placement!
-  "Methods with @ params belong in ## Target Methods only."
-  [methods schema-ir section]
-  (doseq [{:keys [class method-name parameters] :as method} methods]
-    (let [has-external? (method-has-external-param? schema-ir method)]
-      (cond
-        (and (= section :methods) has-external?)
-        (throw (ex-info (str class "::" method-name
-                             " uses @ parameters and must be in ## Target Methods")
-                        {:class class :method method-name :section section}))
-
-        (and (= section :target-methods) (not has-external?))
-        (throw (ex-info (str class "::" method-name
-                             " has no @ parameters and must be in ## Methods")
-                        {:class class :method method-name :section section}))))))
-
 (defn- lambda-args-info
   [lambda-args-node]
   (when-not (ast-utils/node-type? lambda-args-node :LambdaArgs)
@@ -1780,14 +1793,47 @@
     (throw-rebind name class-name method-name)))
 
 (defn- arith-result-type
-  "Int unless any operand is Float (literals, fields, calls, nested arith)."
+  "Join numeric operand types, rejecting opaque/non-numeric operands."
   [parts ctx]
-  (if (some (fn [part]
-              (and (map? part)
-                   (= "Float" (value-type part ctx))))
-            parts)
-    "Float"
-    "Int"))
+  (let [operand-types (keep (fn [part]
+                              (when (map? part)
+                                (value-type part ctx)))
+                            parts)
+        string-expression? (and (seq operand-types)
+                                (every? #(= "String" %) operand-types))
+        invalid-part (some (fn [part]
+                             (when (and (map? part)
+                                        (let [type (value-type part ctx)]
+                                          (and type
+                                               (not (or (numeric-type? type)
+                                                        (= "String" type))))))
+                               part))
+                           parts)
+        invalid (some #(when-not (or (numeric-type? %) (= "String" %)) %)
+                      operand-types)
+        owner (str (:class-name ctx) "::" (:method-name ctx))
+        external-class (:external-type invalid-part)
+        external-method (:method invalid-part)
+        hint (when (and external-class external-method)
+               (str " Add " external-class "::" external-method
+                    "(...) -> <return-type> to Target %requires."))]
+    (cond
+      string-expression? "String"
+      invalid (throw (ex-info (str "Arithmetic expects Int or Float, got " invalid
+                                   " in " owner
+                                   (when (and external-class external-method)
+                                     (str "; this came from external call "
+                                          external-class "::" external-method))
+                                   "."
+                                   hint)
+                              {:type invalid
+                               :class-name (:class-name ctx)
+                               :method-name (:method-name ctx)
+                               :external-class external-class
+                               :external-method external-method
+                               :hint hint}))
+      (some #(= "Float" %) operand-types) "Float"
+      :else "Int")))
 
 (declare value-type)
 
@@ -1926,7 +1972,9 @@
        (= (mapv :name (:parameters signature))
           (mapv :name (:parameters implementation)))
        (= (mapv :type (:parameters signature))
-          (mapv :type (:parameters implementation)))))
+          (mapv :type (:parameters implementation)))
+       (= (boolean (:mutating? signature))
+          (boolean (:mutating? implementation)))))
 
 (defn- signatures-for
   [methods-ir schema-ir iface-name]
@@ -1999,6 +2047,7 @@
                         {:class-name class-name :method-name method-name}))
     {:class class-name
      :method-name method-name
+     :mutating? (ir/mutating-method-name? method-name)
      :parameters (mapv (fn [n] {:name n :type (get explicit-param-types n)})
                        param-names)
      :return-type return-type
@@ -2021,6 +2070,8 @@
         (block-statements body-node)
         ctx {:schema-ir schema-ir
              :class-name class-name
+             :method-name method-name
+             :mutating? (ir/mutating-method-name? method-name)
              :param-names (set param-names)
              :let-names #{}
              :let-types {}
@@ -2053,44 +2104,50 @@
                         {:class-name class-name :method-name method-name})))
       {:class class-name
        :method-name method-name
+       :mutating? (ir/mutating-method-name? method-name)
        :parameters parameters
        :return-type final-return
        :lets lets
        :body body})))
 
-(defn- validate-update-method!
-  "update takes no arguments and constructs this class (every schema field)."
+(defn- validate-mutating-method!
+  "Mutating methods construct this class (every schema field) and return it."
   [{:keys [class method-name parameters body]} schema-ir]
-  (when (= "update" method-name)
+  (when (ir/mutating-method-name? method-name)
+    (when-not (ir/mutable-class? schema-ir class)
+      (throw (ex-info (str class "::" method-name
+                           " requires an identity-capable class")
+                      {:class-name class :method-name method-name})))
     (when (seq parameters)
-      (throw (ex-info (str class "::update takes no arguments")
-                      {:class-name class :parameters parameters})))
+      (when (= "update!" method-name)
+        (throw (ex-info (str class "::update! takes no arguments")
+                        {:class-name class :parameters parameters}))))
     (when-not (and (= :construct (:expr body))
                    (= class (:class-name body)))
-      (throw (ex-info (str class "::update must construct " class)
+      (throw (ex-info (str class "::" method-name " must construct " class)
                       {:class-name class :body body})))
     (let [expected (count (ir/get-assemblage-components schema-ir class))
           got (count (:args body))]
       (when (not= expected got)
-        (throw (ex-info (str class "::update must list every field ("
+        (throw (ex-info (str class "::" method-name " must list every field ("
                              expected " arguments, got " got ")")
                         {:class-name class :expected expected :got got}))))))
 
 (defn assert-update-wiring!
-  "Every $ subscriber and every observable class must define update."
+  "Every $ subscriber, observable, and mailbox must define update!."
   [methods-ir schema-ir]
   (let [defined (set (map (juxt :class :method-name) (or methods-ir [])))
         missing-update (fn [class-names]
-                         (filterv #(not (contains? defined [% "update"]))
+                         (filterv #(not (contains? defined [% "update!"]))
                                   (or class-names [])))]
     (doseq [class-name (missing-update (ir/get-subscriber-classes schema-ir))]
-      (throw (ex-info (str "Subscriber " class-name " must define update")
+      (throw (ex-info (str "Subscriber " class-name " must define update!")
                       {:class-name class-name})))
     (doseq [class-name (missing-update (ir/get-observable-classes schema-ir))]
-      (throw (ex-info (str "Observable " class-name " must define update")
+      (throw (ex-info (str "Observable " class-name " must define update!")
                       {:class-name class-name})))
     (doseq [class-name (missing-update (ir/get-mailbox-classes schema-ir))]
-      (throw (ex-info (str "Mailbox " class-name " must define update")
+      (throw (ex-info (str "Mailbox " class-name " must define update!")
                       {:class-name class-name})))))
 
 (defn- method-def->ir
@@ -2101,7 +2158,7 @@
     (let [ir (if (interface? schema-ir class-name)
                (interface-method-def->ir method-node schema-ir)
                (concrete-method-def->ir method-node schema-ir lookup-method target-fns))]
-      (validate-update-method! ir schema-ir)
+      (validate-mutating-method! ir schema-ir)
       ir)))
 
 (defn- method-node-key
@@ -2142,7 +2199,23 @@
                                                 "' on " class-name)
                                            {:class-name class-name
                                             :method-name method-name}))))
-              ir (method-def->ir (get defs-by-key key) schema-ir lookup target-fns)]
+              ir (try
+                   (method-def->ir (get defs-by-key key) schema-ir lookup target-fns)
+                   (catch #?(:clj Exception :cljs :default) e
+                     (let [owner (str (first key) "::" (second key))
+                           message (ex-message e)]
+                       (if (and message
+                                (or (= message owner)
+                                    (str/starts-with? message (str owner " "))
+                                    (str/starts-with? message (str owner ":"))))
+                         (throw e)
+                         (throw (ex-info (str "Error in " owner ": "
+                                              (or message (str e)))
+                                         (merge (ex-data e)
+                                                {:class-name (first key)
+                                                 :method-name (second key)
+                                                 :cause-message message}
+                                                {:cause e})))))))]
           (swap! state (fn [s]
                          (-> s
                              (assoc-in [:memo key] ir)

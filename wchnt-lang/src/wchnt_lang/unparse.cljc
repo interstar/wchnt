@@ -236,8 +236,11 @@
     (str (unparse-node (first cs) depth :expr)
          (apply str
                 (map (fn [part]
-                       (if (string? part)
-                         (str "." part)
+                       (cond
+                         (string? part) (str "." part)
+                         (= :CallMethodName (first part))
+                         (str "." (second part))
+                         :else
                          (str "(" (unparse-node part depth :expr) ")")))
                      (rest cs))))))
 

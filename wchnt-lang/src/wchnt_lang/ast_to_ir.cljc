@@ -340,13 +340,17 @@
           interface-implementers (build-interface-implementers schema-ast)
           {:keys [observable-classes subscriber-classes]} (build-observable-and-subscriber-classes schema-ast)
           mailbox-classes (vec (distinct (composition-inlet-names schema-ast)))
+          mutable-classes (vec (distinct (concat observable-classes
+                                                  subscriber-classes
+                                                  mailbox-classes)))
           debug-methods (create-debug-methods assemblages)]
       (validate-delegates!
        (assoc (ir/create-schema-ir assemblages interfaces enums context-relationships
                                    interface-implementers observable-classes subscriber-classes
                                    debug-methods
                                    (collect-external-types-from-assemblages assemblages))
-              :mailbox-classes mailbox-classes)))))
+              :mailbox-classes mailbox-classes
+              :mutable-classes mutable-classes)))))
 
 ;; =============================================================================
 ;; Construction AST to IR
