@@ -48,7 +48,7 @@ Notes :
 * method notes
 
 ```
-Time::update = { [:Time (t + 1)] }
+Time::update! = { [:Time (t + 1)] }
 ```
 
 ## Target
@@ -60,7 +60,7 @@ Time::update = { [:Time (t + 1)] }
 function init() { assemblage = GameAssemblage.factory(); }
 
 %step
-function step() { assemblage.time.update(); }
+function step() { assemblage.time.update_mutates(); }
 ```
 "
         result (m/parse-mainfile content)]

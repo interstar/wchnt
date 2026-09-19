@@ -330,9 +330,9 @@
       (is (str/includes? classes "this.notifySubscribers();"))
       (is (str/includes? classes "this.t = this.t + 1;"))
       (is (re-find #"\.time\.subscribe\(" factory))
-      (is (str/includes? main-class "assemblage.time.update();"))
+      (is (str/includes? main-class "assemblage.time.update_mutates();"))
       (is (not (str/includes? main-class "assemblage.step()")))
-      (is (not (str/includes? main-class "assemblage.update();")))
+      (is (not (str/includes? main-class "assemblage.update_mutates();")))
       (is (str/includes? main-class "drawCircle"))
       (is (str/includes? main-class "Event.ENTER_FRAME"))))))
 
@@ -370,11 +370,11 @@
       (is (str/includes? classes "drawCircle(this.x, this.y, this.radius)"))
       (is (str/includes? main-class "s.draw(graphics)"))
       (is (not (str/includes? main-class "Std.isOfType(s, Circle)")))
-      (is (str/includes? main-class "assemblage.time.update();"))
-      (is (not (str/includes? main-class "assemblage.update();"))))))
+      (is (str/includes? main-class "assemblage.time.update_mutates();"))
+      (is (not (str/includes? main-class "assemblage.update_mutates();"))))))
 
 (deftest shapes-canvas-registers-graphics-external
-  (testing "shapes_canvas Target Methods register Graphics for the interpreter"
+  (testing "shapes_canvas Methods register Graphics for the interpreter"
     (let [cargo (compiler/compile-to-ir (slurp "live-examples/shapes_canvas.wcn"))]
       (is (:success cargo))
       (is (contains? (:external-types (get-in cargo [:stash :schema-ir])) "Graphics")))))
@@ -388,12 +388,12 @@
           preamble (get-in cargo [:value :preamble] "")]
       (is (= "openfl" (host cargo)))
       (is (str/includes? classes "public function inject(left:Bool, right:Bool, up:Bool, down:Bool): Keys"))
-      (is (str/includes? classes "return this.update();"))
+      (is (str/includes? classes "return this.update_mutates();"))
       (is (str/includes? preamble "openfl.events.KeyboardEvent"))
       (is (str/includes? preamble "openfl.ui.Keyboard"))
       (is (str/includes? main-class "assemblage.keys.inject("))
       (is (str/includes? main-class "Keyboard.LEFT"))
-      (is (not (str/includes? main-class "assemblage.update();"))))))
+      (is (not (str/includes? main-class "assemblage.update_mutates();"))))))
 
 (deftest square-canvas-example
   (testing "square_canvas.wcn is IR-only; Target injects harness input.keys"
@@ -416,9 +416,9 @@
       (is (str/includes? classes "this.notifySubscribers();"))
       (is (str/includes? classes "this.ball = moved;"))
       (is (str/includes? classes "return this;"))
-      (is (str/includes? main "assemblage.time.update();"))
+      (is (str/includes? main "assemblage.time.update_mutates();"))
       (is (str/includes? main "for (i in 0...10)"))
-      (is (not (str/includes? main "assemblage.update();")))
+      (is (not (str/includes? main "assemblage.update_mutates();")))
       (is (not (str/includes? main "assemblage.bounceDx"))))))
 
 (deftest combinators-cli-example
@@ -700,7 +700,7 @@
       (is (not (str/includes? cls "public static function make(")))
       (is (str/includes? f "GameAssemblage.factory()"))
       (is (str/includes? f "addShape(new Pentagon("))
-      (is (str/includes? main-class "assemblage.game.time.update()"))
+      (is (str/includes? main-class "assemblage.game.time.update_mutates()"))
       (is (str/includes? main-class "s.draw(graphics)")))))
 
 (deftest factory-args-live-example

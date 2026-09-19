@@ -3,7 +3,7 @@
   (:require [clojure.test :refer :all]
             [wchnt-lang.compiler :as compiler]
             [wchnt-lang.interpret :as interpret]
-            [wchnt-lang.host :as host]
+            [wchnt-lang.targets.interpreter-std :as host]
             [wchnt-lang.pipeline :as p]))
 
 (deftest origin-canvas-compiles-to-ir

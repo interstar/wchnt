@@ -85,6 +85,61 @@ var a = AppAssemblage.factory();
   [cargo]
   (first (:errors cargo)))
 
+(def platform-dependent-lib
+  "## Schema
+
+```
+Paint = Int/x
+```
+
+## Construction
+
+```
+[:Paint 0]
+```
+
+## Methods
+
+```
+Paint::colour = {@WCHNTGraphics/g | g.color(255)} -> Int
+```
+
+## Public
+
+```
+make = { [:Paint 0] }
+```")
+
+(defn- app-with-graphics-requirements
+  [requirements]
+  (str "## Import\n\n```\n[[platform-paint]] as paint\n```\n\n"
+       "## Schema\n\n```\nApp = @Paint\n```\n\n"
+       "## Construction\n\n```\n[:App paint.make()]\n```\n\n"
+       "## Target\n\n```\n%openfl\n\n%requires\n"
+       requirements "\n\n%init\nfunction init() {}\n\n"
+       "%step\nfunction step() {}\n```"))
+
+(deftest imported-methods-typecheck-against-importers-requires
+  (let [app (app-with-graphics-requirements
+             "WCHNTGraphics\nWCHNTGraphics::color(Int) -> Int")
+        cargo (compiler/compile-to-ir
+               app
+               {:resolve-page (fn [name]
+                                (when (= name "platform-paint")
+                                  platform-dependent-lib))})]
+    (is (:success cargo) (err cargo))))
+
+(deftest imported-external-result-needs-importers-method-signature
+  (let [app (app-with-graphics-requirements "WCHNTGraphics")
+        cargo (compiler/compile-to-ir
+               app
+               {:resolve-page (fn [name]
+                                (when (= name "platform-paint")
+                                  platform-dependent-lib))})]
+    (is (not (:success cargo)))
+    (is (re-find #"return type annotation Int does not match inferred WCHNTGraphics"
+                 (err cargo)))))
+
 (deftest parse-public-and-import-alias
   (testing "Public entries are unqualified methods or published type names"
     (is (= [{:method "make"} {:type "Shape"}]

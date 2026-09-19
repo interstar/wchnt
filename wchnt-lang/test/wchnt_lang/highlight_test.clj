@@ -38,6 +38,17 @@
       (is (some #{"else"} (texts src spans :keyword)))
       (is (not-any? #{"function"} (texts src spans :keyword))))))
 
+(deftest methods-with-external-parameters-are-highlighted
+  (testing "Methods with external parameters use WCHNT syntax highlighting"
+    (let [src (str "# t\n## Methods\n\n```\n"
+                   "Circle::draw = { @Graphics/g | "
+                   "if (radius > 0) { g } else { g } }\n```\n")
+          {:keys [spans errors]} (highlight/highlight src)]
+      (is (empty? errors) (pr-str errors))
+      (is (some #{"draw"} (texts src spans :method)))
+      (is (some #{"if"} (texts src spans :keyword)))
+      (is (some #{"Graphics"} (texts src spans :type))))))
+
 (deftest broken-schema-keeps-last-good
   (testing "Parse failure keeps previous spans and marks the error"
     (let [src (bounce)

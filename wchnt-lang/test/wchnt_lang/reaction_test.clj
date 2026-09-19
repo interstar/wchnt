@@ -6,7 +6,7 @@
             [wchnt-lang.parser :as parser]
             [wchnt-lang.ast-to-ir :as ast-to-ir]
             [wchnt-lang.reaction :as reaction]
-            [wchnt-lang.ir-to-haxe :as ir-to-haxe]
+            [wchnt-lang.targets.haxe-backend :as ir-to-haxe]
             [wchnt-lang.compiler :as compiler]))
 
 (defn- schema-ir
@@ -63,9 +63,11 @@ Ball = Int/x Int/y Int/dx Int/dy Int/rad")
                           (methods-ir rect-ball-schema "Foo::bar = { 1 }")))))
 
 (deftest unknown-name-fails
-  (testing "a name that is neither a field nor a parameter fails fast"
-    (is (thrown-with-msg? Exception #"Unknown name"
-                          (methods-ir rect-ball-schema "Rect::area = { banana * height }")))))
+  (testing "unknown names identify their owning method"
+    (is (thrown-with-msg? Exception
+                          #"Error in Rect::area: Unknown name 'banana' \(not a field, parameter, or let\)"
+                          (methods-ir rect-ball-schema
+                                      "Rect::area = { banana * height }")))))
 
 (def enum-map-schema
   "Config = {Move : Int}/moves
@@ -335,6 +337,14 @@ Game::ballInside = { playArea.rect.contains(ball.x, ball.y) }")
 (deftest unknown-method-call-fails
   (testing "a method missing on the receiver class fails fast"
     (is (thrown-with-msg? Exception #"Unknown method"
+                          (methods-ir call-schema
+                                      "Ball::move = { [:Ball x y dx dy rad] }
+Game::bad = { ball.explode() }")))))
+
+(deftest unexpected-method-conversion-errors-include-method-context
+  (testing "unexpected failures while converting a method to IR name its owner"
+    (is (thrown-with-msg? Exception
+                          #"Error in Game::bad: Unknown method 'explode' on Ball"
                           (methods-ir call-schema
                                       "Ball::move = { [:Ball x y dx dy rad] }
 Game::bad = { ball.explode() }")))))
@@ -864,21 +874,82 @@ Ball = Int/x Int/y Int/dx Int/dy Int/rad
 Time = Int/t")
 
 (def tick-methods
-  "Time::update = { [:Time (t + 1)] }
-Game::update = { [:Game playArea ball time] }")
+  "Time::update! = { [:Time (t + 1)] }
+Game::update! = { [:Game playArea ball time] }")
 
 (deftest update-rewrites-self
   (testing "update IR is a same-class construction of every field"
     (let [methods (methods-ir tick-schema tick-methods)
           by-name (into {} (map (juxt (juxt :class :method-name) identity) methods))
-          time-up (by-name ["Time" "update"])
-          game-up (by-name ["Game" "update"])]
+          time-up (by-name ["Time" "update!"])
+          game-up (by-name ["Game" "update!"])]
       (is (= "Time" (:return-type time-up)))
       (is (= :construct (get-in time-up [:body :expr])))
       (is (= "Time" (get-in time-up [:body :class-name])))
       (is (= 1 (count (get-in time-up [:body :args]))))
       (is (= "Game" (get-in game-up [:body :class-name])))
       (is (= 3 (count (get-in game-up [:body :args])))))))
+
+(def mutating-method-schema
+  "Counter = $Clock
+Clock = Int/t")
+
+(def mutating-methods
+  "Clock::update! = { [:Clock t] }
+Clock::advance! = { Int/delta | [:Clock (t + delta)] }
+Counter::update! = { [:Counter clock] }")
+
+(deftest arbitrary-mutating-method-is-marked-in-ir
+  (testing "! is an effect marker and mutating methods may take arguments"
+    (let [methods (methods-ir mutating-method-schema mutating-methods)
+          advance (first (filter #(= "advance!" (:method-name %)) methods))]
+      (is (:mutating? advance))
+      (is (= [{:name "delta" :type "Int"}] (:parameters advance)))
+      (is (= "Clock" (:return-type advance)))
+      (is (= "Clock" (get-in advance [:body :class-name]))))))
+
+(deftest pure-method-cannot-call-mutating-method
+  (testing "a pure method cannot call a ! method"
+    (is (thrown-with-msg? Exception #"Pure method cannot call mutating method"
+                          (methods-ir mutating-method-schema
+                                       (str mutating-methods
+                                            "\nClock::bad = { this.advance!(1) }"))))))
+
+(deftest mutating-method-requires-mutable-class
+  (testing "! methods are rejected on ordinary value classes"
+    (is (thrown-with-msg? Exception #"identity-capable class"
+                          (methods-ir "Counter = Int/t"
+                                       "Counter::reset! = { [:Counter t] }")))))
+
+(deftest mutating-method-cannot-replace-identity-slot
+  (testing "a mutating construction cannot put another class in a $ slot"
+    (let [cargo (compiler/compile
+                 (str "## Schema\n\n```\n"
+                      "Game = $Time\nTime = Int/t\nOther = Int/x\n"
+                      "```\n\n## Construction\n\n```\n"
+                      "[:Game [:Time 0]]\n"
+                      "```\n\n## Methods\n\n```\n"
+                      "Time::update! = { [:Time t] }\n"
+                      "Game::update! = { [:Game [:Other 1]] }\n"
+                      "```\n"))]
+      (is (not (:success cargo)))
+      (is (re-find #"replace identity slot|assignable|type"
+                   (or (first (:errors cargo)) ""))))))
+
+(deftest mutating-method-cannot-replace-mailbox-slot
+  (testing "a mutating construction cannot put another class in a > slot"
+    (let [cargo (compiler/compile
+                 (str "## Schema\n\n```\n"
+                      "Game = $Keys\n>Keys = Int/x\nOther = Int/x\n"
+                      "```\n\n## Construction\n\n```\n"
+                      "[:Game [:Keys 0]]\n"
+                      "```\n\n## Methods\n\n```\n"
+                      "Keys::update! = { [:Keys x] }\n"
+                      "Game::update! = { [:Game [:Other 1]] }\n"
+                      "```\n"))]
+      (is (not (:success cargo)))
+      (is (re-find #"replace identity slot|assignable|type"
+                   (or (first (:errors cargo)) ""))))))
 
 (deftest emit-update-haxe
   (testing "update assigns fields on this, notifies if observable, returns this"
@@ -962,10 +1033,10 @@ Ball = Int/x Int/y Int/dx Int/dy Int/rad")
       (is (str/includes? widen "this.ball")))))
 
 (deftest with-update-ticks-time
-  (testing "Time::update may use [:Time | t = (t + 1)]"
+  (testing "Time::update! may use [:Time | t = (t + 1)]"
     (let [methods (methods-ir tick-schema
-                              (str "Time::update = { [:Time | t = (t + 1)] }\n"
-                                   "Game::update = { [:Game | ball.x = (ball.x + ball.dx)] }"))
+                              (str "Time::update! = { [:Time | t = (t + 1)] }\n"
+                                   "Game::update! = { [:Game | ball.x = (ball.x + ball.dx)] }"))
           time-up (first (filter #(= "Time" (:class %)) methods))
           game-up (first (filter #(= "Game" (:class %)) methods))
           sir (schema-ir tick-schema)
@@ -1025,36 +1096,36 @@ Ball = Int/x Int/y Int/dx Int/dy Int/rad")
 
 (deftest update-must-construct-self
   (testing "update that does not construct its class fails"
-    (is (thrown-with-msg? Exception #"update"
+    (is (thrown-with-msg? Exception #"update!"
                           (methods-ir tick-schema
-                                      "Time::update = { t }
-Game::update = { [:Game playArea ball time] }")))))
+                                      "Time::update! = { t }
+Game::update! = { [:Game playArea ball time] }")))))
 
 (deftest update-must-list-every-field
   (testing "update construction arity must match the schema"
     (is (thrown-with-msg? Exception #"arguments"
                           (methods-ir tick-schema
-                                      "Time::update = { [:Time (t + 1)] }
-Game::update = { [:Game playArea ball] }")))))
+                                      "Time::update! = { [:Time (t + 1)] }
+Game::update! = { [:Game playArea ball] }")))))
 
 (deftest subscriber-without-update-fails
   (testing "a $ subscriber must define update"
-    (is (thrown-with-msg? Exception #"update"
+    (is (thrown-with-msg? Exception #"update!"
                           (methods-ir tick-schema
-                                      "Time::update = { [:Time (t + 1)] }")))))
+                                      "Time::update! = { [:Time (t + 1)] }")))))
 
 (deftest observable-without-update-fails
   (testing "an observable class must define update"
-    (is (thrown-with-msg? Exception #"update"
+    (is (thrown-with-msg? Exception #"update!"
                           (methods-ir tick-schema
-                                      "Game::update = { [:Game playArea ball time] }")))))
+                                      "Game::update! = { [:Game playArea ball time] }")))))
 
 (deftest update-rejects-parameters
   (testing "update takes no arguments"
-    (is (thrown-with-msg? Exception #"update"
+    (is (thrown-with-msg? Exception #"update!"
                           (methods-ir tick-schema
-                                      "Time::update = {n | [:Time (t + n)] }
-Game::update = { [:Game playArea ball time] }")))))
+                                      "Time::update! = {n | [:Time (t + n)] }
+Game::update! = { [:Game playArea ball time] }")))))
 
 (deftest construction-without-target-emits-assemblage
   (testing "a construction program without Target emits the assemblage but no Main"
@@ -1099,7 +1170,7 @@ Game::update = { [:Game playArea ball time] }")))))
                  (str "# x\n\n## Schema\n\n```\nGame = $Time\nTime = Int/t\n```\n\n"
                       "## Construction\n\n```\n[:Game [:Time 0]]\n```\n"))]
       (is (not (:success cargo)))
-      (is (re-find #"update" (or (first (:errors cargo)) ""))))))
+      (is (re-find #"update!" (or (first (:errors cargo)) ""))))))
 
 (def trace-target
   {:bindings {"trace" {:fn-name "wchnt_trace" :haxe ""}}

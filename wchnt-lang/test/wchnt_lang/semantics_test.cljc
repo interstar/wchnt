@@ -2,7 +2,7 @@
   "Shared interpreter semantics: JVM (lein test) and browser (live/public/tests.html)."
   #?(:clj (:require [clojure.test :refer [deftest is testing]]
                   [wchnt-lang.interpret :as interpret]
-                  [wchnt-lang.canvas :as canvas])
+                  [wchnt-lang.targets.live-canvas :as canvas])
      :cljs (:require [cljs.test :refer-macros [deftest is testing async]]
                      [wchnt-lang.interpret :as interpret]
                      [wchnt-lang.js-view :as js-view])))
@@ -28,9 +28,10 @@
    (deftest bounce-step-moves-the-ball
      (testing "Game::step translates the ball"
        (let [{:keys [schema-ir methods-ir root]} (load-example "bounce_canvas")
-             next (interpret/call schema-ir methods-ir root "step" [])]
-         (is (= 206 (get-in next [:ball :x])))
-         (is (= 155 (get-in next [:ball :y])))))))
+             next (interpret/call schema-ir methods-ir root "step" [])
+             snapshot (interpret/materialize next)]
+         (is (= 206 (get-in snapshot [:ball :x])))
+         (is (= 155 (get-in snapshot [:ball :y])))))))
 
 #?(:cljs
    (deftest bounce-step-moves-the-ball
@@ -38,9 +39,10 @@
        (load-example-async
         "bounce_canvas"
         (fn [{:keys [schema-ir methods-ir root]}]
-          (let [next (interpret/call schema-ir methods-ir root "step" [])]
-            (is (= 206 (get-in next [:ball :x])))
-            (is (= 155 (get-in next [:ball :y]))))
+          (let [next (interpret/call schema-ir methods-ir root "step" [])
+                snapshot (interpret/materialize next)]
+            (is (= 206 (get-in snapshot [:ball :x])))
+            (is (= 155 (get-in snapshot [:ball :y]))))
           (done))
         (fn [e] (is (nil? e) (str e)) (done))))))
 
@@ -57,20 +59,20 @@
        (let [{:keys [schema-ir methods-ir root]} (load-example "pollution_canvas")
              time (interpret/get-field root "time")]
          (reset! (:wchnt/cell time) {:t 399})
-         (interpret/call schema-ir methods-ir time "update" [])
+         (interpret/call schema-ir methods-ir time "update!" [])
          (is (= 1 (count (interpret/get-field root "pollutants"))))))
      (testing "collision resets score and clears pollutants"
        (let [{:keys [schema-ir methods-ir root]} (load-example "pollution_canvas")
              time (interpret/get-field root "time")]
          (reset! (:wchnt/cell time) {:t 399})
-         (interpret/call schema-ir methods-ir time "update" [])
+         (interpret/call schema-ir methods-ir time "update!" [])
          (let [pollutant (first (interpret/get-field root "pollutants"))
                player (interpret/get-field root "player")]
            (swap! (:wchnt/cell root)
                   assoc :player (assoc player :x (:x pollutant) :y (:y pollutant)
                                        :dx 0 :dy 0)
                   :score 99)
-           (interpret/call schema-ir methods-ir time "update" []))
+           (interpret/call schema-ir methods-ir time "update!" []))
          (is (empty? (interpret/get-field root "pollutants")))
          (is (= 0 (interpret/get-field root "score")))))))
 
@@ -84,7 +86,7 @@
                 ctx {:schema-ir schema-ir :methods-ir methods-ir}
                 game (js-view/as-js (js-view/wrap ctx root))]
             (reset! (:wchnt/cell time) {:t 399})
-            (interpret/call schema-ir methods-ir time "update" [])
+            (interpret/call schema-ir methods-ir time "update!" [])
             (is (= 1 (count (interpret/get-field root "pollutants"))))
             (is (= 1 (.-length (.-pollutants game))))
             (is (instance? js/Array (.-pollutants game)))
@@ -111,19 +113,19 @@
           (testing "first spawn tick adds one pollutant"
             (let [time (interpret/get-field root "time")]
               (reset! (:wchnt/cell time) {:t 399})
-              (interpret/call schema-ir methods-ir time "update" [])
+              (interpret/call schema-ir methods-ir time "update!" [])
               (is (= 1 (count (interpret/get-field root "pollutants"))))))
           (testing "collision resets score and clears pollutants"
             (let [time (interpret/get-field root "time")]
               (reset! (:wchnt/cell time) {:t 399})
-              (interpret/call schema-ir methods-ir time "update" [])
+              (interpret/call schema-ir methods-ir time "update!" [])
               (let [pollutant (first (interpret/get-field root "pollutants"))
                     player (interpret/get-field root "player")]
                 (swap! (:wchnt/cell root)
                        assoc :player (assoc player :x (:x pollutant) :y (:y pollutant)
                                             :dx 0 :dy 0)
                        :score 99)
-                (interpret/call schema-ir methods-ir time "update" []))
+                (interpret/call schema-ir methods-ir time "update!" []))
               (is (empty? (interpret/get-field root "pollutants")))
               (is (= 0 (interpret/get-field root "score")))))
           (done))
@@ -143,12 +145,12 @@
        (let [{:keys [schema-ir methods-ir root]} (load-example "pong_canvas")
              time (interpret/get-field root "time")]
          (is (= "Game" (:wchnt/class (:theGame (interpret/get-field root "ball")))))
-         (interpret/call schema-ir methods-ir time "update" [])
+         (interpret/call schema-ir methods-ir time "update!" [])
          (is (number? (:y (interpret/get-field root "ball"))))))))
 
 #?(:clj
    (deftest shapes-draw-chains-graphics-calls
-     (testing "Target Methods @Graphics/g chains (beginFill.drawCircle.endFill) on canvas"
+     (testing "Methods @Graphics/g chains (beginFill.drawCircle.endFill) on canvas"
        (let [{:keys [schema-ir methods-ir root]} (load-example "shapes_canvas")
              circle (first (interpret/get-field root "shapes"))
              g (canvas/make-graphics)]
@@ -205,14 +207,14 @@ Game = Rect Int/score"
     (let [schema ">Keys = Bool/left Bool/right Bool/up Bool/down
 Game = Int/score $Time Keys
 Time = Int/t"
-          methods "Time::update = { [:Time (t + 1)] }
-Keys::update = { [:Keys left right up down] }
-Game::update = { [:Game score time [:Keys true false false false]] }"
+          methods "Time::update! = { [:Time (t + 1)] }
+Keys::update! = { [:Keys left right up down] }
+Game::update! = { [:Game score time [:Keys true false false false]] }"
           prog (interpret/load-program (str "## Schema\n```\n" schema
                                            "\n```\n## Construction\n```\n[:Game 0 [:Time 0] [:Keys false false false false]]\n```\n## Methods\n```\n"
                                            methods "\n```\n## Target\n```\n%canvas\n\n%init\nfunction init() {}\n\n%step\nfunction step() {}\n```"))
           {:keys [schema-ir methods-ir root]} prog
           keys-before (interpret/get-field root "keys")]
-      (interpret/call schema-ir methods-ir root "update" [])
+      (interpret/call schema-ir methods-ir root "update!" [])
       (is (identical? keys-before (interpret/get-field root "keys")))
       (is (true? (interpret/get-field (interpret/get-field root "keys") "left"))))))

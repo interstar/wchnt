@@ -45,7 +45,6 @@ Person = String String
         (is (= "Person = String String\nGroup = [Person]" (:schema value)))
         (is (= "$people = [:Group [:Person \"John\" \"Smith\"]]\n[:Town [:School $people] [:Team $people]]" (:construction value)))
         (is (= "" (:methods value)))
-        (is (= "" (:target-methods value)))
         (is (= "" (:target value))))
 
       (is (not (:success invalid-result)))
@@ -275,8 +274,8 @@ Person = String String
       (is (= :documentation (:page-kind (:value result)))))))
 
 
-(deftest test-parse-mainfile-import-and-target-methods
-  (testing "Import and Target Methods sections parse in order"
+(deftest test-parse-mainfile-import-and-methods
+  (testing "Import and Methods sections parse in order"
     (let [content "## Import
 
 ```
@@ -290,7 +289,7 @@ shapes-lib
 Game = Int/x
 ```
 
-## Target Methods
+## Methods
 
 ```
 Game::draw = { @Graphics/g | } -> Void
@@ -300,7 +299,7 @@ Game::draw = { @Graphics/g | } -> Void
       (let [value (:value result)]
         (is (= :library (:page-kind value)))
         (is (= "shapes-lib\n[[helpers]]" (:import value)))
-        (is (= "Game::draw = { @Graphics/g | } -> Void" (:target-methods value)))))))
+        (is (= "Game::draw = { @Graphics/g | } -> Void" (:methods value)))))))
 
 
 (deftest test-parse-import-names

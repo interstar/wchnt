@@ -54,7 +54,7 @@ var g = GameAssemblage.factory();
     (is (not (:success cargo)))
     (is (re-find #"Public|alias" (first (:errors cargo))))))
 
-(deftest target-methods-at-in-methods-fails
+(deftest methods-may-use-target-types
   (let [content "## Schema
 
 ```
@@ -65,12 +65,27 @@ Game = Int/x
 
 ```
 Game::draw = { @Graphics/g |
-  1
+  g.color(1)
 }
+```
+
+## Target
+
+```
+%openfl
+
+%requires
+Graphics
+Graphics::color(Int) -> Int
+
+%init
+function init() {}
+
+%step
+function step() {}
 ```"]
     (let [cargo (compiler/compile-to-ir content)]
-      (is (not (:success cargo)))
-      (is (re-find #"Target Methods" (first (:errors cargo)))))))
+      (is (:success cargo) (first (:errors cargo))))))
 
 (deftest documentation-compile-is-success
   (let [cargo (compiler/compile "# Notes\n\nProse only.")]

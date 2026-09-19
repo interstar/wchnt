@@ -1,7 +1,7 @@
-(ns wchnt-lang.canvas-test
+(ns wchnt-lang.targets.live-canvas-test
   "JS view + %canvas Target eval for bounce. Graphics is a recording stub."
   (:require [clojure.test :refer :all]
-            [wchnt-lang.canvas :as canvas]
+            [wchnt-lang.targets.live-canvas :as canvas]
             [wchnt-lang.interpret :as interpret]
             [wchnt-lang.js-view :as js-view]))
 
@@ -58,10 +58,11 @@
 (deftest canvas-run-bounce-target-js
   (testing "bounce_canvas %init/%step JS draws after one assemblage.step"
     (let [{:keys [root draws]} (canvas/run-file "live-examples/bounce_canvas.wcn" 1)]
-      (is (= 206 (get-in root [:ball :x])))
-      (is (= 155 (get-in root [:ball :y])))
+      (let [snapshot (interpret/materialize root)]
+        (is (= 206 (get-in snapshot [:ball :x])))
+        (is (= 155 (get-in snapshot [:ball :y]))))
       (is (= [[:clear]
-              [:begin-fill 0x2a2a2a]
+              [:begin-fill 0x2a422a]
               [:draw-rect 0 0 800 600]
               [:end-fill]
               [:begin-fill 0xf2f2f2]
@@ -95,6 +96,26 @@
               [:draw-ellipse 420 200 60 30]
               [:draw-line 20 300 760 300]]
              (canvas/graphics-log g))))))
+
+(deftest graphics-colour-helpers
+  (testing "colour helpers use packed ARGB and round-trip components"
+    (let [methods (:methods (canvas/make-graphics))
+          colour (fn [& args] (apply (get methods "color") args))
+          red (get methods "red")
+          green (get methods "green")
+          blue (get methods "blue")
+          alpha (get methods "alpha")
+          orange (colour 255 128 0 64)]
+      (is (= 1090486272 orange))
+      (is (= 4286611584 (colour 128 128 128)))
+      (is (= 255 (red orange)))
+      (is (= 128 (green orange)))
+      (is (= 0 (blue orange)))
+      (is (= 64 (alpha orange)))
+      (is (= 17 (red (colour 17))))
+      (is (= 17 (green (colour 17))))
+      (is (= 17 (blue (colour 17))))
+      (is (= 255 (alpha (colour 17)))))))
 
 (deftest canvas-run-graphics-parity
   (testing "graphics_canvas %step draws filled, stroked, ellipse, line, and polygon"

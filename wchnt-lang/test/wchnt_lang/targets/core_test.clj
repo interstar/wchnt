@@ -1,6 +1,43 @@
-(ns wchnt-lang.target-test
+(ns wchnt-lang.targets.core-test
   (:require [clojure.test :refer :all]
-            [wchnt-lang.target :as target]))
+            [wchnt-lang.targets.core :as target]
+            [wchnt-lang.targets.requires :as requires]
+            [wchnt-lang.compiler :as compiler]))
+
+(deftest target-requires-types-external-method-calls
+  (testing "@ target types and method signatures are available while checking Methods"
+    (let [source (str "## Schema\n\n```\n"
+                      "Paint = Int/x\n"
+                      "```\n\n## Construction\n\n```\n"
+                      "[:Paint 0]\n"
+                      "```\n\n## Methods\n\n```\n"
+                      "Paint::colour = {@WCHNTGraphics/g | g.color(255,0,0)}\n"
+                      "```\n\n## Target\n\n```\n"
+                      "%openfl\n\n%requires\n"
+                      "WCHNTGraphics\n"
+                      "WCHNTGraphics::color(Int,Int,Int) -> Int\n\n"
+                      "%init\nfunction init() {}\n\n"
+                      "%step\nfunction step() {}\n"
+                      "```\n")
+          cargo (compiler/compile-to-ir source)
+          method (first (filter #(= "colour" (:method-name %))
+                                (get-in cargo [:stash :methods-ir])))]
+      (is (:success cargo) (first (:errors cargo)))
+      (is (= "Int" (get-in method [:body :type]))))))
+
+(deftest parse-requires-declarations
+  (testing "class-only and typed method declarations produce external IR"
+    (let [ir (requires/parse
+               "WCHNTGraphics\nWCHNTGraphics::color(Int, Int, Int) -> Int\n")]
+      (is (= #{"WCHNTGraphics"} (requires/provided-types ir)))
+      (is (= {:args ["Int" "Int" "Int"]
+              :arg-types ["Int" "Int" "Int"]
+              :return "Int"}
+             (requires/method-spec ir "WCHNTGraphics" "color" 3)))))
+  (testing "Target includes structured requires data"
+    (let [ir (target/parse-target
+              "%openfl\n\n%requires\nWCHNTGraphics\n\n%init\nfunction init() {}\n\n%step\nfunction step() {}")]
+      (is (= #{"WCHNTGraphics"} (:external-types ir))))))
 
 (def sample-target
   "%terminal
@@ -15,7 +52,7 @@
     public static function main():Void {
         var assemblage = GameAssemblage.factory();
         for (i in 0...10) {
-            assemblage.time.update();
+            assemblage.time.update_mutates();
         }
     }
 ")

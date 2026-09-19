@@ -1,4 +1,4 @@
-(ns wchnt-lang.maths-test
+(ns wchnt-lang.targets.interpreter-std-test
   "WCHNTMaths host: query methods return numbers; factory @ injects the handle."
   (:require [clojure.test :refer :all]
             [clojure.string :as str]
@@ -8,7 +8,8 @@
             [wchnt-lang.ast-to-ir :as ast-to-ir]
             [wchnt-lang.reaction :as reaction]
             [wchnt-lang.interpret :as interpret]
-            [wchnt-lang.host :as host]
+            [wchnt-lang.targets.interpreter-std :as host]
+            [wchnt-lang.targets.requires :as requires]
             [wchnt-lang.pipeline :as p]))
 
 (defn- schema-ir
@@ -19,8 +20,17 @@
 (defn- methods-ir
   [schema-text reaction-text]
   (reaction/reaction-ast-to-ir (grammars/parse-reaction reaction-text)
-                               (schema-ir schema-text)
-                               {:bindings {} :main nil}))
+                               (assoc (schema-ir schema-text)
+                                      :target-ir
+                                      {:requires (requires/parse
+                                                  (str "WCHNTMaths::randInt(Int) -> Int\n"
+                                                       "WCHNTMaths::sin(Float) -> Float\n"
+                                                       "WCHNTGraphics::color(Int, Int, Int) -> Int"))})
+                               {:bindings {} :main nil
+                                :target-ir {:requires (requires/parse
+                                                       (str "WCHNTMaths::randInt(Int) -> Int\n"
+                                                            "WCHNTMaths::sin(Float) -> Float\n"
+                                                            "WCHNTGraphics::color(Int, Int, Int) -> Int"))}}))
 
 (def roll-schema
   "Trio = Int/a Int/b Int/c
@@ -61,12 +71,30 @@ Roll = @WCHNTMaths/maths")
     (is (= "sin" (get-in wave [:body :method])))
     (is (= "WCHNTMaths" (:external-type (:body wave))))))
 
-(deftest unknown-maths-method-fails
-  (is (thrown-with-msg? Exception #"Unknown method 'foo' on WCHNTMaths"
-                        (methods-ir roll-schema "Roll::bad = { maths.foo() }"))))
+(deftest unknown-external-method-remains-opaque
+  (let [bad (first (methods-ir roll-schema "Roll::bad = { maths.foo() }"))]
+    (is (= "WCHNTMaths" (:return-type bad)))
+    (is (= "WCHNTMaths" (get-in bad [:body :type])))))
+
+(deftest undeclared-external-result-cannot-be-used-as-a-number
+  (try
+    (reaction/reaction-ast-to-ir
+     (grammars/parse-reaction
+      "Roll::bad = { maths.sin(0) * 2.0 }")
+     (assoc (schema-ir roll-schema)
+            :target-ir
+            {:requires (requires/parse "WCHNTMaths")})
+     {:bindings {} :main nil})
+    (is false "Undeclared external numeric result should fail")
+    (catch Exception e
+      (is (re-find #"Arithmetic expects Int or Float, got WCHNTMaths in Roll::bad"
+                   (.getMessage e)))
+      (is (re-find #"external call WCHNTMaths::sin"
+                   (.getMessage e)))
+      (is (re-find #"Target %requires" (.getMessage e))))))
 
 (deftest randint-wrong-arity-fails
-  (is (thrown-with-msg? Exception #"randInt expected 1"
+  (is (thrown-with-msg? Exception #"randInt expected \(1\)"
                         (methods-ir roll-schema "Roll::bad = { maths.randInt() }"))))
 
 (deftest graphics-passthrough-stays-fluent
@@ -75,6 +103,13 @@ Roll = @WCHNTMaths/maths")
                      "Dot::draw = { @Graphics/g | g.beginFill(1).endFill() } -> Void"))]
     (is (= "Graphics" (get-in draw [:body :type])))
     (is (= "Graphics" (get-in draw [:body :external-type])))))
+
+(deftest graphics-colour-queries-return-int
+  (let [draw (first (methods-ir
+                     "Dot = Int/x"
+                     "Dot::colour = { @WCHNTGraphics/g | g.color(255, 0, 0) }"))]
+    (is (= "Int" (get-in draw [:body :type])))
+    (is (= "WCHNTGraphics" (get-in draw [:body :external-type])))))
 
 (deftest interpret-pulls-three-distinct-rands
   (let [src (page roll-schema "[:Roll maths]" roll-methods)

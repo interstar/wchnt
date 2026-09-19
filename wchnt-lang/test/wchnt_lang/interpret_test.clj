@@ -24,8 +24,8 @@
         "Rect::doubleWidth = { [:Rect | width = (width * 2)] }\n"
         "Ball::nudge = { Int/nx | [:Ball | x = nx] }\n"
         "Game::widen = { [:Game | playArea.rect.width = 400] }\n"
-        "Time::update = { [:Time | t = (t + 1)] }\n"
-        "Game::update = { [:Game | ball.x = (ball.x + ball.dx)] }\n"
+        "Time::update! = { [:Time | t = (t + 1)] }\n"
+        "Game::update! = { [:Game | ball.x = (ball.x + ball.dx)] }\n"
         "```\n")))
 
 (defn- array-get-program
@@ -66,6 +66,30 @@
       (is (= 2 (interpret/call schema-ir methods-ir root "floored" [])))
       (is (= 3 (interpret/call schema-ir methods-ir root "ceiled" []))))))
 
+(defn- mutating-method-program
+  []
+  (interpret/load-program
+   (str "# mutating methods\n"
+        "## Schema\n```\n"
+        "Counter = $Clock\n"
+        "Clock = Int/t\n"
+        "```\n## Construction\n```\n"
+        "[:Counter [:Clock 10]]\n"
+        "```\n## Methods\n```\n"
+        "Clock::update! = { [:Clock t] }\n"
+        "Clock::advance! = { Int/delta | [:Clock (t + delta)] }\n"
+        "Counter::update! = { [:Counter clock] }\n"
+        "```\n")))
+
+(deftest arbitrary-mutating-method-interpret
+  (testing "the interpreter applies an argument-taking ! method in place"
+    (let [{:keys [schema-ir methods-ir root]} (mutating-method-program)
+          clock (interpret/get-field root "clock")]
+      (is (identical? clock
+                      (interpret/call schema-ir methods-ir clock "advance!" [7])))
+      (is (= 17 (interpret/get-field clock "t")))
+      (is (= clock (interpret/get-field root "clock"))))))
+
 (deftest array-get-interpret
   (testing "Array::get returns the element at an index"
     (let [{:keys [schema-ir methods-ir root]} (array-get-program)]
@@ -99,24 +123,25 @@
       (is (= (interpret/get-field root "ball") (interpret/get-field next "ball"))))))
 
 (deftest with-path-update-patches-identity
-  (testing "Game::update write-path replaces ball and keeps the Time cell"
+  (testing "Game::update! write-path replaces ball and keeps the Time cell"
     (let [{:keys [schema-ir methods-ir root]} (with-paths-program)
           time (interpret/get-field root "time")]
-      (interpret/call schema-ir methods-ir time "update" [])
+      (interpret/call schema-ir methods-ir time "update!" [])
       (is (= 1 (interpret/get-field time "t")))
       (is (= 103 (interpret/get-field (interpret/get-field root "ball") "x")))
       (is (identical? time (interpret/get-field root "time"))))))
 
 (deftest construct-bounce-heap
   (testing "bounce construction is nested maps with schema field names"
-    (let [{:keys [root]} (bounce-program)]
-      (is (= "Game" (:wchnt/class root)))
-      (is (= "PlayArea" (get-in root [:playArea :wchnt/class])))
-      (is (= "Rect" (get-in root [:playArea :rect :wchnt/class])))
+    (let [{:keys [root]} (bounce-program)
+          snapshot (interpret/materialize root)]
+      (is (= "Game" (:wchnt/class snapshot)))
+      (is (= "PlayArea" (get-in snapshot [:playArea :wchnt/class])))
+      (is (= "Rect" (get-in snapshot [:playArea :rect :wchnt/class])))
       (is (= {:wchnt/class "Rect" :x 0 :y 0 :width 800 :height 600}
-             (get-in root [:playArea :rect])))
+             (get-in snapshot [:playArea :rect])))
       (is (= {:wchnt/class "Ball" :x 200 :y 150 :dx 6 :dy 5 :rad 16}
-             (:ball root))))))
+             (:ball snapshot))))))
 
 (deftest bounce-dx-away-from-walls
   (testing "Game::bounceDx is +dx while the ball is inside the rect"
@@ -127,20 +152,24 @@
 (deftest bounce-step-moves-the-ball
   (testing "Game::step builds a new Game with the ball translated by dx/dy"
     (let [{:keys [schema-ir methods-ir root]} (bounce-program)
-          next (interpret/call schema-ir methods-ir root "step" [])]
-      (is (= "Game" (:wchnt/class next)))
-      (is (= (get-in root [:playArea :rect]) (get-in next [:playArea :rect])))
+          next (interpret/call schema-ir methods-ir root "step" [])
+          root-snapshot (interpret/materialize root)
+          next-snapshot (interpret/materialize next)]
+      (is (= "Game" (:wchnt/class next-snapshot)))
+      (is (= (get-in root-snapshot [:playArea :rect])
+             (get-in next-snapshot [:playArea :rect])))
       (is (= {:wchnt/class "Ball" :x 206 :y 155 :dx 6 :dy 5 :rad 16}
-             (:ball next))))))
+             (:ball next-snapshot))))))
 
 (deftest bounce-step-reverses-at-the-right-edge
   (testing "repeated step flips dx after x passes the play-area width"
     (let [{:keys [schema-ir methods-ir root]} (bounce-program)
           after (nth (iterate #(interpret/call schema-ir methods-ir % "step" [])
                               root)
-                     102)]
-      (is (>= (get-in after [:ball :x]) 800))
-      (is (neg? (get-in after [:ball :dx]))))))
+                     102)
+          snapshot (interpret/materialize after)]
+      (is (>= (get-in snapshot [:ball :x]) 800))
+      (is (neg? (get-in snapshot [:ball :dx]))))))
 
 (defn- square-program
   []
@@ -195,22 +224,25 @@
 (deftest context-wired-on-initial-construction
   (testing "the constructed ball carries a theGame back-reference to its parent"
     (let [{:keys [root]} (interpret/load-program context-bounce)]
-      (is (= "Game" (get-in root [:ball :theGame :wchnt/class]))))))
+      (is (= "Game" (get-in (interpret/materialize root)
+                            [:ball :theGame :wchnt/class]))))))
 
 (deftest context-rewired-after-step
   (testing "Game::step's freshly built ball is re-wired with theGame"
     (let [{:keys [schema-ir methods-ir root]} (interpret/load-program context-bounce)
           next (interpret/call schema-ir methods-ir root "step" [])]
-      (is (= "Game" (get-in next [:ball :theGame :wchnt/class]))))))
+      (is (= "Game" (get-in (interpret/materialize next)
+                            [:ball :theGame :wchnt/class]))))))
 
 (deftest context-bounce-survives-repeated-steps
   (testing "stepping many times keeps resolving theGame and eventually bounces"
     (let [{:keys [schema-ir methods-ir root]} (interpret/load-program context-bounce)
           after (nth (iterate #(interpret/call schema-ir methods-ir % "step" [])
                               root)
-                     102)]
-      (is (>= (get-in after [:ball :x]) 800))
-      (is (neg? (get-in after [:ball :dx]))))))
+                     102)
+          snapshot (interpret/materialize after)]
+      (is (>= (get-in snapshot [:ball :x]) 800))
+      (is (neg? (get-in snapshot [:ball :dx]))))))
 
 (def reactive-step-program
   (str "## Schema\n\n```\n"
@@ -218,8 +250,8 @@
        "Time = Int/t\n```\n\n"
        "## Construction\n\n```\n[:Game [:Time 0]]\n```\n\n"
        "## Methods\n\n```\n"
-       "Time::update = { [:Time t] }\n"
-       "Game::update = { [:Game time] }\n"
+       "Time::update! = { [:Time t] }\n"
+       "Game::update! = { [:Game time] }\n"
        "Game::step = {\n  [:Game [:Time (time.t + 1)]]\n}\n```\n\n"
        "## Target\n\n```\n%canvas\n\n"
        "%init\nfunction init(){ assemblage = GameAssemblage.factory(); }\n\n"
@@ -251,11 +283,12 @@
 (deftest construct-adventure-maps
   (testing "WorldMap places and Location exits are sparse enum maps"
     (let [{:keys [root]} (adventure-program)
-          places (:places (:worldMap root))
+          snapshot (interpret/materialize root)
+          places (:places (:worldMap snapshot))
           here (get places "Village")]
-      (is (= "Game" (:wchnt/class root)))
-      (is (= "WorldMap" (:wchnt/class (:worldMap root))))
-      (is (= "Village" (:here root)))
+      (is (= "Game" (:wchnt/class snapshot)))
+      (is (= "WorldMap" (:wchnt/class (:worldMap snapshot))))
+      (is (= "Village" (:here snapshot)))
       (is (= "Location" (:wchnt/class here)))
       (is (= "Village Square" (:description here)))
       (is (= "NorthGate" (get (:exits here) "N")))
@@ -269,10 +302,12 @@
           blocked (interpret/call schema-ir methods-ir north "move" ["E"])]
       (is (= "You are in Village Square."
              (interpret/call schema-ir methods-ir root "look" [])))
-      (is (= "NorthGate" (:here north)))
-      (is (= "You are in North Gate." (:msg north)))
-      (is (= "NorthGate" (:here blocked)))
-      (is (= "You can't go that way." (:msg blocked))))))
+      (let [north (interpret/materialize north)
+            blocked (interpret/materialize blocked)]
+        (is (= "NorthGate" (:here north)))
+        (is (= "You are in North Gate." (:msg north)))
+        (is (= "NorthGate" (:here blocked)))
+        (is (= "You can't go that way." (:msg blocked)))))))
 
 (deftest array-map-filter-fold
   (testing "filter keeps matching elements; map and fold still work"
@@ -412,10 +447,11 @@
                 "    }]\n"
                 "  Village]\n"
                 "```\n"))
-          places (:places (:worldMap root))
+          snapshot (interpret/materialize root)
+          places (:places (:worldMap snapshot))
           village (get places "Village")]
-      (is (= "Game" (:wchnt/class root)))
-      (is (= "Village" (:here root)))
+      (is (= "Game" (:wchnt/class snapshot)))
+      (is (= "Village" (:here snapshot)))
       (is (= "Location" (:wchnt/class village)))
       (is (= "square" (:description village)))
       (is (= "Market" (get (:exits village) "N"))))))

@@ -1,7 +1,7 @@
-(ns wchnt-lang.ir-to-haxe-test
+(ns wchnt-lang.targets.haxe-backend-test
   (:require [clojure.test :refer :all]
             [clojure.string :as str]
-            [wchnt-lang.ir-to-haxe :as ir-to-haxe]
+            [wchnt-lang.targets.haxe-backend :as ir-to-haxe]
             [wchnt-lang.ir :as ir]
             [wchnt-lang.compiler :as compiler]
             [wchnt-lang.pipeline :as p]
@@ -573,8 +573,25 @@ public static function main():Void {
       (let [classes (get-in cargo [:value :classes])]
         (is (str/includes? classes "class Keys"))
         (is (str/includes? classes "public function inject(left:Bool, right:Bool, up:Bool, down:Bool): Keys"))
-        (is (str/includes? classes "return this.update();"))
+        (is (str/includes? classes "return this.update_mutates();"))
         (is (str/includes? (get-in cargo [:value :main-class]) "assemblage.keys.inject("))))))
+
+(deftest arbitrary-mutating-method-emits-visible-haxe-name
+  (testing "a WCHNT ! method becomes an argument-taking _mutates Haxe method"
+    (let [source (str "## Schema\n\n```\n"
+                      "Counter = $Clock\nClock = Int/t\n"
+                      "```\n\n## Construction\n\n```\n"
+                      "[:Counter [:Clock 10]]\n"
+                      "```\n\n## Methods\n\n```\n"
+                      "Clock::update! = { [:Clock t] }\n"
+                      "Clock::advance! = { Int/delta | [:Clock (t + delta)] }\n"
+                      "Counter::update! = { [:Counter clock] }\n"
+                      "```\n")
+          cargo (compiler/compile source)]
+      (is (:success cargo) (first (:errors cargo)))
+      (let [classes (get-in cargo [:value :classes])]
+        (is (str/includes? classes "public function advance_mutates(delta:Int): Clock"))
+        (is (str/includes? classes "return this;"))))))
 
 (deftest factory-emits-false-bool-literals
   (testing "construction false is Haxe false, not an empty constructor argument"
@@ -595,8 +612,8 @@ public static function main():Void {
                            "## Construction\n\n```\n"
                            "[:Game [:PlayArea [0 0 800 600]] [:Ball 1 2 3 4 5] [:Time 0]]\n```\n\n"
                            "## Methods\n\n```\n"
-                           "Time::update = { [:Time t] }\n"
-                           "Game::update = { [:Game playArea ball time] }\n"
+                           "Time::update! = { [:Time t] }\n"
+                           "Game::update! = { [:Game playArea ball time] }\n"
                            "Game::step = {\n"
                            "  [:Game playArea [:Ball (ball.x + 1) ball.y ball.dx ball.dy ball.rad] [:Time (time.t + 1)]]\n"
                            "}\n```\n\n"

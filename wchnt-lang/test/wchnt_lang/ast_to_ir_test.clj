@@ -306,6 +306,14 @@
               {:type :primitive, :class-name "Int", :value "2", :args [], :index 3}]
              (vec (:args result)))))))
 
+(deftest test-process-empty-map-construction-expression
+  (testing "an empty map literal produces an empty map IR argument list"
+    (let [result (ast-to-ir/process-map-construction-expression
+                  [:MapConstruction [:KeyType "String"] [:ValType "Int"]])]
+      (is (= :map (:type result)))
+      (is (= "Map<String, Int>" (:class-name result)))
+      (is (empty? (:args result))))))
+
 (deftest test-process-assignment-expression
   (testing "process-assignment-expression should handle different expression types"
     (let [expression [:Expression [:VariableRef "obj1"]]

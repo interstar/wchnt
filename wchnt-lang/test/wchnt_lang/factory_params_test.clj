@@ -11,7 +11,7 @@
   (str "# factory args\n## Schema\n```\n" schema
        "\n```\n## Construction\n```\n" construction
        "\n```\n## Methods\n```\n" methods
-       "\n```\n## Target\n```\n%terminal\n\n%main\n"
+       "\n```\n## Target\n```\n%terminal\n\n%requires\nPen\n\n%main\n"
        "public static function main():Void {}\n```\n"))
 
 (def pen-schema
