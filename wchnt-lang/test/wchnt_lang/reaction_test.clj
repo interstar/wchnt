@@ -395,27 +395,101 @@ Game::bad = { playArea.area() }")))))
       (is (= :neg (get-in m [:body :then :body :expr])))
       (is (= :field (get-in m [:body :else :body :expr]))))))
 
-(deftest else-if-expression-ir
-  (testing "else if chains nest in the else branch"
+(deftest multi-branch-if-expression-ir
+  (testing "bare (condition) { value } clauses nest in the else branch"
     (let [m (first (methods-ir rect-ball-schema
-                               "Ball::pick = { if (dx < 0) { 1 } else if (dx == 0) { 2 } else { 3 } }"))]
+                               "Ball::pick = { if (dx < 0) { 1 } (dx == 0) { 2 } else { 3 } }"))]
       (is (= :if (get-in m [:body :expr])))
       (is (= :if (get-in m [:body :else :expr])))
       (is (= :cmp (get-in m [:body :else :condition :expr]))))))
 
-(deftest emit-else-if-haxe
-  (testing "else if transpiles to nested Haxe if"
+(deftest four-branch-if-ir
+  (testing "three conditions plus else nest three ifs deep"
+    (let [m (first (methods-ir rect-ball-schema
+                               "Ball::pick = { if (dx < -1) { 1 } (dx < 0) { 2 } (dx == 0) { 3 } else { 4 } }"))]
+      (is (= :if (get-in m [:body :expr])))
+      (is (= :if (get-in m [:body :else :expr])))
+      (is (= :if (get-in m [:body :else :else :expr])))
+      (is (= :cmp (get-in m [:body :else :else :condition :expr])))
+      (is (= "Int" (:return-type m))))))
+
+(deftest emit-multi-branch-if-haxe
+  (testing "multi-branch if transpiles to nested Haxe if"
     (let [haxe (ir-to-haxe/generate-method
                 (first (methods-ir rect-ball-schema
-                                   "Ball::pick = { if (dx < 0) { 1 } else if (dx == 0) { 2 } else { 3 } }")))]
+                                   "Ball::pick = { if (dx < 0) { 1 } (dx == 0) { 2 } else { 3 } }")))]
       (is (str/includes? haxe "else"))
       (is (str/includes? haxe "if (this.dx == 0)")))))
+
+(deftest emit-four-branch-if-haxe
+  (testing "four branches emit two else-if tails"
+    (let [haxe (ir-to-haxe/generate-method
+                (first (methods-ir rect-ball-schema
+                                   "Ball::pick = { if (dx < -1) { 1 } (dx < 0) { 2 } (dx == 0) { 3 } else { 4 } }")))]
+      (is (str/includes? haxe "if (this.dx < -1)"))
+      (is (str/includes? haxe "else if (this.dx < 0)"))
+      (is (str/includes? haxe "else if (this.dx == 0)"))
+      (is (str/includes? haxe "else")))))
+
+(deftest untyped-param-in-later-condition-infers-bool
+  (testing "an untyped parameter used only in a later multi-branch condition is Bool"
+    (let [m (first (methods-ir "Game = Int/x"
+                               "Game::pick = { Int/n, p | if (n == 0) { 1 } (p) { 2 } else { 3 } }"))]
+      (is (= [{:name "n" :type "Int"} {:name "p" :type "Bool"}] (:parameters m))))))
+
+(deftest untyped-param-in-final-else-infers
+  (testing "an untyped parameter used only in the final else body still infers"
+    (let [m (first (methods-ir "Game = Int/x"
+                               "Game::pick = { Int/n, p | if (n == 0) { 1 } (n == 1) { 2 } else { (p + 1) } }"))]
+      (is (= [{:name "n" :type "Int"} {:name "p" :type "Int"}] (:parameters m))))))
 
 (deftest if-branch-type-mismatch-fails
   (testing "then and else must have the same type"
     (is (thrown-with-msg? Exception #"same type"
                           (methods-ir rect-ball-schema
                                       "Ball::bad = { if (dx < 0) { dx } else { true } }")))))
+
+(deftest if-condition-must-be-bool
+  (testing "a non-Bool first condition is rejected"
+    (is (thrown-with-msg? Exception #"must be Bool"
+                          (methods-ir "Game = Int/score"
+                                      "Game::bad = { if (score) { 1 } else { 2 } }")))))
+
+(deftest later-clause-condition-must-be-bool
+  (testing "a non-Bool later clause condition is rejected"
+    (is (thrown-with-msg? Exception #"must be Bool"
+                          (methods-ir "Game = Int/n Int/score"
+                                      "Game::bad = { Int/n | if (n == 0) { 1 } (score) { 2 } else { 3 } }")))))
+
+(deftest untyped-param-condition-infers-bool
+  (testing "an untyped parameter as the first condition still infers Bool"
+    (let [m (first (methods-ir "Game = Int/x"
+                               "Game::pick = { p | if (p) { 1 } else { 2 } }"))]
+      (is (= [{:name "p" :type "Bool"}] (:parameters m))))))
+
+(deftest and-operand-must-be-bool
+  (testing "and operands must be Bool"
+    (is (thrown-with-msg? Exception #"and operand must be Bool"
+                          (methods-ir "Game = Int/score Bool/live"
+                                      "Game::bad = { (score) and (live) }")))))
+
+(deftest or-operand-must-be-bool
+  (testing "or operands must be Bool"
+    (is (thrown-with-msg? Exception #"or operand must be Bool"
+                          (methods-ir "Game = Int/score Bool/live"
+                                      "Game::bad = { (score) or (live) }")))))
+
+(deftest not-operand-must-be-bool
+  (testing "not operand must be Bool"
+    (is (thrown-with-msg? Exception #"not operand must be Bool"
+                          (methods-ir "Game = Int/score"
+                                      "Game::bad = { not score }")))))
+
+(deftest untyped-param-in-boolean-op-infers-bool
+  (testing "untyped parameters in boolean operators still infer Bool"
+    (let [m (first (methods-ir "Game = Int/x"
+                               "Game::f = { p | (p) and (p) }"))]
+      (is (= [{:name "p" :type "Bool"}] (:parameters m))))))
 
 (deftest numeric-branches-use-float-join
   (testing "an Int branch and a Float branch have the common type Float"
@@ -1285,27 +1359,24 @@ Circle::area = { radius * radius }")
       (is (str/includes? haxe "public function area(): Int {")))))
 
 (deftest external-type-at-lambda-param
-  (testing "@Graphics/g registers Graphics as external and types the parameter"
+  (testing "@WCHNTGraphics/g registers WCHNTGraphics as external and types the parameter"
     (let [schema-text "Circle = Int/x Int/y Int/radius"
-          reaction-text "Circle::draw = { @Graphics/g |
+          reaction-text "Circle::draw = { @WCHNTGraphics/g |
   g.beginFill(16711680).drawCircle(x, y, radius).endFill()
-} -> Void"
+}"
           methods (methods-ir schema-text reaction-text)
           draw (first methods)]
-      (is (= [{:name "g" :type "Graphics"}] (:parameters draw)))
-      (is (= "Void" (:return-type draw)))
+      (is (= [{:name "g" :type "WCHNTGraphics"}] (:parameters draw)))
+      (is (= "WCHNTGraphics" (:return-type draw)))
       (let [haxe (ir-to-haxe/generate-method draw)]
-        (is (str/includes? haxe "draw(g:Graphics): Void"))
-        (is (str/includes? haxe "g.beginFill("))
-        (is (str/includes? haxe "g.drawCircle("))
-        (is (str/includes? haxe "g.endFill();"))
-        (is (not (str/includes? haxe "return g.beginFill")))))))
+        (is (str/includes? haxe "draw(g:WCHNTGraphics): WCHNTGraphics"))
+        (is (str/includes? haxe "return g.beginFill(16711680).drawCircle(this.x, this.y, this.radius).endFill();"))))))
 
 (deftest external-type-without-at-fails
-  (testing "Graphics/g without @ is not registered as external; calls on g fail"
-    (is (thrown-with-msg? Exception #"Unknown method 'drawCircle' on Graphics"
+  (testing "WCHNTGraphics/g without @ is not registered as external; calls on g fail"
+    (is (thrown-with-msg? Exception #"Unknown method 'drawCircle' on WCHNTGraphics"
                           (methods-ir "Circle = Int/x Int/y Int/radius"
-                                      "Circle::draw = { Graphics/g | g.drawCircle(x, y, radius) } -> Void")))))
+                                      "Circle::draw = { WCHNTGraphics/g | g.drawCircle(x, y, radius) }")))))
 
 (deftest inject-method-is-reserved
   (testing "Methods cannot define inject; that name is for Target"

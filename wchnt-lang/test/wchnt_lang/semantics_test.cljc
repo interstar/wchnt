@@ -150,7 +150,7 @@
 
 #?(:clj
    (deftest shapes-draw-chains-graphics-calls
-     (testing "Methods @Graphics/g chains (beginFill.drawCircle.endFill) on canvas"
+     (testing "Methods @WCHNTGraphics/g chains (beginFill.drawCircle.endFill) on canvas"
        (let [{:keys [schema-ir methods-ir root]} (load-example "shapes_canvas")
              circle (first (interpret/get-field root "shapes"))
              g (canvas/make-graphics)]
@@ -188,19 +188,35 @@
           (done))
         (fn [e] (is (nil? e) (str e)) (done))))))
 
-(deftest else-if-expression
-  (testing "else if chains evaluate the matching branch"
+(deftest multi-branch-if-expression
+  (testing "bare (condition) { value } clauses evaluate the matching branch"
     (let [schema "Rect = Int/x Int/y Int/width Int/height
 Game = Rect Int/score"
           methods "Game::pick = {
   n = score.
-  if (n == 0) { 10 } else if (n == 1) { 20 } else { 30 }
+  if (n == 0) { 10 } (n == 1) { 20 } else { 30 }
 }"
           prog (interpret/load-program (str "## Schema\n```\n" schema
                                            "\n```\n## Construction\n```\n[:Game [0 0 1 1] 1]\n```\n## Methods\n```\n"
                                            methods "\n```\n## Target\n```\n%canvas\n\n%init\nfunction init() {}\n\n%step\nfunction step() {}\n```"))
           {:keys [schema-ir methods-ir root]} prog]
       (is (= 20 (interpret/call schema-ir methods-ir root "pick" []))))))
+
+(deftest four-branch-if-expression
+  (testing "three conditions plus else: every branch evaluates"
+    (let [schema "Game = Int/score"
+          methods "Game::pick = { Int/n |
+  if (n == 0) { 10 } (n == 1) { 20 } (n == 2) { 30 } else { 40 }
+}"
+          prog (interpret/load-program (str "## Schema\n```\n" schema
+                                           "\n```\n## Construction\n```\n[:Game 0]\n```\n## Methods\n```\n"
+                                           methods "\n```\n## Target\n```\n%canvas\n\n%init\nfunction init() {}\n\n%step\nfunction step() {}\n```"))
+          {:keys [schema-ir methods-ir root]} prog]
+      (is (= 10 (interpret/call schema-ir methods-ir root "pick" [0])))
+      (is (= 20 (interpret/call schema-ir methods-ir root "pick" [1])))
+      (is (= 30 (interpret/call schema-ir methods-ir root "pick" [2])))
+      (is (= 40 (interpret/call schema-ir methods-ir root "pick" [3])))
+      (is (= 40 (interpret/call schema-ir methods-ir root "pick" [99]))))))
 
 (deftest update-preserves-mailbox-identity
   (testing "constructing a mailbox slot in update mutates fields in place"

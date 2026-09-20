@@ -64,7 +64,7 @@ Game = Int/x
 ## Methods
 
 ```
-Game::draw = { @Graphics/g |
+Game::draw = { @WCHNTGraphics/g |
   g.color(1)
 }
 ```

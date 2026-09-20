@@ -59,23 +59,23 @@ Input::update! = { [:Input x y down key] }
 
 Palette::colourForKey = { Int/key |
   if (key == 1) { colourToInt.get(Black) }
-  else if (key == 2) { colourToInt.get(Red) }
-  else if (key == 3) { colourToInt.get(Green) }
-  else if (key == 4) { colourToInt.get(Blue) }
-  else if (key == 5) { colourToInt.get(Yellow) }
-  else if (key == 6) { colourToInt.get(Magenta) }
-  else if (key == 7) { colourToInt.get(Cyan) }
-  else if (key == 8) { colourToInt.get(Orange) }
+  (key == 2) { colourToInt.get(Red) }
+  (key == 3) { colourToInt.get(Green) }
+  (key == 4) { colourToInt.get(Blue) }
+  (key == 5) { colourToInt.get(Yellow) }
+  (key == 6) { colourToInt.get(Magenta) }
+  (key == 7) { colourToInt.get(Cyan) }
+  (key == 8) { colourToInt.get(Orange) }
   else { colourToInt.get(White) }
 }
 
 Brush::paint = { @WCHNTGraphics/g |
   g.beginFill(colour).drawCircle(x, y, rad).endFill()
-} -> Void
+}
 
 Canvas::paint = { @WCHNTGraphics/g |
   g.beginFill(0xFFFFFFFF).drawRect(0, 0, width, height).endFill()
-} -> Void
+}
 ```
 
 ## Target

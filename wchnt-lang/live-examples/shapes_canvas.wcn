@@ -1,6 +1,6 @@
 # Moving shapes (live canvas)
 
-Same Schema, Construction, and Methods as `shapes_openfl.wcn`. **`$Time`** ticks; shapes draw via **`@Graphics/g`**. Target passes **`wchntGraphics`** (same API as OpenFL's portable wrapper).
+Same Schema, Construction, and Methods as `shapes_openfl.wcn`. **`$Time`** ticks; shapes draw via **`@WCHNTGraphics/g`**. Target passes **`wchntGraphics`** (same API as OpenFL's portable wrapper).
 
 ## Schema
 
@@ -56,19 +56,19 @@ Game::update! = {
   [:Game playArea moved time]
 }
 
-Shape::draw = { @Graphics/g | } -> Void
+Shape::draw = { @WCHNTGraphics/g | } -> WCHNTGraphics
 
-Circle::draw = { @Graphics/g |
+Circle::draw = { @WCHNTGraphics/g |
   g.beginFill(15316448).drawCircle(x, y, radius).endFill()
-} -> Void
+}
 
-Square::draw = { @Graphics/g |
+Square::draw = { @WCHNTGraphics/g |
   g.beginFill(988016).drawRect(x, y, side, side).endFill()
-} -> Void
+}
 
-Triangle::draw = { @Graphics/g |
+Triangle::draw = { @WCHNTGraphics/g |
   g.beginFill(5453955).moveTo(x, y).lineTo(x + base, y).lineTo(x + (base / 2), y - height).lineTo(x, y).endFill()
-} -> Void
+}
 ```
 
 
@@ -77,8 +77,6 @@ Triangle::draw = { @Graphics/g |
 ```
 %canvas
 
-%requires
-Graphics
 
 %init
 var assemblage;

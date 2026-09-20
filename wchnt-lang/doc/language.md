@@ -289,7 +289,7 @@ Ball::move = {
 - Bitwise Int operations: `~`, `&`, `^`, `|`, `<<`, `>>`, `>>>`; hex literals use `0x` (for example `0xFF`)
 - Comparison: `== != < <= > >=`
 - Logic: `and`, `or`, `not`
-- `if` / `else` is an expression; both branches are required (`else if` chains work)
+- `if` / `else` is an expression; both branches are required; extra branches are written as bare `(cond) { … }` clauses before the final `else`
 - Field paths: `ball.x`, `playArea.rect.width` (no spaces around dots)
 - Method calls: `this.move()`, `ball.step(playArea.rect)`, `a.b.c()`
 - Constructing: `[:Ball 1 2 3 4 5]`, arrays and maps as in Construction

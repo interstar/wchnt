@@ -60,7 +60,7 @@
 (deftest schema-roundtrip
   (testing "every schema feature survives parse -> unparse -> parse"
     (doseq [text ["Ball = Int/x Int/y Int/rad"
-                  "Game = PlayArea [Shape]/shapes $Time @Graphics/g"
+                  "Game = PlayArea [Shape]/shapes $Time @WCHNTGraphics/g"
                   ">Input = Bool/left Bool/right"
                   "Shape = Circle | Square | Triangle"
                   "Dir = \"North\" | \"South\""
@@ -94,6 +94,7 @@
                   "Game::b = { -ball.dx }"
                   "Game::c = { ball.x + 1 } -> Int"
                   "Game::d = { if (ball.x < r.x) { -ball.dx } else { ball.dx } }"
+                  "Game::pick = { if (a < 0) { 1 } (a == 0) { 2 } (a > 0) { 3 } else { 4 } }"
                   "Game::e = { r = playArea.rect. r.x + r.width }"
                   "Game::f = { this.bounceDx() }"
                   "Game::g = { (a and b) or (not c) }"

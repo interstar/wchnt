@@ -54,24 +54,24 @@ Time = Int/t
 ```
 System::tick = { [:System sun planets [:Time (time.t + 1)]] }
 
-Moon::draw = { @Graphics/g, Float/cx, Float/cy, Int/t, @WCHNTMaths/m |
+Moon::draw = { @WCHNTGraphics/g, Float/cx, Float/cy, Int/t, @WCHNTMaths/m |
   a = phase + (t * (0.9 / period)).
   g.beginFill(13421772).drawCircle(cx + (m.cos(a) * orbit), cy + (m.sin(a) * orbit), size).endFill()
-} -> Void
+}
 
-Planet::draw = { @Graphics/g, Sun/sun, Int/t, @WCHNTMaths/m |
+Planet::draw = { @WCHNTGraphics/g, Sun/sun, Int/t, @WCHNTMaths/m |
   a = phase + (t * (0.35 / period)).
   px = sun.x + (m.cos(a) * orbit).
   py = sun.y + (m.sin(a) * orbit).
   ring = g.lineStyle(1, 2236962).drawCircle(sun.x, sun.y, orbit).noStroke().
   body = g.beginFill(colour).drawCircle(px, py, size).endFill().
   moons.fold(g, { acc, Moon/mo | drawn = mo.draw(acc, px, py, t, m). acc })
-} -> Void
+}
 
-System::draw = { @Graphics/g, @WCHNTMaths/m |
+System::draw = { @WCHNTGraphics/g, @WCHNTMaths/m |
   lit = g.beginFill(16768640).drawCircle(sun.x, sun.y, sun.size).endFill().
   planets.fold(g, { acc, Planet/p | drawn = p.draw(acc, sun, time.t, m). acc })
-} -> Void
+}
 ```
 
 
@@ -81,7 +81,6 @@ System::draw = { @Graphics/g, @WCHNTMaths/m |
 %canvas
 
 %requires
-Graphics
 WCHNTMaths::sin(Float) -> Float
 WCHNTMaths::cos(Float) -> Float
 

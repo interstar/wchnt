@@ -39,7 +39,7 @@ Keys::update! = { [:Keys left right up down] }
 PlayArea::paddleMaxY = { Int/paddleH | ((y + height) - paddleH) }
 
 PlayArea::scoreSide = { Int/ballX |
-  if (ballX < x) { 2 } else { if (ballX > (x + width)) { 1 } else { 0 } }
+  if (ballX < x) { 2 } (ballX > (x + width)) { 1 } else { 0 }
 }
 
 PlayArea::centerBall = { Int/toDx |
@@ -47,18 +47,14 @@ PlayArea::centerBall = { Int/toDx |
 }
 
 PlayArea::ballAfterScore = { Int/scored, Ball/b |
-  if (scored == 1) { this.centerBall(-5) } else {
-    if (scored == 2) { this.centerBall(5) } else { b }
-  }
+  if (scored == 1) { this.centerBall(-5) } (scored == 2) { this.centerBall(5) } else { b }
 }
 
 Ball::bounceDy = {
   ny = (y + dy).
   top = theGame.playArea.y.
   bottom = (theGame.playArea.y + theGame.playArea.height).
-  if ((ny - rad) < top) { -dy } else {
-    if ((ny + rad) > bottom) { -dy } else { dy }
-  }
+  if ((ny - rad) < top) { -dy } ((ny + rad) > bottom) { -dy } else { dy }
 }
 
 Ball::withDy = {
@@ -74,17 +70,17 @@ Ball::withPaddleBounce = { Bool/hitPlayer, Bool/hitAi |
   ndx = dx.
   ndx2 = if (hitPlayer) {
     if (ndx < 0) { -(ndx) } else { ndx }
+  } (hitAi) {
+    if (ndx > 0) { -(ndx) } else { ndx }
   } else {
-    if (hitAi) {
-      if (ndx > 0) { -(ndx) } else { ndx }
-    } else { ndx }
+    ndx
   }.
   this.withDx(ndx2)
 }
 
 Paddle::moveY = { Int/dy, Int/minY, Int/maxY |
   ny = (y + dy).
-  fy = if (ny < minY) { minY } else { if (ny > maxY) { maxY } else { ny } }.
+  fy = if (ny < minY) { minY } (ny > maxY) { maxY } else { ny }.
   [:Paddle x fy h w]
 }
 
@@ -95,7 +91,7 @@ Paddle::stepForPlayer = { Bool/up, Bool/down, PlayArea/area |
 
 Paddle::stepForAi = { Ball/b, PlayArea/area |
   center = (y + (h / 2)).
-  dy = if (center < b.y) { 5 } else { if (center > b.y) { -5 } else { 0 } }.
+  dy = if (center < b.y) { 5 } (center > b.y) { -5 } else { 0 }.
   this.moveY(dy, area.y, area.paddleMaxY(h))
 }
 

@@ -1,6 +1,6 @@
 # Moving shapes on OpenFL
 
-Three concrete shapes in an `Array<Shape>`. Each frame `$Time` ticks; `Game::update!` maps `Shape::step` across the array (polymorphic via the sum type). Positions wrap with `%` at the play-area width. `%step` calls `Shape::draw` with OpenFL `Graphics` (`@Graphics` — extrinsic, supplied by Target).
+Three concrete shapes in an `Array<Shape>`. Each frame `$Time` ticks; `Game::update!` maps `Shape::step` across the array (polymorphic via the sum type). Positions wrap with `%` at the play-area width. `%step` calls `Shape::draw` with OpenFL `Graphics` (`@WCHNTGraphics` — extrinsic, supplied by Target).
 
 ## Schema
 
@@ -56,19 +56,19 @@ Game::update! = {
   [:Game playArea moved time]
 }
 
-Shape::draw = { @Graphics/g | } -> Void
+Shape::draw = { @WCHNTGraphics/g | } -> WCHNTGraphics
 
-Circle::draw = { @Graphics/g |
+Circle::draw = { @WCHNTGraphics/g |
   g.beginFill(15316448).drawCircle(x, y, radius).endFill()
-} -> Void
+}
 
-Square::draw = { @Graphics/g |
+Square::draw = { @WCHNTGraphics/g |
   g.beginFill(988016).drawRect(x, y, side, side).endFill()
-} -> Void
+}
 
-Triangle::draw = { @Graphics/g |
+Triangle::draw = { @WCHNTGraphics/g |
   g.beginFill(5453955).moveTo(x, y).lineTo(x + base, y).lineTo(x + (base / 2), y - height).lineTo(x, y).endFill()
-} -> Void
+}
 ```
 
 
@@ -77,8 +77,6 @@ Triangle::draw = { @Graphics/g |
 ```
 %openfl
 
-%requires
-Graphics
 
 %init
 var assemblage:Game;
@@ -96,7 +94,7 @@ function step():Void {
     wchntGraphics.drawRect(r.x, r.y, r.width, r.height);
     wchntGraphics.endFill();
     for (s in assemblage.shapes) {
-        s.draw(graphics);
+        s.draw(wchntGraphics);
     }
 }
 ```

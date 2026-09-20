@@ -49,7 +49,7 @@ Game::draw = { @WCHNTGraphics/g |
   r = playArea.rect.
   bg = g.beginFill(2769450).drawRect(r.x, r.y, r.width, r.height).endFill().
   ball.draw(g)
-} -> Void
+}
 ```
 
 

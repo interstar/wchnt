@@ -140,7 +140,7 @@
       (is (= [:ReturnAnn [:Type "Shape"]] (nth method 4))))
     (is (insta/failure? (parse-reaction "Shape::step : Shape = { Rect/bounds | }")))
     (is (not (insta/failure?
-              (parse-reaction "Circle::draw = { @Graphics/g | g.endFill() } -> Void"))))))
+              (parse-reaction "Circle::draw = { @WCHNTGraphics/g | g.endFill() }"))))))
 
 (deftest field-paths
   (testing "dotted field access parses as FieldPath, not a method call"
@@ -173,7 +173,17 @@
 
   (testing "if without else does not parse"
     (is (insta/failure?
-         (parse-construction "if (dx < 0) { dx }")))))
+         (parse-construction "if (dx < 0) { dx }"))))
+
+  (testing "multi-branch if: bare (condition) { value } clauses before else"
+    (is (= :IfExpr
+           (first (inner-expr
+                   (assert-parses parse-construction
+                                  "if (a) { 1 } (b) { 2 } (c) { 3 } else { 4 }"))))))
+
+  (testing "the old 'else if' spelling is rejected"
+    (is (insta/failure?
+         (parse-construction "if (a) { 1 } else if (b) { 2 } else { 3 }")))))
 
 (deftest unary-minus-parses
   (testing "-dx is a prefix negation"

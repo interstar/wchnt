@@ -32,9 +32,9 @@ Pentagon::step = { Int/width |
   [:Pentagon nx y side dx]
 }
 
-Pentagon::draw = { @Graphics/g |
+Pentagon::draw = { @WCHNTGraphics/g |
   g.beginFill(10183653).moveTo(x, y).lineTo(x + side, y).lineTo(x + side, y + side).lineTo(x + (side / 2), y + side + (side / 2)).lineTo(x, y).lineTo(x, y).endFill()
-} -> Void
+}
 ```
 
 
@@ -43,8 +43,6 @@ Pentagon::draw = { @Graphics/g |
 ```
 %canvas
 
-%requires
-Graphics
 
 %init
 var assemblage;

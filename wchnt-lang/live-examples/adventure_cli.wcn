@@ -64,14 +64,14 @@ Game::move = { String/line |
   loc = places.get(here).
   exits = loc.exits.
   isExit = if (line == "N") { exits.exists(N) }
-    else if (line == "E") { exits.exists(E) }
-    else if (line == "S") { exits.exists(S) }
-    else if (line == "W") { exits.exists(W) }
+    (line == "E") { exits.exists(E) }
+    (line == "S") { exits.exists(S) }
+    (line == "W") { exits.exists(W) }
     else { false }.
   next = if (line == "N") { exits.get(N, here) }
-    else if (line == "E") { exits.get(E, here) }
-    else if (line == "S") { exits.get(S, here) }
-    else if (line == "W") { exits.get(W, here) }
+    (line == "E") { exits.get(E, here) }
+    (line == "S") { exits.get(S, here) }
+    (line == "W") { exits.get(W, here) }
     else { here }.
   room = places.get(next).
   out = if (isExit) {

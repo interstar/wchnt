@@ -32,7 +32,7 @@ Fly::move = { Fly/t |
   ady = if (dy < 0.0) { -dy } else { dy }.
   if (not live) {
     [:Fly x y col false]
-  } else if ((adx < 2.0) and (ady < 2.0)) {
+  } ((adx < 2.0) and (ady < 2.0)) {
     [:Fly x y col false]
   } else {
     steps = if (adx > ady) { adx } else { ady }.
@@ -53,7 +53,7 @@ Wall::step = { Int/mode, Float/mx, Float/my, Float/udx, Float/udy |
     j = ((i + follow + n) % n).
     target = if (mode == 2) {
       [:Fly mx my "white" true]
-    } else if (mode == 3) {
+    } (mode == 3) {
       flies.get(0)
     } else {
       flies.get(j)

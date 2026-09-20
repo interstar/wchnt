@@ -17,7 +17,7 @@ Schema `$` (observable / subscriber) is a different idea from the Methods sectio
 1. **Section name.** `## Methods`. Not Reaction, not Reactive.
 2. **Calls on self.** `this.move()`. Bare `move()` is not allowed for now. We may add it as shorthand later.
 3. **Argument types.** Parameters may be bare names (`px`), schema types (`Rect/bounds`), or external types (`@Graphics/g`). Return types may be annotated after the block (`-> Void`, `-> Shape`). Inference still covers many cases; unknown names fail fast. A full WCHNT type checker is not v1.
-4. **Conditionals.** `if (cond) { … } else { … }` is an expression. Both branches are required. It transpiles to a Haxe `if` expression. `ifTrue` / `ifFalse` are not part of the language. `else if` chains are supported.
+4. **Conditionals.** `if (cond) { … } else { … }` is an expression. Both branches are required. It transpiles to a Haxe `if` expression. `ifTrue` / `ifFalse` are not part of the language. Multi-branch conditionals are written as extra bare clauses before the final `else` (see §4).
 5. **`$` and `update!`.** `update!` takes no arguments. When an observable finishes `update!`, it calls `update!()` on subscribers (sideways notify, not a tree walk). Naming a `$` field in a construction is a read; it does not tick that object again.
 6. **No automatic `update!` of children.** Ordinary and `:context` children tick only if the parent writes `ball.update!()` (or constructs a new child). Want automatic? Give that class its own `$` observable. Do not also call `ball.update!()` from the parent or it ticks twice.
 7. **Identity slots mutate in place.** Mailbox (`>`) and observable (`$`) objects keep one instance for the life of the assemblage. In `update!`, naming the slot keeps the reference; constructing the **same** class patches fields on `this.slot`, never `this.slot = new …`. Wrong class → compile error. See §5 and `schema.md`.
@@ -145,7 +145,15 @@ Ball::absDx = {
 }
 ```
 
-`else if` is supported: `if (a) { x } else if (b) { y } else { z }` (nested `if`, same type on every branch).
+Multi-branch `if` is supported by stacking bare clauses before the final `else`:
+
+```
+Ball::pick = {
+  if (dx < -1) { 1 } (dx < 0) { 2 } (dx == 0) { 3 } else { 4 }
+}
+```
+
+Each extra clause is a parenthesised condition followed by a block, in order; the first match wins. It nests into the same Haxe `if` / `else if` chain, and every branch must have the same type.
 
 Arrays and maps have `map`, `filter`, and `fold`. The block is a delayed function. `fold` takes the seed first (`players.fold(0, { acc, p | … })`), like JS / Clojure / Python `reduce`. On an array the block sees one element. On a map it sees the key and the value; `map` keeps the keys and replaces the values. Haxe `Array` has no `fold`, so codegen emits `Lambda.fold` and swaps the lambda parameters (`(elem, acc)`). Haxe `Map` has none of the three, so codegen emits `WCHNTRuntime.mapMap` / `mapFilter` / `mapFold`.
 

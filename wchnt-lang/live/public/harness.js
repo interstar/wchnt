@@ -54,7 +54,7 @@
       ctx.fillRect(0, 0, WIDTH, HEIGHT);
     }
 
-    return {
+    var self = {
       color: function (r, g, b, a) {
         if (g === undefined) g = b = r;
         if (a === undefined) a = 255;
@@ -73,6 +73,7 @@
       background: function (color, alpha) {
         bgColor = color;
         bgAlpha = alpha;
+        return self;
       },
 
       clear: function () {
@@ -80,11 +81,13 @@
         stroke = null;
         paintBackground();
         pathOpen = false;
+        return self;
       },
 
       beginFill: function (color, alpha) {
         fill = { color: color, alpha: alpha };
         beginPath();
+        return self;
       },
 
       endFill: function () {
@@ -95,28 +98,33 @@
         }
         fill = null;
         pathOpen = false;
+        return self;
       },
 
       lineStyle: function (width, color, alpha) {
         if (width === undefined || width === null) {
           stroke = null;
-          return;
+          return self;
         }
         stroke = { width: width, color: color, alpha: alpha };
+        return self;
       },
 
       noStroke: function () {
         stroke = null;
+        return self;
       },
 
       moveTo: function (x, y) {
         if (!pathOpen) beginPath();
         ctx.moveTo(x, y);
+        return self;
       },
 
       lineTo: function (x, y) {
         if (!pathOpen) beginPath();
         ctx.lineTo(x, y);
+        return self;
       },
 
       drawLine: function (x1, y1, x2, y2) {
@@ -125,6 +133,7 @@
         ctx.lineTo(x2, y2);
         strokePath();
         pathOpen = false;
+        return self;
       },
 
       drawRect: function (x, y, w, h) {
@@ -133,6 +142,7 @@
         fillPath();
         strokePath();
         pathOpen = false;
+        return self;
       },
 
       drawCircle: function (x, y, r) {
@@ -141,6 +151,7 @@
         fillPath();
         strokePath();
         pathOpen = false;
+        return self;
       },
 
       drawEllipse: function (x, y, rx, ry) {
@@ -157,6 +168,7 @@
         fillPath();
         strokePath();
         pathOpen = false;
+        return self;
       },
 
       fillText: function (text, x, y) {
@@ -164,8 +176,10 @@
         ctx.font = "16px sans-serif";
         ctx.textBaseline = "top";
         ctx.fillText(String(text), x, y);
+        return self;
       }
     };
+    return self;
   }
 
   function arrowName(evt) {

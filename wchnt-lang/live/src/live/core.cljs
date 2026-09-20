@@ -313,6 +313,9 @@
       (case (:kind result)
         :documentation (show-info! (:message result))
         :library (show-info! (:message result))
+        :testharness (if (:ok? result)
+                       (show-info! (:message result))
+                       (show-error! (:message result)))
         :program (start-program! harness result)))
     (catch :default e
       (on-run-error e))))

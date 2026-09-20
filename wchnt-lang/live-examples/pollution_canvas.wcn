@@ -72,8 +72,8 @@ Pollutant::move = { Rect/bounds |
   h = bounds.height.
   nx = (x + dx).
   ny = (y + dy).
-  wx = if (nx > w) { 0 } else { if (nx < 0) { w } else { nx } }.
-  wy = if (ny > h) { 0 } else { if (ny < 0) { h } else { ny } }.
+  wx = if (nx > w) { 0 } (nx < 0) { w } else { nx }.
+  wy = if (ny > h) { 0 } (ny < 0) { h } else { ny }.
   [:Pollutant wx wy dx dy rad]
 }
 
@@ -101,13 +101,13 @@ Game::update! = {
   }.
   nextObs = if (hit) {
     [:Array/Pollutant]
-  } else if (spawning) {
+  } (spawning) {
     movedObs.cons(this.makePollutant(movedP))
   } else {
     movedObs
   }.
-  nextScore = if (hit) { 0 } else if (spawning) { (score + spawnTier) } else { score }.
-  nextTier = if (hit) { 0 } else if (spawning) { (spawnTier + 1) } else { spawnTier }.
+  nextScore = if (hit) { 0 } (spawning) { (score + spawnTier) } else { score }.
+  nextTier = if (hit) { 0 } (spawning) { (spawnTier + 1) } else { spawnTier }.
   [:Game playArea nextP nextObs nextScore nextTier spawnEvery time keys]
 }
 
@@ -125,7 +125,7 @@ Game::draw = { @WCHNTGraphics/g |
   border = g.lineStyle(2, 65280).drawRect(r.x, r.y, r.width, r.height).noStroke().
   afterObs = pollutants.fold(border, { acc, Pollutant/o | o.draw(acc) }).
   player.draw(afterObs).beginFill(13154404).fillText("Score: {score}".tpl({String:String "score": score.str()}), 12, 24)
-} -> Void
+}
 ```
 
 

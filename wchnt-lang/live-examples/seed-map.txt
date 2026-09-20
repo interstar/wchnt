@@ -23,3 +23,4 @@ bikes_canvas         bikes
 flies_canvas         fliesonthewall
 orrery               orrery
 lander               lander
+unittests            unittests

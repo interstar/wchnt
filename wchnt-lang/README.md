@@ -111,7 +111,7 @@ Run these from this directory (`wchnt-lang/`). Prerequisites: `lein`, `haxe`, `n
 | `lein test` | Run the Clojure unit test suite. |
 | `./run_examples.sh` | Compile **every** `examples/*.wcn` to Haxe and print the output. WCHNT → Haxe only; no JS compile or execution. Prints ✓/✗ per file. |
 | `./go.sh <file.wcn>` | Full pipeline for **one** file: WCHNT → Haxe → JS → `node`. `%cli` compiles to neko and reads stdin. `%openfl` files write `project.xml` and launch `lime`. |
-| `./go_all_examples.sh` | Full pipeline for every **terminal** example (skips `%openfl`, `%canvas`, `%cli`, `%cli-live`). |
+| `./go_all_examples.sh` | Compile and smoke-run every Haxe-capable example. CLI gets EOF; OpenFL examples are built, launched for 5 seconds, then stopped. Set `WCHNT_SMOKE_SECONDS` to change the window. `%canvas` / `%cli-live` are skipped because they are live-only. Logs are saved under `generated/smoke/`. |
 
 ### Running examples
 
@@ -119,13 +119,13 @@ Run these from this directory (`wchnt-lang/`). Prerequisites: `lein`, `haxe`, `n
 lein test                            # unit tests
 ./run_examples.sh                    # compile-only sweep of every example
 ./go.sh examples/bounce.wcn          # one terminal example end-to-end
-./go_all_examples.sh                 # all terminal examples end-to-end
+./go_all_examples.sh                 # compile/run all Haxe-capable examples; bounded OpenFL smoke tests
 ./go.sh examples/shapes_openfl.wcn   # one OpenFL window (needs lime + openfl)
 ```
 
-`go_all_examples.sh` skips `%openfl` (use `./go.sh` for those), `%cli` (interactive stdin), and `%canvas` / `%cli-live` (browser-only). Windowed: `bounce_openfl.wcn`, `shapes_openfl.wcn`, `square_openfl.wcn`, `pollution_openfl.wcn`, `pong_openfl.wcn`. Live pairs in `live-examples/`: bounce, square, pollution, pong, shapes, adventure.
+`go_all_examples.sh` compiles every Haxe-capable example. `%cli` programs receive EOF on stdin, so their Haxe build and startup path are checked without waiting for interactive input. Each `%openfl` example is compiled with Lime, launched for a short smoke-test window, and then stopped; build/runtime output is retained under `generated/smoke/` (with OpenFL build artifacts under `generated/openfl-smoke/`). `%canvas` and `%cli-live` remain skipped because they target the live interpreter rather than Haxe. Set `WCHNT_SMOKE_SECONDS=10` to use a longer runtime window.
 
-**Generated artifacts:** `go.sh` and `go_all_examples.sh` write `Main.hx` and `<name>.js` into the repo root. On success these are deleted automatically; on failure they are left in place for debugging (the WCHNT compile error ends up in `Main.hx`).
+**Generated artifacts:** `go.sh` writes `Main.hx` and `<name>.js` into the repo root and removes them on success (failures leave them for debugging). `go_all_examples.sh` retains per-example smoke logs and isolated OpenFL build artifacts under `generated/`.
 
 ### Live page (browser interpreter)
 

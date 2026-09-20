@@ -100,9 +100,9 @@ Roll = @WCHNTMaths/maths")
 (deftest graphics-passthrough-stays-fluent
   (let [draw (first (methods-ir
                      "Dot = Int/x Int/y"
-                     "Dot::draw = { @Graphics/g | g.beginFill(1).endFill() } -> Void"))]
-    (is (= "Graphics" (get-in draw [:body :type])))
-    (is (= "Graphics" (get-in draw [:body :external-type])))))
+                     "Dot::draw = { @WCHNTGraphics/g | g.beginFill(1).endFill() }"))]
+    (is (= "WCHNTGraphics" (get-in draw [:body :type])))
+    (is (= "WCHNTGraphics" (get-in draw [:body :external-type])))))
 
 (deftest graphics-colour-queries-return-int
   (let [draw (first (methods-ir
@@ -150,7 +150,7 @@ Roll = @WCHNTMaths/maths")
       (is (str/includes? preamble "class WCHNTMaths"))
       (is (str/includes? preamble "function randInt(n:Int):Int"))
       (is (str/includes? preamble "function sin(x:Float):Float"))
-      (is (str/includes? main-class "public static var wchntMaths"))
+      (is (str/includes? main-class "public var wchntMaths"))
       (is (str/includes? factory "factory(maths: WCHNTMaths)"))
       (is (str/includes? main-class "RollAssemblage.factory(wchntMaths)"))
       (is (str/includes? classes "'@WCHNTMaths'"))

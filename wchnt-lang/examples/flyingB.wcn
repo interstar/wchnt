@@ -32,9 +32,9 @@ Pentagon::step = { Int/width |
   [:Pentagon nx y side dx]
 }
 
-Pentagon::draw = { @Graphics/g |
+Pentagon::draw = { @WCHNTGraphics/g |
   g.beginFill(10183653).moveTo(x, y).lineTo(x + side, y).lineTo(x + side, y + side).lineTo(x + (side / 2), y + side + (side / 2)).lineTo(x, y + side).lineTo(x, y).endFill()
-} -> Void
+}
 ```
 
 
@@ -43,8 +43,6 @@ Pentagon::draw = { @Graphics/g |
 ```
 %openfl
 
-%requires
-Graphics
 
 %init
 var assemblage:Sky;
@@ -62,7 +60,7 @@ function step():Void {
     wchntGraphics.drawRect(r.x, r.y, r.width, r.height);
     wchntGraphics.endFill();
     for (s in assemblage.game.shapes) {
-        s.draw(graphics);
+        s.draw(wchntGraphics);
     }
 }
 ```

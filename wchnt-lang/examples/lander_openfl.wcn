@@ -16,7 +16,7 @@ What this page shows about WCHNT:
 - `>Keys` is the mailbox Target fills each frame; `$Time` then drives `Game::update!`.
 - Construction holds a hand-drawn moon. Restarts roll a new one in Methods with `maths.rand`, folding over `times` into a `Build` accumulator, because a method cannot loop or mutate.
 - The height of the ground under the ship is a `fold` over the segments.
-- Everything on screen is drawn by WCHNT Methods through `@Graphics/g`, including the terrain, via a fold whose accumulator is the graphics handle.
+- Everything on screen is drawn by WCHNT Methods through `@WCHNTGraphics/g`, including the terrain, via a fold whose accumulator is the graphics handle.
 - The HUD text is a `tpl` template filled from a `{String:String}` map.
 - `Game::update!` builds the new Game exactly once. Building a Game inside a helper leaks a `$Time` subscription per frame and the program slows to a crawl.
 
@@ -135,14 +135,14 @@ Game::newShip = { [:Ship 120.0 90.0 0.8 0.0 0.0 100.0 false maths] }
 Game::update! = {
   restart = (phase != Flying) and keys.down.
   moved = if (phase == Flying) { ship.step(keys) }
-    else if (restart) { this.newShip() }
+    (restart) { this.newShip() }
     else { ship }.
   land = if (restart) { terrain.roll() } else { terrain }.
   ground = land.heightAt(moved.x).
   touching = (phase == Flying) and ((moved.y + 12.0) >= ground).
   nextPhase = if (restart) { Flying }
-    else if (not touching) { phase }
-    else if (land.onPad(moved.x) and moved.gentle()) { Landed }
+    (not touching) { phase }
+    (land.onPad(moved.x) and moved.gentle()) { Landed }
     else { Crashed }.
   justLanded = (phase == Flying) and (nextPhase == Landed).
   bonus = if (justLanded) { 100 + maths.round(moved.fuel) } else { 0 }.
@@ -152,7 +152,7 @@ Game::update! = {
 
 Game::banner = {
   if (phase == Landed) { "THE EAGLE HAS LANDED   (down: fly again)" }
-  else if (phase == Crashed) { "CRATER   (down: fly again)" }
+  (phase == Crashed) { "CRATER   (down: fly again)" }
   else { "" }
 }
 
@@ -161,19 +161,19 @@ Game::scoreLine = {
     "score": score.str(), "landings": landings.str()})
 }
 
-Terrain::draw = { @Graphics/g |
+Terrain::draw = { @WCHNTGraphics/g |
   lined = g.lineStyle(2, 11184810).
   ground = segments.fold(g, { acc, Segment/s | acc.moveTo(s.x1, s.y1).lineTo(s.x2, s.y2) }).
   g.lineStyle(4, 5232783).moveTo(pad.x, pad.y).lineTo(pad.x + pad.width, pad.y)
-} -> Void
+}
 
-Game::draw = { @Graphics/g |
-  hull = if (phase == Crashed) { 14428979 } else if (phase == Landed) { 5232783 } else { 3556687 }.
+Game::draw = { @WCHNTGraphics/g |
+  hull = if (phase == Crashed) { 14428979 } (phase == Landed) { 5232783 } else { 3556687 }.
   terrainDrawn = terrain.draw(g).
   ship.draw(g, hull)
-} -> Void
+}
 
-Ship::draw = { @Graphics/g, Int/hull |
+Ship::draw = { @WCHNTGraphics/g, Int/hull |
   c = maths.cos(angle).
   s = maths.sin(angle).
   noseX = x + (s * 14.0).
@@ -197,7 +197,7 @@ Ship::draw = { @Graphics/g, Int/hull |
    .lineTo(leftX, leftY)
    .lineTo(rightX, rightY)
    .endFill()
-} -> Void
+}
 ```
 
 
@@ -207,7 +207,6 @@ Ship::draw = { @Graphics/g, Int/hull |
 %openfl
 
 %requires
-Graphics
 WCHNTMaths::rand() -> Float
 WCHNTMaths::sin(Float) -> Float
 WCHNTMaths::cos(Float) -> Float
@@ -240,7 +239,7 @@ function step():Void {
     assemblage.time.update_mutates();
 
     wchntGraphics.clear();
-    assemblage.draw(graphics);
+    assemblage.draw(wchntGraphics);
     wchntGraphics.noStroke();
 
     wchntGraphics.beginFill(0xd8dee9);

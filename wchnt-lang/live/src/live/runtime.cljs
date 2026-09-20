@@ -1,13 +1,15 @@
 (ns live.runtime
   "Compile live Target JS with real js/Function; wrap the heap for JS."
-  (:require [wchnt-lang.compiler :as compiler]
+  (:require [clojure.string :as str]
+            [wchnt-lang.compiler :as compiler]
             [wchnt-lang.interpret :as interpret]
             [wchnt-lang.js-view :as js-view]
             [wchnt-lang.pipeline :as p]
+            [wchnt-lang.targets.testharness-live-run :as testharness]
             [live.storage :as storage]))
 
 (def live-hosts
-  #{"canvas" "cli-live"})
+  #{"canvas" "cli-live" "testharness-live"})
 
 (defn- target-js-body
   [program]
@@ -112,7 +114,7 @@
   (let [host (get-in program [:target-ir :host])]
     (when-not (contains? live-hosts host)
       (throw (ex-info
-              (str "Live Run expects %canvas or %cli-live"
+              (str "Live Run expects %canvas, %cli-live, or %testharness-live"
                    (when host (str ", not %" host)))
               {:host host})))
     program))
@@ -137,15 +139,39 @@
      :init (.-init api)
      :step (.-step api)}))
 
+(defn- testharness-host?
+  [cargo]
+  (= "testharness-live" (get-in cargo [:stash :target-ir :host])))
+
+(defn- testharness-result
+  [cargo]
+  (let [program {:schema-ir (get-in cargo [:stash :schema-ir])
+                 :methods-ir (or (get-in cargo [:stash :methods-ir]) [])
+                 :target-ir (get-in cargo [:stash :target-ir])
+                 :page-kind (get-in cargo [:value :page-kind])}
+        report (testharness/run-suite program)]
+    {:kind :testharness
+     :host "testharness-live"
+     :ok? (:ok? report)
+     :failed (:failed report)
+     :message (str/join "\n" (:lines report))}))
+
+(defn- library-result
+  [cargo]
+  (if (testharness-host? cargo)
+    (testharness-result cargo)
+    {:kind :library
+     :message "Library page — schema and methods check passed."}))
+
 (defn prepare
   "Parse source. host-api is {:graphics :input :console :maths}.
-   Returns {:kind ...} with :init/:step/:host for programs."
+   Returns {:kind ...} with :init/:step/:host for programs, or a
+   :testharness report for %testharness-live libraries."
   [wchnt-markdown host-api]
-  (let [{:keys [kind message]} (compile-check wchnt-markdown)]
+  (let [{:keys [kind message cargo]} (compile-check wchnt-markdown)]
     (case kind
       :documentation {:kind :documentation
                       :message "Documentation page — nothing to run."}
-      :library {:kind :library
-                :message "Library page — schema and methods check passed."}
+      :library (library-result cargo)
       :error (throw (ex-info message {}))
       :program (program-result wchnt-markdown host-api))))

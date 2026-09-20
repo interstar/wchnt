@@ -64,19 +64,19 @@ Game::update! = {
   [:Game playArea moved time]
 }
 
-Shape::draw = { @Graphics/g | } -> Void
+Shape::draw = { @WCHNTGraphics/g | } -> WCHNTGraphics
 
-Circle::draw = { @Graphics/g |
+Circle::draw = { @WCHNTGraphics/g |
   g.beginFill(15316448).drawCircle(x, y, radius).endFill()
-} -> Void
+}
 
-Square::draw = { @Graphics/g |
+Square::draw = { @WCHNTGraphics/g |
   g.beginFill(988016).drawRect(x, y, side, side).endFill()
-} -> Void
+}
 
-Triangle::draw = { @Graphics/g |
+Triangle::draw = { @WCHNTGraphics/g |
   g.beginFill(5453955).moveTo(x, y).lineTo(x + base, y).lineTo(x + (base / 2), y - height).lineTo(x, y).endFill()
-} -> Void
+}
 ```
 
 ## Public
@@ -91,8 +91,6 @@ Shape
 ```
 %openfl
 
-%requires
-Graphics
 
 %init
 var assemblage:Game;
@@ -110,7 +108,7 @@ function step():Void {
     wchntGraphics.drawRect(r.x, r.y, r.width, r.height);
     wchntGraphics.endFill();
     for (s in assemblage.shapes) {
-        s.draw(graphics);
+        s.draw(wchntGraphics);
     }
 }
 ```

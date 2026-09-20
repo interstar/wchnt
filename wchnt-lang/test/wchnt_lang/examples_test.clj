@@ -58,51 +58,64 @@
       (doseq [file files]
         (let [name (.getName file)
               text (slurp file)]
-          (if (re-find #"(?m)^%(canvas|cli-live)\s*$" text)
+          (if (re-find #"(?m)^%(canvas|cli-live|testharness-live)\s*$" text)
             (let [cargo (compiler/compile-to-ir text example-opts)]
               (is (:success cargo)
                   (str name " live host should compile to IR: " (first (:errors cargo))))
-              (is (#{"canvas" "cli-live"} (get-in cargo [:stash :target-ir :host]))))
+              (is (#{"canvas" "cli-live" "testharness-live"}
+                   (get-in cargo [:stash :target-ir :host]))))
             (let [cargo (compiler/compile text example-opts)]
               (is (:success cargo)
                   (str name " should compile: " (first (:errors cargo))))
               (when (get-in cargo [:value :has-construction?])
-                (is (str/includes? (factory cargo) "Assemblage")
-                    (str name " with construction should emit a factory"))
                 (is (str/includes? text "## Target")
                     (str name " with construction should have a Target section"))
-                (is (str/includes? (get-in cargo [:value :preamble] "") "class WCHNTConsole")
-                    (str name " Haxe host should emit WCHNTConsole"))
-                (is (str/includes? (get-in cargo [:value :preamble] "") "class WCHNTMaths")
-                    (str name " Haxe host should emit WCHNTMaths"))
-                (is (str/includes? (main-class cargo) "wchntConsole")
-                    (str name " Haxe host should bind wchntConsole"))
-                (is (str/includes? (main-class cargo) "wchntMaths")
-                    (str name " Haxe host should bind wchntMaths"))
                 (cond
-                  (= "openfl" (host cargo))
+                  (= "testharness" (host cargo))
                   (do
-                    (is (str/includes? (main-class cargo) "extends Sprite")
-                        (str name " OpenFL Target should emit Main extends Sprite"))
-                    (is (str/includes? (main-class cargo) "function init")
-                        (str name " should emit %init"))
-                    (is (str/includes? (main-class cargo) "function step")
-                        (str name " should emit %step")))
-
-                  (= "cli" (host cargo))
-                  (do
-                    (is (str/includes? (main-class cargo) "Sys.stdin")
-                        (str name " %cli Target should read stdin"))
-                    (is (str/includes? (main-class cargo) "function init")
-                        (str name " should emit %init"))
-                    (is (str/includes? (main-class cargo) "function step")
-                        (str name " should emit %step"))
+                    (is (str/includes? (get-in cargo [:value :preamble] "") "class WCHNTUnitTests")
+                        (str name " %testharness should emit WCHNTUnitTests"))
                     (is (str/includes? (main-class cargo) "function main")
-                        (str name " should emit a main loop")))
+                        (str name " %testharness should emit Main.main"))
+                    (is (str/includes? (main-class cargo) "__fixture")
+                        (str name " %testharness should emit fixture helpers")))
 
                   :else
-                  (is (str/includes? (main cargo) "function main")
-                      (str name " should emit %main from Target")))))))))))
+                  (do
+                    (is (str/includes? (factory cargo) "Assemblage")
+                        (str name " with construction should emit a factory"))
+                    (is (str/includes? (get-in cargo [:value :preamble] "") "class WCHNTConsole")
+                        (str name " Haxe host should emit WCHNTConsole"))
+                    (is (str/includes? (get-in cargo [:value :preamble] "") "class WCHNTMaths")
+                        (str name " Haxe host should emit WCHNTMaths"))
+                    (is (str/includes? (main-class cargo) "wchntConsole")
+                        (str name " Haxe host should bind wchntConsole"))
+                    (is (str/includes? (main-class cargo) "wchntMaths")
+                        (str name " Haxe host should bind wchntMaths"))
+                    (cond
+                      (= "openfl" (host cargo))
+                      (do
+                        (is (str/includes? (main-class cargo) "extends Sprite")
+                            (str name " OpenFL Target should emit Main extends Sprite"))
+                        (is (str/includes? (main-class cargo) "function init")
+                            (str name " should emit %init"))
+                        (is (str/includes? (main-class cargo) "function step")
+                            (str name " should emit %step")))
+
+                      (= "cli" (host cargo))
+                      (do
+                        (is (str/includes? (main-class cargo) "Sys.stdin")
+                            (str name " %cli Target should read stdin"))
+                        (is (str/includes? (main-class cargo) "function init")
+                            (str name " should emit %init"))
+                        (is (str/includes? (main-class cargo) "function step")
+                            (str name " should emit %step"))
+                        (is (str/includes? (main-class cargo) "function main")
+                            (str name " should emit a main loop")))
+
+                      :else
+                      (is (str/includes? (main cargo) "function main")
+                          (str name " should emit %main from Target")))))))))))))
 
 (deftest nested-untagged-components
   (testing "construction_simple nests PlayArea/Rect and Ball under Game"
@@ -365,10 +378,10 @@
       (is (= "openfl" (host cargo)))
       (is (str/includes? classes "interface Shape"))
       (is (str/includes? classes "public function step(bounds:Rect): Shape;"))
-      (is (str/includes? classes "public function draw(g:Graphics): Void;"))
-      (is (str/includes? classes "public function draw(g:Graphics): Void {"))
+      (is (str/includes? classes "public function draw(g:WCHNTGraphics): WCHNTGraphics;"))
+      (is (str/includes? classes "public function draw(g:WCHNTGraphics): WCHNTGraphics {"))
       (is (str/includes? classes "drawCircle(this.x, this.y, this.radius)"))
-      (is (str/includes? main-class "s.draw(graphics)"))
+      (is (str/includes? main-class "s.draw(wchntGraphics)"))
       (is (not (str/includes? main-class "Std.isOfType(s, Circle)")))
       (is (str/includes? main-class "assemblage.time.update_mutates();"))
       (is (not (str/includes? main-class "assemblage.update_mutates();"))))))
@@ -377,7 +390,7 @@
   (testing "shapes_canvas Methods register Graphics for the interpreter"
     (let [cargo (compiler/compile-to-ir (slurp "live-examples/shapes_canvas.wcn"))]
       (is (:success cargo))
-      (is (contains? (:external-types (get-in cargo [:stash :schema-ir])) "Graphics")))))
+      (is (contains? (:external-types (get-in cargo [:stash :schema-ir])) "WCHNTGraphics")))))
 
 
 (deftest square-openfl-example
@@ -532,7 +545,7 @@
       (is (str/includes? preamble "class WCHNTConsole"))
       (is (str/includes? preamble "#if sys"))
       (is (str/includes? preamble "haxe.Log.trace"))
-      (is (str/includes? main-class "public static var wchntConsole"))
+      (is (str/includes? main-class "public var wchntConsole"))
       (is (str/includes? main "wchntConsole.println(assemblage.names())"))
       (is (str/includes? main "wchntConsole.println(assemblage.stats())"))
       (is (str/includes? main "wchntConsole.println(assemblage.hot())"))
@@ -701,7 +714,7 @@
       (is (str/includes? f "GameAssemblage.factory()"))
       (is (str/includes? f "addShape(new Pentagon("))
       (is (str/includes? main-class "assemblage.game.time.update_mutates()"))
-      (is (str/includes? main-class "s.draw(graphics)")))))
+      (is (str/includes? main-class "s.draw(wchntGraphics)")))))
 
 (deftest factory-args-live-example
   (testing "live-examples/factory_args.wcn is IR-only; Haxe backend rejects %canvas"

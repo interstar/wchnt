@@ -601,6 +601,21 @@ public static function main():Void {
         (is (str/includes? factory "new Keys(false, false, false, false)"))
         (is (not (str/includes? factory "new Keys(,")))))))
 
+(deftest fluent-chain-method-returns-graphics-root
+  (testing "an unannotated fluent @WCHNTGraphics chain is one expression returning the handle"
+    (let [source (str "## Schema\n\n```\n"
+                      "Dot = Int/x Int/y\n"
+                      "```\n\n## Construction\n\n```\n"
+                      "[:Dot 1 2]\n"
+                      "```\n\n## Methods\n\n```\n"
+                      "Dot::draw = { @WCHNTGraphics/g | g.beginFill(1).drawCircle(5, 6, 7).endFill() }\n"
+                      "```\n\n## Target\n\n```\n%openfl\n\n%init\nfunction init() {}\n\n%step\nfunction step() {}\n```\n")
+          cargo (compiler/compile source)]
+      (is (:success cargo) (first (:errors cargo)))
+      (let [classes (get-in cargo [:value :classes])]
+        (is (str/includes? classes "public function draw(g:WCHNTGraphics): WCHNTGraphics"))
+        (is (str/includes? classes "return g.beginFill(1).drawCircle(5, 6, 7).endFill();"))))))
+
 (deftest constructor-applies-construction-magic
   (testing "Haxe constructors wire context children and $ subscriptions"
     (let [context-src (str "## Schema\n\n```\n"

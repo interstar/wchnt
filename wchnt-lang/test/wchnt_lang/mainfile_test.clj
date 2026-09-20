@@ -292,14 +292,14 @@ Game = Int/x
 ## Methods
 
 ```
-Game::draw = { @Graphics/g | } -> Void
+Game::draw = { @WCHNTGraphics/g | } -> WCHNTGraphics
 ```"
           result (parse-mainfile content)]
       (is (:success result))
       (let [value (:value result)]
         (is (= :library (:page-kind value)))
         (is (= "shapes-lib\n[[helpers]]" (:import value)))
-        (is (= "Game::draw = { @Graphics/g | } -> Void" (:methods value)))))))
+        (is (= "Game::draw = { @WCHNTGraphics/g | } -> WCHNTGraphics" (:methods value)))))))
 
 
 (deftest test-parse-import-names
