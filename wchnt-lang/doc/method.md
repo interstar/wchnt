@@ -46,7 +46,7 @@ Construction is the same expression language, narrowed to a single top-level blo
 
 ## What already compiles
 
-Arithmetic, comparisons, `and` / `or` / `not`, returning a construction, and named block args. `%` between values is modulo (`x % width`), same precedence as `*` and `/`. `%name(...)` is still a Target command. Examples: `examples/test_reaction_arithmetic.wcn`, `examples/test_reaction_logic.wcn`.
+Arithmetic, comparisons, bitwise Int operations, `and` / `or` / `not`, returning a construction, and named block args. `%` between values is modulo (`x % width`), same precedence as `*` and `/`. Bitwise operators are `~`, `&`, `^`, `|`, `<<`, `>>`, and `>>>`; they require Int operands and use signed 32-bit two's-complement results. `%name(...)` is still a Target command. Examples: `examples/test_reaction_arithmetic.wcn`, `examples/test_reaction_logic.wcn`.
 
 ```
 Rect::area = { width * height }

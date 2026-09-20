@@ -5,15 +5,19 @@ Simple painting. Keys **1–9** pick the colour (1 black, 2 red, 3 green,
 OpenFL counterpart of `live-examples/paint.wcn`: the WCHNT schema and
 painting logic match; the Target section adapts input and drawing to OpenFL.
 
+The palette is a plain data map in Construction (hex ARGB literals); colour
+selection, the brush update, and drawing all live in WCHNT. Target only reads
+the platform input, injects it, steps, and asks WCHNT to paint.
+
 ## Schema
 
 ```
 Paint = Canvas Palette Input Brush/brush1 Brush/brush2
 Canvas = Int/width Int/height
 Brush = Int/x Int/y Int/rad Int/colour Bool/painting
->Input = Int/x Int/y Bool/down Int/colour
+>Input = Int/x Int/y Bool/down Int/key
 Colour = "Black" | "White" | "Red" | "Green" | "Blue" | "Yellow" | "Cyan" | "Magenta" | "Orange"
-Palette = {Colour:Int} 
+Palette = {Colour:Int}
 ```
 
 ## Construction
@@ -22,77 +26,62 @@ Palette = {Colour:Int}
 [:Paint
   [:Canvas 700 700]
   [:Palette
-    {Colour:Int}
+    {Colour:Int
+      Black:   0xFF000000
+      White:   0xFFFFFFFF
+      Red:     0xFFFF0000
+      Green:   0xFF00FF00
+      Blue:    0xFF0000FF
+      Yellow:  0xFFFFFF00
+      Magenta: 0xFFFF00FF
+      Cyan:    0xFF00FFFF
+      Orange:  0xFFFF8000
+    }
   ]
   [:Input 0 0 false 0]
-  [:Brush 0 0 5 0 false]
-  [:Brush 0 0 5 0 false]
+  [:Brush 0 0 5 0xFF000000 false]
+  [:Brush 0 0 5 0xFF000000 false]
 ]
 ```
 
 ## Methods
 
 ```
-
 Paint::step = {
-  nextBrush1 = [:Brush input.x input.y brush1.rad input.colour input.down].
-  nextBrush2 = [:Brush input.y input.x brush2.rad input.colour input.down].
+  key = input.key.
+  nextColour = if (key == 0) { brush1.colour } else { palette.colourForKey(key) }.
+  nextBrush1 = [:Brush input.x input.y brush1.rad nextColour input.down].
+  nextBrush2 = [:Brush input.y input.x brush2.rad nextColour input.down].
   [:Paint canvas palette input nextBrush1 nextBrush2]
 }
 
-Input::update! = { [:Input x y down colour] }
-
-Palette::makePalette = {@WCHNTGraphics/g |
-   [:Palette 
-     {Colour:Int
-       Black:g.color(0)
-       Red:g.color(255,0,0)
-       Green:g.color(0,255,0)
-       Blue:g.color(0,0,255)
-       Yellow:g.color(255,255,0)
-       Magenta:g.color(255,0,255)
-       Cyan:g.color(0,255,255)
-       Orange:g.color(255,128,0)
-       White:g.color(255)
-     }
-   ]
-}
+Input::update! = { [:Input x y down key] }
 
 Palette::colourForKey = { Int/key |
-   if (key == 1) { colourToInt.get(Black) }
-   else if (key == 2) { colourToInt.get(Red) }
-   else if (key == 3) { colourToInt.get(Green) }
-   else if (key == 4) { colourToInt.get(Blue) }
-   else if (key == 5) { colourToInt.get(Yellow) }
-   else if (key == 6) { colourToInt.get(Magenta) }
-   else if (key == 7) { colourToInt.get(Cyan) }
-   else if (key == 8) { colourToInt.get(Orange) }
-   else { colourToInt.get(White) }
+  if (key == 1) { colourToInt.get(Black) }
+  else if (key == 2) { colourToInt.get(Red) }
+  else if (key == 3) { colourToInt.get(Green) }
+  else if (key == 4) { colourToInt.get(Blue) }
+  else if (key == 5) { colourToInt.get(Yellow) }
+  else if (key == 6) { colourToInt.get(Magenta) }
+  else if (key == 7) { colourToInt.get(Cyan) }
+  else if (key == 8) { colourToInt.get(Orange) }
+  else { colourToInt.get(White) }
 }
 
-Brush::paint = {@WCHNTGraphics/g |
-   g.beginFill(colour).drawCircle(x, y, rad).endFill()
+Brush::paint = { @WCHNTGraphics/g |
+  g.beginFill(colour).drawCircle(x, y, rad).endFill()
 } -> Void
 
-
-Canvas::paint = {@WCHNTGraphics/g |
-    g.beginFill(g.color(255)).drawRect(0,0,width,height).endFill()
+Canvas::paint = { @WCHNTGraphics/g |
+  g.beginFill(0xFFFFFFFF).drawRect(0, 0, width, height).endFill()
 } -> Void
-
 ```
-
 
 ## Target
 
 ```
 %openfl
-
-
-%requires
-WCHNTGraphics
-WCHNTGraphics::color(Int,Int,Int,Int) -> Int
-WCHNTGraphics::color(Int,Int,Int) -> Int
-WCHNTGraphics::color(Int) -> Int
 
 %init
 var assemblage:Paint;
@@ -100,12 +89,9 @@ var down:Map<Int, Bool> = new Map();
 var pointerX:Int = 0;
 var pointerY:Int = 0;
 var mouseDown:Bool = false;
-var colour:Int = 0;
 
 function init():Void {
     assemblage = PaintAssemblage.factory();
-    assemblage.palette = assemblage.palette.makePalette(wchntGraphics);
-    colour = assemblage.palette.colourForKey(1);
     assemblage.canvas.paint(wchntGraphics);
     stage.addEventListener(KeyboardEvent.KEY_DOWN, function(e:KeyboardEvent) {
         down.set(e.keyCode, true);
@@ -133,18 +119,18 @@ function held(code:Int):Bool {
     return down.exists(code) && down.get(code);
 }
 
+function digit():Int {
+    for (n in 1...10) {
+        if (held(Keyboard.NUMBER_1 + n - 1)) return n;
+    }
+    return 0;
+}
+
 %step
 function step():Void {
-    for (n in 1...10) {
-        if (held(48 + n)) { colour = assemblage.palette.colourForKey(n); }
-    }
-    assemblage.input.inject(pointerX, pointerY, mouseDown, colour);
+    assemblage.input.inject(pointerX, pointerY, mouseDown, digit());
     assemblage = assemblage.step();
-    if (assemblage.brush1.painting) {
-        assemblage.brush1.paint(wchntGraphics);
-    }
-    if (assemblage.brush2.painting) {
-        assemblage.brush2.paint(wchntGraphics);
-    }
+    if (assemblage.brush1.painting) assemblage.brush1.paint(wchntGraphics);
+    if (assemblage.brush2.painting) assemblage.brush2.paint(wchntGraphics);
 }
 ```

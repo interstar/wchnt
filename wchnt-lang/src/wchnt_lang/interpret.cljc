@@ -318,6 +318,35 @@
       (throw (ex-info (str "Unknown comparison '" (:op expr) "'")
                       {:op (:op expr)})))))
 
+(defn- int32
+  [n]
+  #?(:clj (unchecked-int (long n))
+     :cljs (bit-or n 0)))
+
+(defn- eval-bitwise
+  [expr ctx]
+  (let [op (:op expr)
+        left (int32 (eval-expr (:left expr) ctx))
+        right (int32 (eval-expr (:right expr) ctx))
+        shift (bit-and right 31)]
+    (case op
+      "&" (int32 (bit-and left right))
+      "|" (int32 (bit-or left right))
+      "^" (int32 (bit-xor left right))
+      "<<" (int32 (bit-shift-left left shift))
+      ">>" (int32 (bit-shift-right left shift))
+      ">>>" #?(:clj (int32 (bit-and (unsigned-bit-shift-right
+                                      (bit-and (long left) 4294967295)
+                                      shift)
+                                      4294967295))
+               :cljs (bit-or (unsigned-bit-shift-right left shift) 0))
+      (throw (ex-info (str "Unknown bitwise operator '" op "'")
+                      {:operator op})))))
+
+(defn- eval-bitnot
+  [expr ctx]
+  (int32 (bit-not (int32 (eval-expr (:arg expr) ctx)))))
+
 (defn- eval-lets
   [lets ctx]
   (reduce (fn [ctx {:keys [name value]}]
@@ -622,6 +651,8 @@
     :param (lookup-binding ctx (:name expr))
     :path (eval-path expr ctx)
     :arith (eval-arith (:parts expr) ctx)
+    :bitwise (eval-bitwise expr ctx)
+    :bitnot (eval-bitnot expr ctx)
     :cmp (eval-cmp expr ctx)
     :and (every? #(eval-expr % ctx) (:args expr))
     :or (some #(eval-expr % ctx) (:args expr))

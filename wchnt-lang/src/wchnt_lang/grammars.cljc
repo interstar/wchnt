@@ -69,9 +69,18 @@ OrOp = AndExpr (<'or'> AndExpr)+
 AndOp = NotExpr (<'and'> NotExpr)+
 <NotExpr> = NotOp / CmpExpr
 NotOp = <'not'> NotExpr
-<CmpExpr> = CmpOp / ArithExpr
-CmpOp = ArithExpr CompOp ArithExpr
+<CmpExpr> = CmpOp / BitOrExpr
+CmpOp = BitOrExpr CompOp BitOrExpr
 <CompOp> = '<=' / '>=' / '==' / '!=' / '<' / '>'
+<BitOrExpr> = BitOrOp / BitXorExpr
+BitOrOp = BitXorExpr ('|' BitXorExpr)+
+<BitXorExpr> = BitXorOp / BitAndExpr
+BitXorOp = BitAndExpr ('^' BitAndExpr)+
+<BitAndExpr> = BitAndOp / ShiftExpr
+BitAndOp = ShiftExpr ('&' ShiftExpr)+
+<ShiftExpr> = ShiftOp / ArithExpr
+ShiftOp = ArithExpr (ShiftOperator ArithExpr)+
+<ShiftOperator> = '>>>' / '<<' / '>>'
 <ArithExpr> = AddOp / Term
 AddOp = Term (('+' / '-') Term)+
 <Term> = MulOp / Factor
@@ -80,6 +89,7 @@ MulOp = Factor (('*' / '/' / '%') Factor)+
          / TargetCommand
          / MethodCall
          / NegOp
+         / BitNotOp
          / <'('> OrExpr <')'>
          / WithConstruction
          / ObjectConstruction
@@ -93,6 +103,7 @@ ElseIfClause = <'else'> <'if'> <'('> OrExpr <')'> Block
 ElsePart = ElseIfClause* <'else'> Block
 IfExpr = <'if'> <'('> OrExpr <')'> Block ElsePart
 NegOp = <'-'> Factor
+BitNotOp = <'~'> Factor
 ObjectConstruction = <'['> <':'> ClassName ArgList <']'> 
 InnerObjectConstruction = <'['> (<':'> ClassName)? ArgList <']'>
 WithConstruction = <'['> <':'> ClassName WithSource? <'|'> WithAssignList <']'>
@@ -122,7 +133,7 @@ MethodArgItem = Expression
 KeyValueList = KeyValuePair (<','>? WS* KeyValuePair)*
 KeyValuePair = Expression (<':'>)? Expression
 <Literal> = FloatLiteral / IntLiteral / StringLiteral / BoolLiteral
-IntLiteral = #'(-)?[0-9]+'
+IntLiteral = #'0[xX][0-9a-fA-F]+|(-)?[0-9]+'
 FloatLiteral = #'(-)?[0-9]+\\.[0-9]+'
 StringLiteral = <'\"'> #'[^\"]*' <'\"'>
 BoolLiteral = 'true' / 'false'

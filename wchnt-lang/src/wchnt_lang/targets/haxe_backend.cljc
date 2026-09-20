@@ -181,6 +181,41 @@
        (map expr-ir-to-haxe)
        (str/join (str " " op " "))))
 
+(defn- bitwise-precedence
+  [expr]
+  (when (= :bitwise (:expr expr))
+    (case (:op expr)
+      "<<" 4
+      ">>" 4
+      ">>>" 4
+      "&" 3
+      "^" 2
+      "|" 1
+      nil)))
+
+(defn- haxe-bitwise-operand
+  [expr parent-op side]
+  (let [child-prec (or (bitwise-precedence expr) 0)
+        parent-prec (case parent-op
+                      ("<<" ">>" ">>>") 4
+                      "&" 3
+                      "^" 2
+                      "|" 1
+                      0)
+        needs-parens? (and (pos? child-prec)
+                           (if (= side :right)
+                             true
+                             (< child-prec parent-prec)))
+        rendered (expr-ir-to-haxe expr)]
+    (if needs-parens? (str "(" rendered ")") rendered)))
+
+(defn- haxe-cmp-operand
+  [expr]
+  (let [rendered (expr-ir-to-haxe expr)]
+    (if (bitwise-precedence expr)
+      (str "(" rendered ")")
+      rendered)))
+
 (defn- haxe-lets-then-value
   [{:keys [lets body]} return?]
   (let [let-lines (mapcat let-binding-lines (or lets []))
@@ -380,8 +415,12 @@
     :and (haxe-join-op "&&" (:args expr))
     :or (haxe-join-op "||" (:args expr))
     :not (str "!(" (expr-ir-to-haxe (:arg expr)) ")")
-    :cmp (str (expr-ir-to-haxe (:left expr)) " " (:op expr) " "
-              (expr-ir-to-haxe (:right expr)))
+    :cmp (str (haxe-cmp-operand (:left expr)) " " (:op expr) " "
+              (haxe-cmp-operand (:right expr)))
+    :bitwise (str (haxe-bitwise-operand (:left expr) (:op expr) :left)
+                  " " (:op expr) " "
+                  (haxe-bitwise-operand (:right expr) (:op expr) :right))
+    :bitnot (str "~" (expr-ir-to-haxe (:arg expr)))
     :construct (str "new " (:class-name expr) "("
                     (str/join ", " (map expr-ir-to-haxe (:args expr)))
                     ")")

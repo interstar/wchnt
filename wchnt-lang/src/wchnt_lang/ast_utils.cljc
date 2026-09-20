@@ -66,13 +66,22 @@
   (node-type? (second node) :Inlet))
 
 (defn parse-int
-  "Parse a decimal integer. Fail fast on junk (no silent NaN)."
+  "Parse a WCHNT Int literal; hex is unsigned 32-bit syntax with signed results."
   [s]
-  #?(:clj (Integer/parseInt s)
-     :cljs (let [n (js/parseInt s 10)]
-             (if (js/isNaN n)
-               (throw (ex-info (str "Not an integer: " s) {:s s}))
-               n))))
+  (if (re-matches #"0[xX][0-9a-fA-F]+" s)
+    (let [digits (subs s 2)
+          n #?(:clj (Long/parseLong digits 16)
+               :cljs (js/parseInt digits 16))]
+      (when (> n 4294967295)
+        (throw (ex-info (str "Hex Int literal exceeds 32 bits: " s)
+                        {:literal s :maximum "0xFFFFFFFF"})))
+      #?(:clj (unchecked-int n)
+         :cljs (bit-or n 0)))
+    #?(:clj (Integer/parseInt s)
+       :cljs (let [n (js/parseInt s 10)]
+               (if (js/isNaN n)
+                 (throw (ex-info (str "Not an integer: " s) {:s s}))
+                 n)))))
 
 (defn parse-float
   "Parse a floating-point number. Fail fast on junk (no silent NaN)."

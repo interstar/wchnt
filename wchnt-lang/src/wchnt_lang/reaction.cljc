@@ -131,7 +131,7 @@
                         {:name name :class-name class-name})))))
 
 (declare ast->expr process-statements assert-fresh-let-name value-type make-arith
-         block-statements convert-call-arg
+         ast->bitwise assert-bitwise-int! block-statements convert-call-arg
          assert-methods-complete!)
 
 (defn- convert-chain-parts
@@ -184,6 +184,8 @@
     :array (:type root)
     :map (:type root)
     :arith (:type root)
+    :bitwise "Int"
+    :bitnot "Int"
     nil))
 
 (defn- follow-field
@@ -1438,6 +1440,18 @@
       (ast-utils/node-type? node :MulOp)
       (make-arith (convert-chain-parts (rest node) ctx) ctx)
 
+      (or (ast-utils/node-type? node :BitAndOp)
+          (ast-utils/node-type? node :BitOrOp)
+          (ast-utils/node-type? node :BitXorOp)
+          (ast-utils/node-type? node :ShiftOp))
+      (ast->bitwise node ctx)
+
+      (ast-utils/node-type? node :BitNotOp)
+      (let [arg (ast->expr (second node) ctx)
+            arg-type (value-type arg ctx)]
+        (assert-bitwise-int! "~" arg-type ctx)
+        {:expr :bitnot :arg arg :type "Int"})
+
       (ast-utils/node-type? node :AndOp)
       {:expr :and :args (mapv #(ast->expr % ctx) (rest node))}
 
@@ -1541,6 +1555,15 @@
     :not
     (do (note-param-type types-atom (:arg expr) "Bool")
         (infer-param-types-from (:arg expr) types-atom))
+
+    :bitwise
+    (doseq [operand [(:left expr) (:right expr)]]
+      (note-param-type types-atom operand "Int")
+      (infer-param-types-from operand types-atom "Int"))
+
+    :bitnot
+    (do (note-param-type types-atom (:arg expr) "Int")
+        (infer-param-types-from (:arg expr) types-atom "Int"))
 
     :construct
     (doseq [arg (:args expr)]
@@ -1647,6 +1670,8 @@
     :bool "Bool"
     :string "String"
     :arith (:type expr)
+    :bitwise "Int"
+    :bitnot "Int"
     :cmp "Bool"
     :and "Bool"
     :or "Bool"
@@ -1837,6 +1862,36 @@
 
 (declare value-type)
 
+(defn- assert-bitwise-int!
+  [op actual ctx]
+  (when-not (= "Int" actual)
+    (throw (ex-info (str "Bitwise operator '" op "' expects Int, got "
+                         (or actual "unknown") " in " (:class-name ctx)
+                         "::" (:method-name ctx))
+                    {:operator op
+                     :expected "Int"
+                     :actual actual
+                     :class-name (:class-name ctx)
+                     :method-name (:method-name ctx)}))))
+
+(defn- ast->bitwise
+  [node ctx]
+  (let [items (rest node)
+        first-expr (ast->expr (first items) ctx)]
+    (reduce (fn [left [op right-node]]
+              (let [right (ast->expr right-node ctx)
+                    left-type (value-type left ctx)
+                    right-type (value-type right ctx)]
+                (assert-bitwise-int! op left-type ctx)
+                (assert-bitwise-int! op right-type ctx)
+                {:expr :bitwise
+                 :op op
+                 :left left
+                 :right right
+                 :type "Int"}))
+            first-expr
+            (partition 2 (rest items)))))
+
 (defn- make-arith
   [parts ctx]
   {:expr :arith
@@ -1857,6 +1912,8 @@
     :field (binding-type (:schema-ir ctx) (:class-name ctx) (:name expr))
     :local (get (:let-types ctx) (:name expr))
     :arith (or (:type expr) (arith-result-type (:parts expr) ctx))
+    :bitwise "Int"
+    :bitnot "Int"
     :int "Int"
     :float "Float"
     :bool "Bool"

@@ -60,7 +60,8 @@
 ;; Expression precedence: the grammar drops parens (`<'('>`), so the unparser
 ;; re-inserts them by comparing a node's precedence to its parent's.
 (def ^:private prec
-  {:OrOp 1 :AndOp 2 :NotOp 3 :CmpOp 4 :AddOp 5 :MulOp 6 :NegOp 7})
+  {:OrOp 1 :AndOp 2 :NotOp 3 :CmpOp 4 :BitOrOp 5 :BitXorOp 6
+   :BitAndOp 7 :ShiftOp 8 :AddOp 9 :MulOp 10 :NegOp 11 :BitNotOp 11})
 
 (defn- node-prec [node] (if (vector? node) (get prec (tag node) 100) 100))
 
@@ -313,9 +314,14 @@
        :AndOp (join-operands (children node) depth 2 " and ")
        :NotOp (str "not " (operand (first (children node)) depth 3))
        :CmpOp (unparse-infix node depth 4)
-       :AddOp (unparse-infix node depth 5)
-       :MulOp (unparse-infix node depth 6)
-       :NegOp (str "-" (operand (first (children node)) depth 7))
+       :BitOrOp (unparse-infix node depth 5)
+       :BitXorOp (unparse-infix node depth 6)
+       :BitAndOp (unparse-infix node depth 7)
+       :ShiftOp (unparse-infix node depth 8)
+       :AddOp (unparse-infix node depth 9)
+       :MulOp (unparse-infix node depth 10)
+       :NegOp (str "-" (operand (first (children node)) depth 11))
+       :BitNotOp (str "~" (operand (first (children node)) depth 11))
        :ClassName (second node)
        :VariableName (second node)
        :IntLiteral (second node)

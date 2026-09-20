@@ -286,6 +286,7 @@ Ball::move = {
 ### Expressions
 
 - Arithmetic: `+ - * / %` (`%` is modulo)
+- Bitwise Int operations: `~`, `&`, `^`, `|`, `<<`, `>>`, `>>>`; hex literals use `0x` (for example `0xFF`)
 - Comparison: `== != < <= > >=`
 - Logic: `and`, `or`, `not`
 - `if` / `else` is an expression; both branches are required (`else if` chains work)
@@ -294,6 +295,14 @@ Ball::move = {
 - Constructing: `[:Ball 1 2 3 4 5]`, arrays and maps as in Construction
 - Lambdas: `{ x | x * 2 }`
 - Target commands: `%trace(x)` — an expression, bound in Target
+
+Bitwise operators require `Int` operands and use signed 32-bit two's-complement
+results. Hex literals range from `0x0` through `0xFFFFFFFF`; the latter has the
+signed value `-1`. Values beyond 32 bits are rejected. Shift counts use their
+low five bits, so `1 << 32` is `1`. Precedence, from tighter to looser, is
+arithmetic, shifts, `&`, `^`, `|`, comparisons, `not`, `and`, `or`. Parenthesize
+a bitwise-OR expression in a method block when it could look like an untyped
+lambda, e.g. `Bits::combine = { (a | b) }`.
 
 ### Collections and strings
 
