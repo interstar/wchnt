@@ -53,6 +53,8 @@ The current availability is:
 | `%openfl` | `WCHNTMaths`, `WCHNTConsole`, `WCHNTGraphics` |
 | `%canvas` | `WCHNTMaths`, `WCHNTConsole`, `WCHNTGraphics` |
 | `%cli-live` | `WCHNTMaths`, `WCHNTConsole` |
+| `%testharness` | `WCHNTUnitTests` |
+| `%testharness-live` | `WCHNTUnitTests` |
 
 These names are conventions supplied by the target. They are not WCHNT
 assemblages and do not participate in `Import`.
@@ -74,8 +76,16 @@ plugins dynamically, but that is deliberately outside the language contract.
 * `core.cljc` contains shared target-block extraction and common IR shaping.
 * `requires.cljc` parses and validates `%requires` declarations.
 * `plugins.cljc` selects the plugin for a target directive.
-* `terminal.cljc`, `cli.cljc`, `openfl.cljc`, `canvas.cljc`, and
-  `cli_live.cljc` describe the supported target platforms.
+* `terminal.cljc`, `cli.cljc`, `openfl.cljc`, `canvas.cljc`,
+  `cli_live.cljc`, `testharness.cljc`, and `testharness_live.cljc`
+  describe the supported target platforms.
+* `%testharness` / `%testharness-live` share a custom parser
+  (`testharness_parse.cljc`) so Target may repeat `%with` / `%assert`.
+  Each `%with` embeds a WCHNT construction. The Haxe host expands those
+  into fixture helpers (`testharness_emit.cljc` + `testharness_std.cljc`).
+  The live host runs the same suite IR on the interpreter
+  (`testharness_live_run.cljc` + `testharness_live_expr.cljc`). No
+  `## Construction` section is required.
 * `haxe_backend.cljc` and `haxe_std.cljc` implement shared Haxe support.
 * `live_js.cljc`, `live_canvas.cljc`, `live_std.cljc`, and
   `interpreter_std.cljc` implement the live runtime support. The latter is

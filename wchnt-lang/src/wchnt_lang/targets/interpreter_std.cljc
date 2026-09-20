@@ -58,8 +58,10 @@
 
 (defn query?
   [class-name method]
-  (when-let [spec (get-in host-api [class-name method])]
-    (not= "Void" (:return spec))))
+  (or (when-let [spec (get-in host-api [class-name method])]
+        (not= "Void" (:return spec)))
+      (when (= class-name "WCHNTGraphics")
+        (contains? graphics-query-methods method))))
 
 (defn query-spec
   "Return the typed specification for a value-returning host query, or nil.
@@ -150,7 +152,7 @@
   ([]
    (make-maths nil))
   ([overrides]
-   {:wchnt/host :maths
+   {:wchnt/host "WCHNTMaths"
     :methods (merge (default-maths-methods) overrides)}))
 
 (defn invoke

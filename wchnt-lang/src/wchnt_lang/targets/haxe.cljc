@@ -12,11 +12,15 @@
   [helpers main]
   (when (str/blank? (or main ""))
     (throw (ex-info "Construction programs must define %main in Target" {})))
-  (str "class Main {\n"
-       (class-body haxe-std/wchnt-console-binding
-                   haxe-std/wchnt-maths-binding
-                   helpers main)
-       "\n}"))
+  (let [run (-> main
+                (str/replace #"static\s+function\s+main" "function run")
+                (str/replace #"function\s+main" "function run"))]
+    (str "class Main {\n"
+         (class-body haxe-std/wchnt-console-binding
+                     haxe-std/wchnt-maths-binding
+                     helpers run
+                     haxe-std/terminal-lifecycle)
+         "\n}")))
 
 (defn- emit-openfl-main
   [helpers init step]
@@ -59,6 +63,8 @@
                                   {:host host}))
         "cli-live" (throw (ex-info "%cli-live is for the live interpreter, not the Haxe backend"
                                     {:host host}))
+        "testharness-live" (throw (ex-info "%testharness-live is for the live interpreter, not the Haxe backend"
+                                           {:host host}))
         (throw (ex-info (str "Unknown Target host '" host "'") {:host host}))))))
 
 (defn- artifacts-for-cargo

@@ -65,8 +65,7 @@
       (number? raw) (str raw)
       (string? raw) (str "\"" raw "\"")
       (vector? raw) (str "[" (str/join " " (map #(describe (if ctx (wrap ctx %) %)) raw)) "]")
-      (and (map? raw) (= :maths (:wchnt/host raw))) "@WCHNTMaths"
-      (and (map? raw) (= :graphics (:wchnt/host raw))) "@WCHNTGraphics"
+      (and (map? raw) (:wchnt/host raw)) (str "@" (:wchnt/host raw))
       (and (map? raw) (:wchnt/class raw)) (describe-object (or ctx {}) raw)
       (map? raw) (describe-map raw)
       :else (str raw))))
@@ -86,8 +85,7 @@
 
 (defn- host-method
   [obj prop]
-  (when (and (map? obj) (= :graphics (:wchnt/host obj)))
-    (get-in obj [:methods prop])))
+  (get-in obj [:methods prop]))
 
 (defn- mailbox-inject?
   [ctx obj prop]

@@ -6,55 +6,54 @@
             [wchnt-lang.targets.live-js :as target-js]))
 
 (defn make-graphics
-  "Host graphics object. Methods append to an atom log.
-   API and semantics match WCHNTGraphics (OpenFL) and WCHNTHarness (live canvas)."
+  "Host graphics object. Methods append to an atom log and return the graphics
+   object so calls chain fluently (same API as WCHNTGraphics / WCHNTHarness)."
   []
-  (let [log (atom [])]
-    {:wchnt/host :graphics
-     :log log
-     :methods {"color" (fn [& [r g b a]]
-                          (let [gray? (nil? g)
-                                clamp (fn [value] (max 0 (min 255 (int value))))
-                                g (if gray? r g)
-                                b (if gray? r b)
-                                a (if (nil? a) 255 a)]
-                            (bit-or (bit-shift-left (clamp a) 24)
-                                    (bit-shift-left (clamp r) 16)
-                                    (bit-shift-left (clamp g) 8)
-                                    (clamp b))))
-               "red" (fn [color] (bit-and (unsigned-bit-shift-right color 16) 0xff))
-               "green" (fn [color] (bit-and (unsigned-bit-shift-right color 8) 0xff))
-               "blue" (fn [color] (bit-and color 0xff))
-               "alpha" (fn [color] (bit-and (unsigned-bit-shift-right color 24) 0xff))
-               "background" (fn [& [color alpha]]
-                              (swap! log conj (if (nil? alpha)
-                                                [:background color]
-                                                [:background color alpha])))
-               "clear" (fn [] (swap! log conj [:clear]))
-               "beginFill" (fn [& [color alpha]]
-                             (swap! log conj (if (nil? alpha)
-                                               [:begin-fill color]
-                                               [:begin-fill color alpha])))
-               "endFill" (fn [] (swap! log conj [:end-fill]))
-               "lineStyle" (fn [& [width color alpha]]
-                             (if (nil? width)
-                               (swap! log conj [:no-stroke])
-                               (swap! log conj (if (nil? alpha)
-                                                 [:line-style width color]
-                                                 [:line-style width color alpha]))))
-               "noStroke" (fn [] (swap! log conj [:no-stroke]))
-               "drawRect" (fn [x y w h]
-                            (swap! log conj [:draw-rect x y w h]))
-               "drawCircle" (fn [x y r]
-                              (swap! log conj [:draw-circle x y r]))
-               "drawEllipse" (fn [x y rx ry]
-                               (swap! log conj [:draw-ellipse x y rx ry]))
-               "drawLine" (fn [x1 y1 x2 y2]
-                            (swap! log conj [:draw-line x1 y1 x2 y2]))
-               "fillText" (fn [text x y]
-                            (swap! log conj [:fill-text text x y]))
-               "moveTo" (fn [x y] (swap! log conj [:move-to x y]))
-               "lineTo" (fn [x y] (swap! log conj [:line-to x y]))}}))
+  (let [log (atom [])
+        self (volatile! nil)
+        clamp (fn [value] (max 0 (min 255 (int value))))
+        record (fn [entry] (swap! log conj entry) @self)]
+    (let [gfx {:wchnt/host "WCHNTGraphics"
+               :log log
+               :methods {"color" (fn [& [r g b a]]
+                                    (let [gray? (nil? g)
+                                          g (if gray? r g)
+                                          b (if gray? r b)
+                                          a (if (nil? a) 255 a)]
+                                      (bit-or (bit-shift-left (clamp a) 24)
+                                              (bit-shift-left (clamp r) 16)
+                                              (bit-shift-left (clamp g) 8)
+                                              (clamp b))))
+                         "red" (fn [color] (bit-and (unsigned-bit-shift-right color 16) 0xff))
+                         "green" (fn [color] (bit-and (unsigned-bit-shift-right color 8) 0xff))
+                         "blue" (fn [color] (bit-and color 0xff))
+                         "alpha" (fn [color] (bit-and (unsigned-bit-shift-right color 24) 0xff))
+                         "background" (fn [& [color alpha]]
+                                        (record (if (nil? alpha)
+                                                  [:background color]
+                                                  [:background color alpha])))
+                         "clear" (fn [] (record [:clear]))
+                         "beginFill" (fn [& [color alpha]]
+                                       (record (if (nil? alpha)
+                                                 [:begin-fill color]
+                                                 [:begin-fill color alpha])))
+                         "endFill" (fn [] (record [:end-fill]))
+                         "lineStyle" (fn [& [width color alpha]]
+                                       (if (nil? width)
+                                         (record [:no-stroke])
+                                         (record (if (nil? alpha)
+                                                   [:line-style width color]
+                                                   [:line-style width color alpha]))))
+                         "noStroke" (fn [] (record [:no-stroke]))
+                         "drawRect" (fn [x y w h] (record [:draw-rect x y w h]))
+                         "drawCircle" (fn [x y r] (record [:draw-circle x y r]))
+                         "drawEllipse" (fn [x y rx ry] (record [:draw-ellipse x y rx ry]))
+                         "drawLine" (fn [x1 y1 x2 y2] (record [:draw-line x1 y1 x2 y2]))
+                         "fillText" (fn [text x y] (record [:fill-text text x y]))
+                         "moveTo" (fn [x y] (record [:move-to x y]))
+                         "lineTo" (fn [x y] (record [:line-to x y]))}}]
+      (vreset! self gfx)
+      gfx)))
 
 (defn graphics-log
   [graphics]

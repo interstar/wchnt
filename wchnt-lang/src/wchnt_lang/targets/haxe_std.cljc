@@ -205,12 +205,13 @@ class WCHNTGraphics {
         texts = [];
     }
 
-    public function background(color:Int, ?alpha:Float):Void {
+    public function background(color:Int, ?alpha:Float):WCHNTGraphics {
         bgColor = color;
         bgAlpha = (alpha == null ? packedAlpha(color) : alpha);
+        return this;
     }
 
-    public function clear():Void {
+    public function clear():WCHNTGraphics {
         for (t in texts) sprite.removeChild(t);
         texts = [];
         if (bgAlpha >= 1) {
@@ -221,11 +222,13 @@ class WCHNTGraphics {
         g.beginFill(rgbColor(bgColor), bgAlpha);
         g.drawRect(0, 0, sprite.stage.stageWidth, sprite.stage.stageHeight);
         g.endFill();
+        return this;
     }
 
-    public function beginFill(color:Int, ?alpha:Float):Void {
+    public function beginFill(color:Int, ?alpha:Float):WCHNTGraphics {
         fillColor = color;
         g.beginFill(rgbColor(color), (alpha == null ? packedAlpha(color) : alpha));
+        return this;
     }
 
     public inline function color(r:Int, ?g:Int, ?b:Int, ?a:Int):Int {
@@ -251,31 +254,33 @@ class WCHNTGraphics {
         return (color > 0xffffff || color < 0) ? ((color >>> 24) & 0xff) / 255 : 1;
     }
 
-    public inline function endFill():Void g.endFill();
+    public inline function endFill():WCHNTGraphics { g.endFill(); return this; }
 
-    public inline function noStroke():Void g.lineStyle();
+    public inline function noStroke():WCHNTGraphics { g.lineStyle(); return this; }
 
-    public function lineStyle(?thickness:Float, ?color:Int, ?alpha:Float):Void {
+    public function lineStyle(?thickness:Float, ?color:Int, ?alpha:Float):WCHNTGraphics {
         if (thickness == null) {
             g.lineStyle();
         } else {
             g.lineStyle(thickness, rgbColor(color), (alpha == null ? packedAlpha(color) : alpha));
         }
+        return this;
     }
 
-    public inline function drawRect(x:Float, y:Float, w:Float, h:Float):Void g.drawRect(x, y, w, h);
-    public inline function drawCircle(x:Float, y:Float, r:Float):Void g.drawCircle(x, y, r);
-    public inline function drawEllipse(x:Float, y:Float, rx:Float, ry:Float):Void g.drawEllipse(x, y, rx, ry);
+    public inline function drawRect(x:Float, y:Float, w:Float, h:Float):WCHNTGraphics { g.drawRect(x, y, w, h); return this; }
+    public inline function drawCircle(x:Float, y:Float, r:Float):WCHNTGraphics { g.drawCircle(x, y, r); return this; }
+    public inline function drawEllipse(x:Float, y:Float, rx:Float, ry:Float):WCHNTGraphics { g.drawEllipse(x, y, rx, ry); return this; }
 
-    public function drawLine(x1:Float, y1:Float, x2:Float, y2:Float):Void {
+    public function drawLine(x1:Float, y1:Float, x2:Float, y2:Float):WCHNTGraphics {
         g.moveTo(x1, y1);
         g.lineTo(x2, y2);
+        return this;
     }
 
-    public inline function moveTo(x:Float, y:Float):Void g.moveTo(x, y);
-    public inline function lineTo(x:Float, y:Float):Void g.lineTo(x, y);
+    public inline function moveTo(x:Float, y:Float):WCHNTGraphics { g.moveTo(x, y); return this; }
+    public inline function lineTo(x:Float, y:Float):WCHNTGraphics { g.lineTo(x, y); return this; }
 
-    public function fillText(text:String, x:Float, y:Float):Void {
+    public function fillText(text:String, x:Float, y:Float):WCHNTGraphics {
         var t = new TextField();
         t.selectable = false;
         t.mouseEnabled = false;
@@ -287,6 +292,7 @@ class WCHNTGraphics {
         t.textColor = fillColor;
         sprite.addChild(t);
         texts.push(t);
+        return this;
     }
 }")
 
@@ -295,6 +301,8 @@ class WCHNTGraphics {
 
     public function new() {
         super();
+        wchntConsole = new WCHNTConsole();
+        wchntMaths = new WCHNTMaths();
         addEventListener(Event.ADDED_TO_STAGE, __wchntAdded);
     }
 
@@ -414,13 +422,28 @@ class WCHNTMaths {
 }")
 
 (def wchnt-console-binding
-  "public static var wchntConsole = new WCHNTConsole();")
+  "public var wchntConsole:WCHNTConsole;")
 
 (def wchnt-maths-binding
-  "public static var wchntMaths = new WCHNTMaths();")
+  "public var wchntMaths:WCHNTMaths;")
+
+(def terminal-lifecycle
+  "public function new() {
+        wchntConsole = new WCHNTConsole();
+        wchntMaths = new WCHNTMaths();
+    }
+
+    public static function main():Void {
+        new Main().run();
+    }")
 
 (def cli-lifecycle
-  "public static function main():Void {
+  "public function new() {
+        wchntConsole = new WCHNTConsole();
+        wchntMaths = new WCHNTMaths();
+    }
+
+    public static function main():Void {
         var app = new Main();
         app.init();
         while (true) {

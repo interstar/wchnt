@@ -539,18 +539,12 @@
 
 (defn- eval-external-call
   [recv method args ext-type]
-  (cond
-    (and (map? recv) (= :graphics (:wchnt/host recv)))
-    (do (apply (get (:methods recv) method) args) recv)
-
-    (and (map? recv) (= :maths (:wchnt/host recv)))
-    (host/invoke recv method args)
-
-    (and ext-type (host/query? ext-type method))
-    (js-host-apply recv method args)
-
-    :else
-    (do (js-host-apply recv method args) recv)))
+  (let [result (if-let [f (get-in recv [:methods method])]
+                 (apply f args)
+                 (js-host-apply recv method args))]
+    (if (and ext-type (host/query? ext-type method))
+      result
+      recv)))
 
 (defn- eval-call
   [expr ctx]

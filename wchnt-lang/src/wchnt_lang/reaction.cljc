@@ -346,6 +346,13 @@
     (:type node)
     (branch-type node ctx)))
 
+(defn- assert-bool-expr!
+  [expr ctx what]
+  (let [expr-type (value-type expr ctx)]
+    (when (and expr-type (not= "Bool" expr-type))
+      (throw (ex-info (str what " must be Bool, got " expr-type)
+                      {:expr expr :type expr-type})))))
+
 (defn- process-else-part
   [else-part-node ctx class-name method-name]
   (let [items (rest else-part-node)
@@ -359,6 +366,7 @@
                             then-type (branch-type then-branch ctx)
                             else-type (branch-or-if-type acc ctx)
                             result-type (type-join then-type else-type)]
+                        (assert-bool-expr! cond-expr ctx "if condition")
                         (when-not result-type
                           (throw (ex-info (str "if branches must have the same type, got "
                                                then-type " and " else-type)
@@ -382,6 +390,7 @@
         then-type (branch-type then ctx)
         else-type (branch-or-if-type else ctx)
         result-type (type-join then-type else-type)]
+    (assert-bool-expr! condition ctx "if condition")
     (when-not result-type
       (throw (ex-info (str "if branches must have the same type, got "
                            then-type " and " else-type)
@@ -1453,13 +1462,21 @@
         {:expr :bitnot :arg arg :type "Int"})
 
       (ast-utils/node-type? node :AndOp)
-      {:expr :and :args (mapv #(ast->expr % ctx) (rest node))}
+      (let [args (mapv #(ast->expr % ctx) (rest node))]
+        (doseq [arg args]
+          (assert-bool-expr! arg ctx "and operand"))
+        {:expr :and :args args})
 
       (ast-utils/node-type? node :OrOp)
-      {:expr :or :args (mapv #(ast->expr % ctx) (rest node))}
+      (let [args (mapv #(ast->expr % ctx) (rest node))]
+        (doseq [arg args]
+          (assert-bool-expr! arg ctx "or operand"))
+        {:expr :or :args args})
 
       (ast-utils/node-type? node :NotOp)
-      {:expr :not :arg (ast->expr (second node) ctx)}
+      (let [arg (ast->expr (second node) ctx)]
+        (assert-bool-expr! arg ctx "not operand")
+        {:expr :not :arg arg})
 
       (ast-utils/node-type? node :CmpOp)
       {:expr :cmp
@@ -1586,9 +1603,11 @@
     (do (note-param-type types-atom (:condition expr) "Bool")
         (infer-param-types-from (:condition expr) types-atom)
         (doseq [branch [(:then expr) (:else expr)]]
-          (doseq [l (:lets branch)]
-            (infer-param-types-from (:value l) types-atom))
-          (infer-param-types-from (:body branch) types-atom)))
+          (if (= (:expr branch) :if)
+            (infer-param-types-from branch types-atom)
+            (do (doseq [l (:lets branch)]
+                  (infer-param-types-from (:value l) types-atom))
+                (infer-param-types-from (:body branch) types-atom)))))
 
     :lambda
     (do (doseq [l (:lets expr)]

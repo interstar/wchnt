@@ -6,6 +6,8 @@
             [wchnt-lang.targets.openfl :as openfl]
             [wchnt-lang.targets.canvas :as canvas]
             [wchnt-lang.targets.cli-live :as cli-live]
+            [wchnt-lang.targets.testharness :as testharness]
+            [wchnt-lang.targets.testharness-live :as testharness-live]
             [wchnt-lang.targets.core :as core]
             [wchnt-lang.targets.haxe :as haxe]))
 
@@ -14,7 +16,9 @@
    "cli" cli/plugin
    "openfl" openfl/plugin
    "canvas" canvas/plugin
-   "cli-live" cli-live/plugin})
+   "cli-live" cli-live/plugin
+   "testharness" testharness/plugin
+   "testharness-live" testharness-live/plugin})
 
 (defn- first-target-name
   [text]

@@ -99,8 +99,8 @@ MulOp = Factor (('*' / '/' / '%') Factor)+
          / Literal
          / VariableRef
          / BlockOrLambda
-ElseIfClause = <'else'> <'if'> <'('> OrExpr <')'> Block
-ElsePart = ElseIfClause* <'else'> Block
+CondClause = <'('> OrExpr <')'> Block
+ElsePart = CondClause* <'else'> Block
 IfExpr = <'if'> <'('> OrExpr <')'> Block ElsePart
 NegOp = <'-'> Factor
 BitNotOp = <'~'> Factor
@@ -232,7 +232,7 @@ ValType = Name
     (cond
       (and (re-find #"else\s*$" before)
            (re-matches #"if\s*\(.*" (str/triml after)))
-      "Hint: else-if chains use 'else if (condition) { … }'."
+      "Hint: multi-branch ifs use bare '(condition) { … }' clauses before the final 'else'."
 
       (and (>= i 0)
            (= \= (get text (dec i)))

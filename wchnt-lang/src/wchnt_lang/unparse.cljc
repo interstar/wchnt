@@ -213,15 +213,15 @@
              "\n" (indent depth) "}"))
       (str "{ " (unparse-node (first stmts) depth :expr) " }"))))
 
-(defn- unparse-elseif
+(defn- unparse-condclause
   [node depth]
-  (str " else if (" (unparse-node (first (children node)) depth :expr) ") "
+  (str " (" (unparse-node (first (children node)) depth :expr) ") "
        (unparse-node (find-child node :Block) depth)))
 
 (defn- unparse-elsepart
   [node depth]
-  (let [elseifs (filter #(and (vector? %) (= (tag %) :ElseIfClause)) (children node))]
-    (str (apply str (map #(unparse-elseif % depth) elseifs))
+  (let [clauses (filter #(and (vector? %) (= (tag %) :CondClause)) (children node))]
+    (str (apply str (map #(unparse-condclause % depth) clauses))
          " else " (unparse-node (find-child node :Block) depth))))
 
 (defn- unparse-if
