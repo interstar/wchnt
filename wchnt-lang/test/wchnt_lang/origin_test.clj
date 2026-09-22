@@ -4,6 +4,7 @@
             [wchnt-lang.compiler :as compiler]
             [wchnt-lang.interpret :as interpret]
             [wchnt-lang.targets.interpreter-std :as host]
+            [wchnt-lang.targets.live-canvas :as canvas]
             [wchnt-lang.pipeline :as p]))
 
 (deftest origin-canvas-compiles-to-ir
@@ -27,10 +28,13 @@
         methods (:methods-ir p)]
     (interpret/inject schema methods (interpret/get-field root "pointer")
                       [0.3 0.5 false])
-    (let [cells (interpret/call schema methods root "cells" [])]
+    (let [cells (interpret/call schema methods root "cells" [])
+          graphics (canvas/make-graphics)]
       (is (pos? (count cells)))
       (is (every? #(and (contains? % :x) (contains? % :rgb) (pos? (:rgb %)))
-                  cells)))))
+                  cells))
+      (interpret/call schema methods root "draw" [graphics])
+      (is (some #(= :draw-rect (first %)) (canvas/graphics-log graphics))))))
 
 (deftest float-literal-in-construction
   (let [src (str "# f\n## Schema\n```\nP = Float/x\n```\n## Construction\n```\n"

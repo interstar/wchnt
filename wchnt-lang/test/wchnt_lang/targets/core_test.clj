@@ -102,7 +102,13 @@
   (testing "%trace Haxe must declare a function to call from Methods"
     (is (thrown-with-msg? Exception #"function"
                           (target/parse-target
-                           "%terminal\n\n%trace\ntrace(x);\n%main\nfunction main():Void {}\n")))))
+                          "%terminal\n\n%trace\ntrace(x);\n%main\nfunction main():Void {}\n")))))
+
+(deftest parse-target-rejects-arbitrary-method-hooks
+  (testing "Target exposes only the dedicated %trace diagnostic hook to Methods"
+    (is (thrown-with-msg? Exception #"Only %trace"
+                          (target/parse-target
+                           "%terminal\n\n%log\nfunction log(x) { return x; }\n%main\nfunction main():Void {}\n")))))
 
 (deftest parse-target-host-terminal
   (testing "%terminal names the host and is not a Haxe binding"

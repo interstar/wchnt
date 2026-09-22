@@ -62,6 +62,21 @@
       (is (= "time" (:component-name time-component)))
       (is (= "Time" (:type-name time-component))))))
 
+(deftest test-schema-ast-to-ir-rejects-derived-component-name-collisions
+  (testing "repeated primitive types cannot derive the same field name"
+    (let [cargo (parser/schema-wchnt->schema-ast "X = Int Int\n")]
+      (is (:success cargo))
+      (is (thrown-with-msg? Exception
+                            #"Two fields named 'int' in X definition in the Schema"
+                            (ast-to-ir/schema-ast-to-ir (:value cargo))))))
+  (testing "repeated unnamed maps cannot derive the same field name"
+    (let [cargo (parser/schema-wchnt->schema-ast
+                 "Palette = {Colour:Int} {Colour:Int}\nColour = \"Black\" | \"White\"\n")]
+      (is (:success cargo))
+      (is (thrown-with-msg? Exception
+                            #"Two fields named 'colourToInt' in Palette definition in the Schema"
+                            (ast-to-ir/schema-ast-to-ir (:value cargo)))))))
+
 (deftest test-schema-ast-to-ir-mailbox-class
   (testing ">Keys is recorded as a mailbox class"
     (let [cargo (parser/schema-wchnt->schema-ast
