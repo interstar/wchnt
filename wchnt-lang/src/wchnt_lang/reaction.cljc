@@ -177,6 +177,7 @@
     :target-call (:type root)
     :path (:type root)
     :if (:type root)
+    :switch (:type root)
     :string "String"
     :int "Int"
     :float "Float"
@@ -404,6 +405,70 @@
      :else else
      :type result-type}))
 
+(defn- switch-pattern-expr
+  [pattern-node ctx]
+  (cond
+    (ast-utils/node-type? pattern-node :IntLiteral)
+    {:expr :int :value (ast-utils/parse-int (second pattern-node))}
+
+    (ast-utils/node-type? pattern-node :StringLiteral)
+    {:expr :string :value (second pattern-node)}
+
+    (ast-utils/node-type? pattern-node :BoolLiteral)
+    {:expr :bool :value (= "true" (second pattern-node))}
+
+    (ast-utils/node-type? pattern-node :VariableRef)
+    (let [name (second pattern-node)
+          enum (resolve-enum-ctor name (:schema-ir ctx) (:class-name ctx))]
+      (when-not enum
+        (throw (ex-info (str "switch pattern '" name "' is not a known enum value")
+                        {:name name :class-name (:class-name ctx)})))
+      enum)
+
+    :else
+    (throw (ex-info "Unsupported switch pattern" {:pattern pattern-node}))))
+
+(defn- ast->switch
+  [node ctx]
+  (let [class-name (:class-name ctx)
+        method-name "switch"
+        scrutinee (ast->expr (second node) ctx)
+        scrutinee-type (value-type scrutinee ctx)
+        branch-nodes (rest (rest node))
+        else-node (last branch-nodes)
+        case-nodes (butlast branch-nodes)]
+    (when-not scrutinee-type
+      (throw (ex-info "Cannot determine type of switch scrutinee"
+                      {:scrutinee scrutinee})))
+    (when-not (ast-utils/node-type? else-node :ElseBranch)
+      (throw (ex-info "switch requires an else branch" {:node node})))
+    (let [branches (mapv (fn [branch-node]
+                           (let [pattern (switch-pattern-expr (second branch-node) ctx)
+                                 pattern-type (value-type pattern ctx)
+                                 body (process-block (nth branch-node 2)
+                                                     ctx class-name "switch-case")]
+                             (when-not (= scrutinee-type pattern-type)
+                               (throw (ex-info (str "switch pattern " pattern-type
+                                                    " does not match scrutinee type " scrutinee-type)
+                                               {:pattern pattern-type :scrutinee scrutinee-type})))
+                             {:pattern pattern
+                              :lets (:lets body)
+                              :body (:body body)}))
+                         case-nodes)
+          else-branch (process-block (second else-node) ctx class-name "switch-else")
+          branch-types (mapv #(branch-type % ctx) branches)
+          else-type (branch-type else-branch ctx)
+          result-type (reduce type-join else-type branch-types)]
+      (when-not result-type
+        (throw (ex-info (str "switch branches must have the same type, got "
+                             branch-types " and " else-type)
+                        {:branches branch-types :else else-type})))
+      {:expr :switch
+       :scrutinee scrutinee
+       :branches branches
+       :else else-branch
+       :type result-type})))
+
 (defn- require-lambda
   [node method-name]
   (let [node (unwrap-expr node)]
@@ -411,7 +476,6 @@
       (throw (ex-info (str method-name " expects a block argument")
                       {:node node})))
     node))
-
 (defn- map-types
   [type-name]
   (when (and (string? type-name)
@@ -1506,6 +1570,9 @@
       (ast-utils/node-type? node :IfExpr)
       (ast->if node ctx)
 
+      (ast-utils/node-type? node :SwitchExpr)
+      (ast->switch node ctx)
+
       (ast-utils/node-type? node :NegOp)
       {:expr :neg :arg (ast->expr (second node) ctx)}
 
@@ -1609,6 +1676,16 @@
                   (infer-param-types-from (:value l) types-atom))
                 (infer-param-types-from (:body branch) types-atom)))))
 
+    :switch
+    (do (infer-param-types-from (:scrutinee expr) types-atom)
+        (doseq [branch (:branches expr)]
+          (doseq [l (:lets branch)]
+            (infer-param-types-from (:value l) types-atom))
+          (infer-param-types-from (:body branch) types-atom))
+        (doseq [l (:lets (:else expr))]
+          (infer-param-types-from (:value l) types-atom))
+        (infer-param-types-from (:body (:else expr)) types-atom))
+
     :lambda
     (do (doseq [l (:lets expr)]
           (infer-param-types-from (:value l) types-atom))
@@ -1706,6 +1783,7 @@
     :call (:type expr)
     :target-call (:type expr)
     :if (:type expr)
+    :switch (:type expr)
     :neg (expr-return-type (:arg expr) schema-ir class-name param-type-by-name let-types)
     :lambda (:type expr)
     (throw (ex-info "Cannot determine return type of method body"
@@ -1925,6 +2003,7 @@
     :call (:type expr)
     :target-call (:type expr)
     :if (:type expr)
+    :switch (:type expr)
     :neg (value-type (:arg expr) ctx)
     :lambda (:type expr)
     :param (get (:param-types ctx) (:name expr))
@@ -2300,9 +2379,13 @@
 
 (defn- target-fn-map
   [target-ir]
-  (into {} (map (fn [[name binding]]
-                  [name (:fn-name binding)])
-                (:bindings (or target-ir {:bindings {}})))))
+  (let [bindings (:bindings (or target-ir {:bindings {}}))]
+    (when (and (seq bindings) (not (contains? bindings "trace")))
+      (throw (ex-info "Only %trace may be called from Methods"
+                      {:bindings (sort (keys bindings))})))
+    (if-let [binding (get bindings "trace")]
+      {"trace" (:fn-name binding)}
+      {})))
 
 (defn reaction-ast-to-ir
   "Turn a parsed :Code reaction AST into MethodsIR."

@@ -266,6 +266,20 @@
       (assoc assemblage :implements (second implements-node))
       assemblage)))
 
+(defn- validate-component-names!
+  "Reject duplicate explicit or automatically derived field names."
+  [assemblages]
+  (doseq [{:keys [name components]} assemblages
+          :let [duplicate (some (fn [[field-name count]]
+                                  (when (> count 1) field-name))
+                                (frequencies (map :component-name components)))]
+          :when duplicate]
+    (throw (ex-info (str "Two fields named '" duplicate "' in " name
+                         " definition in the Schema")
+                    {:class-name name
+                     :field duplicate})))
+  assemblages)
+
 (defn transform-disjunction-line
   "Transform a disjunction line to an interface"
   [disjunction-line]
@@ -330,8 +344,9 @@
         disjunction-lines (parser/find-all-nodes :DisjunctionLine schema-ast)
         enum-lines (parser/find-all-nodes :EnumLine schema-ast)
         
-        assemblages (validate-reactive-components!
-                     (map transform-composition-line composition-lines))]
+        assemblages (->> (map transform-composition-line composition-lines)
+                         validate-component-names!
+                         validate-reactive-components!)]
     (assert-no-reserved-class-names! assemblages)
     (assert-inlet-only-on-classes! schema-ast)
     (let [interfaces (map transform-disjunction-line disjunction-lines)

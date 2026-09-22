@@ -222,14 +222,23 @@
                       (str "        " (expr-ir-to-haxe body) ";"))]]
     (str/join "\n" (concat let-lines body-lines))))
 
-(declare haxe-if)
+(declare haxe-if haxe-switch)
 
 (defn- branch-lets
   [branch]
-  (concat (or (:lets branch) [])
-          (when (= (:expr branch) :if)
-            (concat (branch-lets (:then branch))
-                    (branch-lets (:else branch))))))
+  (cond
+    (= (:expr branch) :if)
+    (concat (or (:lets branch) [])
+            (branch-lets (:then branch))
+            (branch-lets (:else branch)))
+
+    (= (:expr branch) :switch)
+    (concat (or (:lets branch) [])
+            (mapcat branch-lets (:branches branch))
+            (branch-lets (:else branch)))
+
+    :else
+    (or (:lets branch) [])))
 
 (defn- strip-branch-lets
   [branch]
@@ -240,22 +249,42 @@
            :then (strip-branch-lets (:then branch))
            :else (strip-branch-lets (:else branch)))
 
+    (= (:expr branch) :switch)
+    (assoc branch
+           :lets []
+           :branches (mapv strip-branch-lets (:branches branch))
+           :else (strip-branch-lets (:else branch)))
+
     :else
     (assoc branch :lets [])))
 
-(defn- collect-if-branch-lets
+(defn- collect-branch-lets
   [expr]
-  (when (= (:expr expr) :if)
+  (cond
+    (= (:expr expr) :if)
     (concat (branch-lets (:then expr))
-            (branch-lets (:else expr)))))
+            (branch-lets (:else expr)))
 
-(defn- strip-if-branch-lets
+    (= (:expr expr) :switch)
+    (concat (mapcat branch-lets (:branches expr))
+            (branch-lets (:else expr)))
+
+    :else nil))
+
+(defn- strip-branch-lets-expr
   [expr]
-  (if (= (:expr expr) :if)
+  (cond
+    (= (:expr expr) :if)
     (assoc expr
            :then (strip-branch-lets (:then expr))
            :else (strip-branch-lets (:else expr)))
-    expr))
+
+    (= (:expr expr) :switch)
+    (assoc expr
+           :branches (mapv strip-branch-lets (:branches expr))
+           :else (strip-branch-lets (:else expr)))
+
+    :else expr))
 
 (defn- haxe-if-branch-value
   "Render one if branch as a Haxe expression (nested if or body)."
@@ -281,6 +310,25 @@
   (str "(if (" (expr-ir-to-haxe (:condition expr)) ") "
        (haxe-if-branch-value (:then expr)) " "
        (haxe-if-else-tail (:else expr)) ")"))
+
+(defn- haxe-switch-branch
+  [branch]
+  (when (seq (:lets branch []))
+    (throw (ex-info "switch branch lets must be hoisted before Haxe emission"
+                    {:lets (:lets branch)})))
+  (str "case " (expr-ir-to-haxe (:pattern branch)) ": "
+       (expr-ir-to-haxe (:body branch)) ";"))
+
+(defn- haxe-switch
+  "Haxe switch expression, parenthesised for use in arith and assignments."
+  [expr]
+  (when (seq (:lets (:else expr) []))
+    (throw (ex-info "switch else lets must be hoisted before Haxe emission"
+                    {:lets (:lets (:else expr))})))
+  (str "(switch (" (expr-ir-to-haxe (:scrutinee expr)) ") { "
+       (str/join " " (map haxe-switch-branch (:branches expr)))
+       "default: " (expr-ir-to-haxe (:body (:else expr))) "; "
+       "})"))
 
 (defn- haxe-lambda
   ([expr]
@@ -397,6 +445,7 @@
                       ")")
     :lambda (haxe-lambda expr)
     :if (haxe-if expr)
+    :switch (haxe-switch expr)
     :neg (let [inner (expr-ir-to-haxe (:arg expr))]
            (if (re-matches #"[A-Za-z0-9_.]+" inner)
              (str "-" inner)
@@ -505,14 +554,14 @@
 
 (defn- generate-ordinary-method
   [{:keys [method-name parameters return-type body lets]} static?]
-  (let [branch-lets (when (= :if (:expr body)) (collect-if-branch-lets body))
-        body (if (seq branch-lets) (strip-if-branch-lets body) body)
+  (let [hoisted (collect-branch-lets body)
+        body (if (seq hoisted) (strip-branch-lets-expr body) body)
         params (str/join ", " (map #(str (:name %) ":" (:type %)) parameters))
         body-lines [(str "        return " (expr-ir-to-haxe body) ";")]
         kind (if static? "public static function" "public function")]
         (str "\n    " kind " " (ir/haxe-method-name method-name) "(" params "): " return-type " {\n"
          (str/join "\n" (concat (method-let-lines lets)
-                                (method-let-lines branch-lets)
+                                (method-let-lines hoisted)
                                 body-lines))
          "\n    }")))
 

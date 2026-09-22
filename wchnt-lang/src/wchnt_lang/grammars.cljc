@@ -86,6 +86,7 @@ AddOp = Term (('+' / '-') Term)+
 <Term> = MulOp / Factor
 MulOp = Factor (('*' / '/' / '%') Factor)+
 <Factor> = IfExpr
+         / SwitchExpr
          / TargetCommand
          / MethodCall
          / NegOp
@@ -102,6 +103,9 @@ MulOp = Factor (('*' / '/' / '%') Factor)+
 CondClause = <'('> OrExpr <')'> Block
 ElsePart = CondClause* <'else'> Block
 IfExpr = <'if'> <'('> OrExpr <')'> Block ElsePart
+SwitchExpr = <'switch'> <'('> OrExpr <')'> SwitchBranch+ ElseBranch
+SwitchBranch = !'else' (IntLiteral / StringLiteral / BoolLiteral / VariableRef) <'->'> Block
+ElseBranch = <'else'> <'->'> Block
 NegOp = <'-'> Factor
 BitNotOp = <'~'> Factor
 ObjectConstruction = <'['> <':'> ClassName ArgList <']'> 

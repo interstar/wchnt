@@ -231,6 +231,23 @@
          (unparse-node thn depth)
          (when elsepart (unparse-elsepart elsepart depth)))))
 
+(defn- unparse-switch
+  [node depth]
+  (let [scrutinee (second node)
+        branch-nodes (drop 2 node)
+        branches (butlast branch-nodes)
+        else-branch (last branch-nodes)
+        branch-pad (indent (inc depth))]
+    (str "switch (" (unparse-node scrutinee depth :expr) ")"
+         (apply str
+                (map (fn [branch]
+                       (str "\n" branch-pad
+                            (unparse-node (second branch) depth :expr)
+                            " -> " (unparse-node (nth branch 2) depth)))
+                     branches))
+         "\n" branch-pad "else -> "
+         (unparse-node (second else-branch) depth))))
+
 (defn- unparse-method-call
   [node depth]
   (let [cs (children node)]
@@ -306,6 +323,7 @@
        :Lambda (unparse-lambda node depth)
        :Assignment (unparse-assignment node depth)
        :IfExpr (unparse-if node depth)
+       :SwitchExpr (unparse-switch node depth)
        :MethodCall (unparse-method-call node depth)
        :MethodArgList (str/join ", " (map #(unparse-node % depth :expr) (children node)))
        :MethodArgItem (unparse-node (first (children node)) depth :expr)

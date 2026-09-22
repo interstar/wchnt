@@ -1,5 +1,5 @@
 (ns wchnt-lang.targets.core
-  "Parse the Target section: host, lifecycle Haxe, and %name bindings."
+  "Parse the Target section: host, lifecycle Haxe, and the %trace binding."
   (:require [clojure.string :as str]
             [wchnt-lang.targets.requires :as requires]))
 
@@ -124,6 +124,14 @@
                       {:name name :haxe haxe})))
     [name {:haxe haxe :fn-name fn-name}]))
 
+(defn- assert-supported-bindings
+  [blocks]
+  (let [unsupported (remove #(= "trace" (:name %)) blocks)]
+    (when (seq unsupported)
+      (throw (ex-info (str "Only %trace may be defined as a Target helper; found %"
+                           (:name (first unsupported)))
+                      {:bindings (sort (map :name unsupported))})))))
+
 (defn- haxe-block
   [block]
   (when block
@@ -159,6 +167,7 @@
         (assert-lifecycle host blocks)
         (assert-function-named (block-named blocks "init") "init")
         (assert-function-named (block-named blocks "step") "step")
+        (assert-supported-bindings other)
         (let [requires-ir (requires/parse (or (:haxe requires) ""))]
           (requires/assert-no-duplicate-method-signatures! requires-ir)
           {:host host

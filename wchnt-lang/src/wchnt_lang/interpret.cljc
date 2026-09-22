@@ -3,6 +3,7 @@
    Same IR as the Haxe backend; no host drawing."
   (:require [wchnt-lang.compiler :as compiler]
             [wchnt-lang.ir :as ir]
+            [wchnt-lang.ast-utils :as ast-utils]
             [wchnt-lang.pipeline :as p]
             [wchnt-lang.template :as template]
             [wchnt-lang.targets.interpreter-std :as host]))
@@ -52,8 +53,7 @@
   [arg]
   (let [v (:value arg)]
     (if (and (= "Int" (:class-name arg)) (string? v))
-      #?(:clj (Long/parseLong v)
-         :cljs (js/parseInt v 10))
+      (ast-utils/parse-int v)
       v)))
 
 (defn- construction-var-name
@@ -377,6 +377,17 @@
         (let [inner (eval-lets (:lets branch) ctx)]
           (eval-expr (:body branch) inner))))))
 
+(defn- eval-switch
+  [expr ctx]
+  (let [scrutinee (eval-expr (:scrutinee expr) ctx)
+        match (or (some (fn [{:keys [pattern body] :as branch}]
+                          (when (= scrutinee (eval-expr pattern ctx))
+                            branch))
+                        (:branches expr))
+                  (:else expr))]
+    (let [inner (eval-lets (:lets match) ctx)]
+      (eval-expr (:body match) inner))))
+
 (defn- eval-construct
   [expr ctx]
   ;; Objects built inside a method get the *same* construction magic as the
@@ -653,6 +664,7 @@
     :not (not (eval-expr (:arg expr) ctx))
     :neg (- (eval-expr (:arg expr) ctx))
     :if (eval-if expr ctx)
+    :switch (eval-switch expr ctx)
     :array (mapv #(eval-expr % ctx) (:items expr))
     :map (into {} (map (fn [pair]
                          [(eval-expr (:key pair) ctx)
@@ -660,6 +672,12 @@
                        (:pairs expr)))
     :construct (eval-construct expr ctx)
     :call (eval-call expr ctx)
+    :target-call
+    (let [f (get-in (:schema-ir ctx) [:target-fns (:name expr)])]
+      (when-not f
+        (throw (ex-info (str "Target %" (:name expr) " is not available in the live runtime")
+                        {:name (:name expr)})))
+      (apply f (mapv #(eval-expr % ctx) (:args expr))))
     :enum (:name expr)
     (throw (ex-info (str "Unsupported method expression: " (:expr expr))
                     {:expr expr}))))
