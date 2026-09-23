@@ -53,6 +53,14 @@ World::resize = {
   [:World | continent.country.capital.plaza.fountain.jets = 12, ocean.depth = 5000]
 }
 
+World::command = { String/line |
+  switch (line)
+    "jets" -> { this.moreJets() }
+    "ocean" -> { this.deeperOcean() }
+    "resize" -> { this.resize() }
+    else -> { if (line == "") { this } else { this.renameFountain(line) } }
+}
+
 World::boostFountain = { Fountain/f |
   [:Fountain f | jets = (f.jets + 1)]
 }
@@ -81,15 +89,7 @@ function init() {
 
 %step
 function step(line) {
-    if (line === "jets") {
-        assemblage = assemblage.moreJets();
-    } else if (line === "ocean") {
-        assemblage = assemblage.deeperOcean();
-    } else if (line === "resize") {
-        assemblage = assemblage.resize();
-    } else if (line.length > 0) {
-        assemblage = assemblage.renameFountain(line);
-    }
+    assemblage = assemblage.command(line);
     wchntConsole.println(assemblage.label());
 }
 ```

@@ -47,13 +47,10 @@ Wall::step = { Int/mode, Float/mx, Float/my, Float/udx, Float/udy |
   moved = n.times({ i |
     f = flies.get(i).
     j = ((i + follow + n) % n).
-    target = if (mode == 2) {
-      [:Fly mx my "white" true]
-    } (mode == 3) {
-      flies.get(0)
-    } else {
-      flies.get(j)
-    }.
+    target = switch (mode)
+      2 -> { [:Fly mx my "white" true] }
+      3 -> { flies.get(0) }
+      else -> { flies.get(j) }.
     if ((mode == 3) and (i == 0)) {
       f.steer(udx, udy)
     } else {

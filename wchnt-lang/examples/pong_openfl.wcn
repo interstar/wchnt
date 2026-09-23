@@ -47,7 +47,10 @@ PlayArea::centerBall = { Int/toDx |
 }
 
 PlayArea::ballAfterScore = { Int/scored, Ball/b |
-  if (scored == 1) { this.centerBall(-5) } (scored == 2) { this.centerBall(5) } else { b }
+  switch (scored)
+    1 -> { this.centerBall(-5) }
+    2 -> { this.centerBall(5) }
+    else -> { b }
 }
 
 Ball::bounceDy = {
@@ -111,6 +114,10 @@ Game::update! = {
   nextAiScore = if (scored == 2) { (aiScore + 1) } else { aiScore }.
   [:Game playArea nextBall p1 p2 nextPlayerScore nextAiScore time keys]
 }
+
+Game::draw = { @WCHNTGraphics/g |
+  g.clear().beginFill(0x1a1a2e).drawRect(playArea.x, playArea.y, playArea.width, playArea.height).endFill().beginFill(0xe8e8e8).drawRect(paddlePlayer.x, paddlePlayer.y, paddlePlayer.w, paddlePlayer.h).drawRect(paddleAi.x, paddleAi.y, paddleAi.w, paddleAi.h).drawCircle(ball.x, ball.y, ball.rad).endFill().fillText("You " + playerScore.str() + "  AI " + aiScore.str(), 12, 12)
+}
 ```
 
 ## Target
@@ -140,17 +147,6 @@ function held(code:Int):Bool {
 function step():Void {
     assemblage.keys.inject(held(Keyboard.LEFT), held(Keyboard.RIGHT), held(Keyboard.UP), held(Keyboard.DOWN));
     assemblage.time.update_mutates();
-    var area = assemblage.playArea;
-    var b = assemblage.ball;
-    wchntGraphics.clear();
-    wchntGraphics.beginFill(0x1a1a2e);
-    wchntGraphics.drawRect(area.x, area.y, area.width, area.height);
-    wchntGraphics.endFill();
-    wchntGraphics.beginFill(0xe8e8e8);
-    wchntGraphics.drawRect(assemblage.paddlePlayer.x, assemblage.paddlePlayer.y, assemblage.paddlePlayer.w, assemblage.paddlePlayer.h);
-    wchntGraphics.drawRect(assemblage.paddleAi.x, assemblage.paddleAi.y, assemblage.paddleAi.w, assemblage.paddleAi.h);
-    wchntGraphics.drawCircle(b.x, b.y, b.rad);
-    wchntGraphics.endFill();
-    wchntGraphics.fillText("You " + assemblage.playerScore + "  AI " + assemblage.aiScore, 12, 12);
+    assemblage.draw(wchntGraphics);
 }
 ```

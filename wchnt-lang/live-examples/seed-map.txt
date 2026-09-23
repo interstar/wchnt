@@ -23,4 +23,6 @@ bikes_canvas         bikes
 flies_canvas         fliesonthewall
 orrery               orrery
 lander               lander
+paint                paint
+form_calculator      form_calculator
 unittests            unittests

@@ -46,6 +46,10 @@ Game::update! = {
   moved = square.nudge((rightN + leftN), (downN + upN), r.x, r.y, ((r.x + r.width) - square.size), ((r.y + r.height) - square.size)).
   [:Game playArea moved keys]
 }
+
+Game::draw = { @WCHNTGraphics/g |
+  g.clear().beginFill(0x2a2a2a).drawRect(playArea.rect.x, playArea.rect.y, playArea.rect.width, playArea.rect.height).endFill().beginFill(0xf2f2f2).drawRect(square.x, square.y, square.size, square.size).endFill()
+}
 ```
 
 ## Target
@@ -74,14 +78,6 @@ function held(code:Int):Bool {
 %step
 function step():Void {
     assemblage.keys.inject(held(Keyboard.LEFT), held(Keyboard.RIGHT), held(Keyboard.UP), held(Keyboard.DOWN));
-    var r = assemblage.playArea.rect;
-    var s = assemblage.square;
-    wchntGraphics.clear();
-    wchntGraphics.beginFill(0x2a2a2a);
-    wchntGraphics.drawRect(r.x, r.y, r.width, r.height);
-    wchntGraphics.endFill();
-    wchntGraphics.beginFill(0xf2f2f2);
-    wchntGraphics.drawRect(s.x, s.y, s.size, s.size);
-    wchntGraphics.endFill();
+    assemblage.draw(wchntGraphics);
 }
 ```

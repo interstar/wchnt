@@ -1,16 +1,25 @@
 # Paint
 
 Simple painting. Keys **1–9** pick the colour (1 black, 2 red, 3 green,
-4 blue, 5 yellow, 6 magenta, 7 cyan, 8 orange, 9 white). The brush always
-follows the mouse but only paints while the button is held.
+4 blue, 5 yellow, 6 magenta, 7 cyan, 8 orange, 9 white). The brush follows
+the mouse and paints only while the button is held. This is the live canvas
+counterpart of `examples/paint_openfl.wcn`: the WCHNT schema and painting
+logic match; the Target section adapts input and drawing to the browser.
+
+The palette is a plain data map in Construction (hex ARGB literals); colour
+selection (a `switch` on the held digit), the brush update, and drawing all
+live in WCHNT. Target only reads input, injects it, steps, and asks WCHNT to
+paint.
 
 ## Schema
 
 ```
-Paint = Canvas Input :Brush
+Paint = Canvas Palette Input Brush/brush1 Brush/brush2
 Canvas = Int/width Int/height
 Brush = Int/x Int/y Int/rad Int/colour Bool/painting
->Input = Int/x Int/y Bool/down Int/colour
+>Input = Int/x Int/y Bool/down Int/key
+Colour = "Black" | "White" | "Red" | "Green" | "Blue" | "Yellow" | "Cyan" | "Magenta" | "Orange"
+Palette = {Colour:Int}
 ```
 
 ## Construction
@@ -18,8 +27,22 @@ Brush = Int/x Int/y Int/rad Int/colour Bool/painting
 ```
 [:Paint
   [:Canvas 800 600]
+  [:Palette
+    {Colour:Int
+      Black:   0xFF000000
+      White:   0xFFFFFFFF
+      Red:     0xFFFF0000
+      Green:   0xFF00FF00
+      Blue:    0xFF0000FF
+      Yellow:  0xFFFFFF00
+      Magenta: 0xFFFF00FF
+      Cyan:    0xFF00FFFF
+      Orange:  0xFFFF8000
+    }
+  ]
   [:Input 0 0 false 0]
-  [:Brush 0 0 5 0 false]
+  [:Brush 0 0 5 0xFF000000 false]
+  [:Brush 0 0 5 0xFF000000 false]
 ]
 ```
 
@@ -27,11 +50,35 @@ Brush = Int/x Int/y Int/rad Int/colour Bool/painting
 
 ```
 Paint::step = {
-  nextBrush = [:Brush input.x input.y brush.rad input.colour input.down].
-  [:Paint canvas input nextBrush]
+  key = input.key.
+  nextColour = if (key == 0) { brush1.colour } else { palette.colourForKey(key) }.
+  nextBrush1 = [:Brush input.x input.y brush1.rad nextColour input.down].
+  nextBrush2 = [:Brush input.y input.x brush2.rad nextColour input.down].
+  [:Paint canvas palette input nextBrush1 nextBrush2]
 }
 
-Input::update! = { [:Input x y down colour] }
+Input::update! = { [:Input x y down key] }
+
+Palette::colourForKey = { Int/key |
+  switch (key)
+    1 -> { colourToInt.get(Black) }
+    2 -> { colourToInt.get(Red) }
+    3 -> { colourToInt.get(Green) }
+    4 -> { colourToInt.get(Blue) }
+    5 -> { colourToInt.get(Yellow) }
+    6 -> { colourToInt.get(Magenta) }
+    7 -> { colourToInt.get(Cyan) }
+    8 -> { colourToInt.get(Orange) }
+    else -> { colourToInt.get(White) }
+}
+
+Brush::paint = { @WCHNTGraphics/g |
+  g.beginFill(colour).drawCircle(x, y, rad).endFill()
+}
+
+Canvas::paint = { @WCHNTGraphics/g |
+  g.beginFill(0xFFFFFFFF).drawRect(0, 0, width, height).endFill()
+}
 ```
 
 ## Target
@@ -41,42 +88,23 @@ Input::update! = { [:Input x y down colour] }
 
 %init
 var assemblage;
-var palette = [
-    wchntGraphics.color(0, 0, 0),        // 1 black
-    wchntGraphics.color(255, 0, 0),      // 2 red
-    wchntGraphics.color(0, 255, 0),      // 3 green
-    wchntGraphics.color(0, 0, 255),      // 4 blue
-    wchntGraphics.color(255, 255, 0),    // 5 yellow
-    wchntGraphics.color(255, 0, 255),    // 6 magenta
-    wchntGraphics.color(0, 255, 255),    // 7 cyan
-    wchntGraphics.color(255, 128, 0),    // 8 orange
-    wchntGraphics.color(255, 255, 255)   // 9 white
-];
-var colour = palette[0];
 
 function init() {
     assemblage = PaintAssemblage.factory();
-    var c = assemblage.canvas;
-    wchntGraphics.clear();
-    wchntGraphics.beginFill(0xffffff);
-    wchntGraphics.drawRect(0, 0, c.width, c.height);
-    wchntGraphics.endFill();
+    assemblage.canvas.paint(wchntGraphics);
 }
 
 %step
 function step() {
+    var key = 0;
     for (var n = 1; n <= 9; n++) {
-        if (input.keys[String(n)]) { colour = palette[n - 1]; }
+        if (input.keys[String(n)]) { key = n; }
     }
     var mx = Math.round(input.mouse.x * 800);
     var my = Math.round(input.mouse.y * 600);
-    assemblage.input.inject(mx, my, input.mouse.down, colour);
+    assemblage.input.inject(mx, my, input.mouse.down, key);
     assemblage = assemblage.step();
-    var p = assemblage.brush;
-    if (p.painting) {
-        wchntGraphics.beginFill(p.colour);
-        wchntGraphics.drawCircle(p.x, p.y, p.rad);
-        wchntGraphics.endFill();
-    }
+    if (assemblage.brush1.painting) assemblage.brush1.paint(wchntGraphics);
+    if (assemblage.brush2.painting) assemblage.brush2.paint(wchntGraphics);
 }
 ```

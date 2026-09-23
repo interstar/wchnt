@@ -22,6 +22,23 @@ Game = Int/w Int/h
 [:Game 800 600]
 ```
 
+## Methods
+
+```
+Game::draw = { @WCHNTGraphics/g |
+  g.background(0x1a1a2e).clear().beginFill(0x2a2a2a)
+   .drawRect(20, 20, 160, 100).endFill()
+   .lineStyle(2, 0x00ff00).drawRect(200, 20, 160, 100).noStroke()
+   .beginFill(0xf2f2f2).drawCircle(100, 200, 40).endFill()
+   .lineStyle(3, 0xff6464).drawCircle(260, 200, 40).noStroke()
+   .beginFill(0x6464ff).lineStyle(2, 0xffffff)
+   .drawEllipse(420, 200, 60, 30).endFill().noStroke()
+   .lineStyle(4, 0xffffff).drawLine(20, 300, 760, 300).noStroke()
+   .beginFill(0xc8c864).moveTo(100, 400).lineTo(200, 340)
+   .lineTo(300, 400).lineTo(100, 400).endFill()
+}
+```
+
 ## Target
 
 ```
@@ -36,33 +53,6 @@ function init():Void {
 
 %step
 function step():Void {
-    wchntGraphics.background(0x1a1a2e);
-    wchntGraphics.clear();
-    wchntGraphics.beginFill(0x2a2a2a);
-    wchntGraphics.drawRect(20, 20, 160, 100);
-    wchntGraphics.endFill();
-    wchntGraphics.lineStyle(2, 0x00ff00);
-    wchntGraphics.drawRect(200, 20, 160, 100);
-    wchntGraphics.noStroke();
-    wchntGraphics.beginFill(0xf2f2f2);
-    wchntGraphics.drawCircle(100, 200, 40);
-    wchntGraphics.endFill();
-    wchntGraphics.lineStyle(3, 0xff6464);
-    wchntGraphics.drawCircle(260, 200, 40);
-    wchntGraphics.noStroke();
-    wchntGraphics.beginFill(0x6464ff);
-    wchntGraphics.lineStyle(2, 0xffffff);
-    wchntGraphics.drawEllipse(420, 200, 60, 30);
-    wchntGraphics.endFill();
-    wchntGraphics.noStroke();
-    wchntGraphics.lineStyle(4, 0xffffff);
-    wchntGraphics.drawLine(20, 300, 760, 300);
-    wchntGraphics.noStroke();
-    wchntGraphics.beginFill(0xc8c864);
-    wchntGraphics.moveTo(100, 400);
-    wchntGraphics.lineTo(200, 340);
-    wchntGraphics.lineTo(300, 400);
-    wchntGraphics.lineTo(100, 400);
-    wchntGraphics.endFill();
+    assemblage.draw(wchntGraphics);
 }
 ```

@@ -151,9 +151,10 @@ Game::update! = {
 }
 
 Game::banner = {
-  if (phase == Landed) { "THE EAGLE HAS LANDED   (down: fly again)" }
-  (phase == Crashed) { "CRATER   (down: fly again)" }
-  else { "" }
+  switch (phase)
+    Landed -> { "THE EAGLE HAS LANDED   (down: fly again)" }
+    Crashed -> { "CRATER   (down: fly again)" }
+    else -> { "" }
 }
 
 Game::scoreLine = {
@@ -167,7 +168,10 @@ Terrain::draw = { @WCHNTGraphics/g |
 }
 
 Game::draw = { @WCHNTGraphics/g |
-  hull = if (phase == Crashed) { 14428979 } (phase == Landed) { 5232783 } else { 3556687 }.
+  hull = switch (phase)
+    Crashed -> { 14428979 }
+    Landed -> { 5232783 }
+    else -> { 3556687 }.
   terrainDrawn = terrain.draw(g).
   ship.draw(g, hull)
 }

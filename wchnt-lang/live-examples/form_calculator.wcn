@@ -1,0 +1,120 @@
+# Form calculator
+
+This live `%form` example exercises a recursive form tree and callbacks from a
+drop-down and slider. Choose a standard function and change its range; the
+curve is drawn on the form's canvas by WCHNT code.
+
+## Schema
+
+```
+Calculator = Form :Graph Input @WCHNTMaths/maths @WCHNTForm/ui
+Form = Panel/root
+Panel = String/id [Node]/children
+Node = Panel | Label | TextInput | TextArea | Slider | Button | Options | Canvas
+Label = String/id String/text
+TextInput = String/id String/value
+TextArea = String/id String/value Int/rows Int/cols
+Slider = String/id Float/min Float/max Float/step Float/value
+Button = String/id String/text
+Option = String/value String/label
+Options = String/id [Option]/options String/selected
+Canvas = String/id Int/width Int/height
+Graph = String/id Int/width Int/height
+>Input = String/function Float/range
+```
+
+## Construction
+
+```
+[:Calculator
+  [:Form
+    [:Panel "calculator"
+      [:Array/Node
+        [:Label "formula-label" "Formula"]
+        [:Options "function"
+          [:Array/Option
+            [:Option "sin" "sin(x)"]
+            [:Option "cos" "cos(x)"]
+            [:Option "tan" "tan(x)"]
+            [:Option "sqrt" "sqrt(x)"]]
+          "sin"]
+        [:Slider "range" 1.0 20.0 0.1 10.0]
+        [:Canvas "graph" 800 400]]]]
+  [:Graph "graph" 800 400]
+  [:Input "sin" 10.0]
+  maths
+  ui]
+```
+
+## Methods
+
+```
+Input::update! = { [:Input function range] }
+
+Graph::valueAt = { Float/x |
+  switch (theCalculator.input.function)
+    "sin" -> { theCalculator.maths.sin(x) }
+    "cos" -> { theCalculator.maths.cos(x) }
+    "tan" -> { theCalculator.maths.tan(x) }
+    else -> { theCalculator.maths.sqrt(x) }
+}
+
+Graph::draw = { @WCHNTGraphics/g |
+  range = theCalculator.input.range.
+  step = range / 160.0.
+  xScale = width / range.
+  yScale = height / 2.0.
+  styled = g.clear().lineStyle(1, 0xffffffff).
+  segments = 160.times({ Int/i |
+    x1 = i * step.
+    x2 = (i + 1) * step.
+    y1 = this.valueAt(x1).
+    y2 = this.valueAt(x2).
+    g.drawLine(x1 * xScale, yScale - (y1 * yScale / 2.0),
+               x2 * xScale, yScale - (y2 * yScale / 2.0))
+  }).
+  g
+}
+
+Calculator::step = {
+  nextFunction = ui.value("function").
+  nextRange = ui.number("range").
+  nextInput = [:Input nextFunction nextRange].
+  next = [:Calculator form graph nextInput maths ui].
+  drawn = next.graph.draw(ui.graphics("graph")).
+  next
+}
+```
+
+## Target
+
+```
+%form
+
+%requires
+WCHNTMaths
+WCHNTMaths::sin(Float) -> Float
+WCHNTMaths::cos(Float) -> Float
+WCHNTMaths::tan(Float) -> Float
+WCHNTMaths::sqrt(Float) -> Float
+WCHNTForm
+WCHNTForm::value(String) -> String
+WCHNTForm::number(String) -> Float
+WCHNTForm::graphics(String) -> WCHNTGraphics
+WCHNTGraphics
+WCHNTGraphics::clear() -> WCHNTGraphics
+WCHNTGraphics::lineStyle(Int,Int) -> WCHNTGraphics
+WCHNTGraphics::drawLine(Float,Float,Float,Float) -> WCHNTGraphics
+
+%init
+function init() {
+    assemblage = CalculatorAssemblage.factory(wchntMaths, wchntForm);
+    wchntForm.mount(assemblage.form);
+    assemblage.graph.draw(wchntForm.graphics("graph"));
+}
+
+%step
+function step() {
+    assemblage = assemblage.step();
+}
+```

@@ -1,0 +1,62 @@
+# Unit tests (`%testharness-live`)
+
+Same suite shape as `examples/unittests.wcn`, but for the **live** interpreter.
+Schema + Methods library; Target embeds many constructions via `%with`.
+
+In the Play wiki, open this page and press **Run** — results appear as a
+PASS/FAIL report (no canvas or CLI loop).
+
+## Schema
+
+```
+Rect = Int/w Int/h
+Point = Int/x Int/y
+```
+
+## Methods
+
+```
+Rect::area = { w * h }
+
+Rect::contains = { Point/p |
+  (p.x >= 0) and (p.x < w) and (p.y >= 0) and (p.y < h)
+}
+
+Point::moved = { Int/dx, Int/dy | [:Point (x + dx) (y + dy)] }
+```
+
+## Target
+
+```
+%testharness-live
+
+%with
+[:Rect 10 20]
+
+%assert
+"area of 10x20"
+rect.area() == 200
+
+"origin is inside"
+rect.contains(new Point(0, 0)) == true
+
+"far corner is outside"
+rect.contains(new Point(10, 20)) == false
+
+%with
+[:Rect 3 4]
+
+%assert
+"area of 3x4"
+rect.area() == 12
+
+%with
+[:Point 5 7]
+
+%assert
+"moved right"
+point.moved(3, 0).x == 8
+
+"moved up"
+point.moved(0, -2).y == 5
+```

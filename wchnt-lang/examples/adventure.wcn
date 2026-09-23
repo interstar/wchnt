@@ -68,16 +68,18 @@ Game::move = { String/line |
   places = worldMap.places.
   loc = places.get(here).
   exits = loc.exits.
-  isExit = if (line == "N") { exits.exists(N) }
-    (line == "E") { exits.exists(E) }
-    (line == "S") { exits.exists(S) }
-    (line == "W") { exits.exists(W) }
-    else { false }.
-  next = if (line == "N") { exits.get(N, here) }
-    (line == "E") { exits.get(E, here) }
-    (line == "S") { exits.get(S, here) }
-    (line == "W") { exits.get(W, here) }
-    else { here }.
+  isExit = switch (line)
+    "N" -> { exits.exists(N) }
+    "E" -> { exits.exists(E) }
+    "S" -> { exits.exists(S) }
+    "W" -> { exits.exists(W) }
+    else -> { false }.
+  next = switch (line)
+    "N" -> { exits.get(N, here) }
+    "E" -> { exits.get(E, here) }
+    "S" -> { exits.get(S, here) }
+    "W" -> { exits.get(W, here) }
+    else -> { here }.
   room = places.get(next).
   out = if (isExit) {
     "You are in {place}.".tpl({String:String "place": room.description})

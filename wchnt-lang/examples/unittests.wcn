@@ -1,0 +1,68 @@
+# Unit tests (`%testharness`)
+
+A **library** page: Schema + Methods, no Construction. The Target is the
+test suite. Each `%with` embeds a WCHNT construction as a fixture; `%assert`
+checks host expressions against that fixture. Re-`%with` the same class
+rebinds the same name (`rect` below).
+
+Run with `lein run examples/unittests.wcn`, then compile the emitted Haxe
+(`haxe -main Main -neko unittests.n && neko unittests.n`).
+
+Live twin: `live-examples/unittests.wcn` (`%testharness-live`).
+
+## Schema
+
+```
+Rect = Int/w Int/h
+Point = Int/x Int/y
+```
+
+## Methods
+
+```
+Rect::area = { w * h }
+
+Rect::contains = { Point/p |
+  (p.x >= 0) and (p.x < w) and (p.y >= 0) and (p.y < h)
+}
+
+Point::moved = { Int/dx, Int/dy | [:Point (x + dx) (y + dy)] }
+```
+
+## Target
+
+```
+%testharness
+
+%with
+[:Rect 10 20]
+
+%assert
+"area of 10x20"
+rect.area() == 200
+
+"origin is inside"
+rect.contains(new Point(0, 0)) == true
+
+"far corner is outside"
+rect.contains(new Point(10, 20)) == false
+
+%with
+[:Rect 3 4]
+
+%assert
+"area of 3x4, failing assertion"
+rect.area() == 11
+"area of 3x4, succeeding assertion"
+rect.area() == 12
+
+%with
+[:Point 5 7]
+
+%assert
+"moved right"
+point.moved(3, 0).x == 8
+
+"moved up"
+point.moved(0, -2).y == 5
+```
