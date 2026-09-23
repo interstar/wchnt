@@ -1,6 +1,7 @@
 (ns wchnt-lang.targets.core-test
   (:require [clojure.test :refer :all]
             [wchnt-lang.targets.core :as target]
+            [wchnt-lang.targets.plugins :as plugins]
             [wchnt-lang.targets.requires :as requires]
             [wchnt-lang.compiler :as compiler]))
 
@@ -244,3 +245,17 @@
     (is (thrown-with-msg? Exception #"%step"
                           (target/parse-target
                            "%cli-live\n\n%init\nfunction init() {}\n")))))
+
+(deftest parse-target-host-form
+  (testing "%form is a live frame target with WCHNTForm available"
+    (let [ir (plugins/parse-target
+              (str "%form\n\n"
+                   "%init\nfunction init() {}\n\n"
+                   "%step\nfunction step() {}\n"))]
+      (is (= "form" (:host ir)))
+      (is (nil? (:main ir)))
+      (is (re-find #"function init" (get-in ir [:init :haxe])))
+      (is (re-find #"function step" (get-in ir [:step :haxe])))
+      (is (contains? (:external-types ir) "WCHNTConsole"))
+      (is (some #(= {:name "wchntConsole" :host-key :console} %)
+                (get-in ir [:plugin :standard :bindings]))))))

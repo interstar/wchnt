@@ -71,30 +71,23 @@ Roll = @WCHNTMaths/maths")
     (is (= "sin" (get-in wave [:body :method])))
     (is (= "WCHNTMaths" (:external-type (:body wave))))))
 
-(deftest unknown-external-method-remains-opaque
-  (let [bad (first (methods-ir roll-schema "Roll::bad = { maths.foo() }"))]
-    (is (= "WCHNTMaths" (:return-type bad)))
-    (is (= "WCHNTMaths" (get-in bad [:body :type])))))
+(deftest unknown-external-method-fails-fast
+  (is (thrown-with-msg? Exception
+                        #"WCHNTMaths::foo has no declared external signature"
+                        (methods-ir roll-schema "Roll::bad = { maths.foo() }"))))
 
-(deftest undeclared-external-result-cannot-be-used-as-a-number
-  (try
-    (reaction/reaction-ast-to-ir
-     (grammars/parse-reaction
-      "Roll::bad = { maths.sin(0) * 2.0 }")
-     (assoc (schema-ir roll-schema)
-            :target-ir
-            {:requires (requires/parse "WCHNTMaths")})
-     {:bindings {} :main nil})
-    (is false "Undeclared external numeric result should fail")
-    (catch Exception e
-      (is (re-find #"Arithmetic expects Int or Float, got WCHNTMaths in Roll::bad"
-                   (.getMessage e)))
-      (is (re-find #"external call WCHNTMaths::sin"
-                   (.getMessage e)))
-      (is (re-find #"Target %requires" (.getMessage e))))))
+(deftest standard-external-result-is-available-from-the-contract
+  (let [result (reaction/reaction-ast-to-ir
+                (grammars/parse-reaction
+                 "Roll::ok = { maths.sin(0) * 2.0 }")
+                (assoc (schema-ir roll-schema)
+                       :target-ir
+                       {:requires (requires/parse "WCHNTMaths")})
+                {:bindings {} :main nil})]
+    (is (= "Float" (:return-type (first result))))))
 
 (deftest randint-wrong-arity-fails
-  (is (thrown-with-msg? Exception #"randInt expected \(1\)"
+  (is (thrown-with-msg? Exception #"randInt has no overload accepting 0 argument"
                         (methods-ir roll-schema "Roll::bad = { maths.randInt() }"))))
 
 (deftest graphics-passthrough-stays-fluent

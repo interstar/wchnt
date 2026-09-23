@@ -129,16 +129,14 @@ make = { [:Paint 0] }
                                   platform-dependent-lib))})]
     (is (:success cargo) (err cargo))))
 
-(deftest imported-external-result-needs-importers-method-signature
+(deftest imported-external-result-uses-standard-library-signature
   (let [app (app-with-graphics-requirements "WCHNTGraphics")
         cargo (compiler/compile-to-ir
                app
                {:resolve-page (fn [name]
                                 (when (= name "platform-paint")
                                   platform-dependent-lib))})]
-    (is (not (:success cargo)))
-    (is (re-find #"return type annotation Int does not match inferred WCHNTGraphics"
-                 (err cargo)))))
+    (is (:success cargo) (err cargo))))
 
 (deftest parse-public-and-import-alias
   (testing "Public entries are unqualified methods or published type names"

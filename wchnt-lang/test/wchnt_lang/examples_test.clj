@@ -58,11 +58,11 @@
       (doseq [file files]
         (let [name (.getName file)
               text (slurp file)]
-          (if (re-find #"(?m)^%(canvas|cli-live|testharness-live)\s*$" text)
+          (if (re-find #"(?m)^%(canvas|form|cli-live|testharness-live)\s*$" text)
             (let [cargo (compiler/compile-to-ir text example-opts)]
               (is (:success cargo)
                   (str name " live host should compile to IR: " (first (:errors cargo))))
-              (is (#{"canvas" "cli-live" "testharness-live"}
+              (is (#{"canvas" "form" "cli-live" "testharness-live"}
                    (get-in cargo [:stash :target-ir :host]))))
             (let [cargo (compiler/compile text example-opts)]
               (is (:success cargo)
@@ -391,6 +391,19 @@
     (let [cargo (compiler/compile-to-ir (slurp "live-examples/shapes_canvas.wcn"))]
       (is (:success cargo))
       (is (contains? (:external-types (get-in cargo [:stash :schema-ir])) "WCHNTGraphics")))))
+
+(deftest form-calculator-example-compiles-recursive-ui-to-ir
+  (testing "the form target accepts a recursive Panel/Node widget tree"
+    (let [cargo (compiler/compile-to-ir (slurp "live-examples/form_calculator.wcn"))]
+      (is (:success cargo) (str (first (:errors cargo))))
+      (let [schema (get-in cargo [:stash :schema-ir])
+            panel (first (filter #(= "Panel" (:name %)) (:assemblages schema)))
+            node (first (filter #(= "Node" (:name %)) (:interfaces schema)))]
+        (is (= "form" (get-in cargo [:stash :target-ir :host])))
+        (is (= "Array<Node>"
+               (:type-name (first (filter #(= "children" (:component-name %))
+                                          (:components panel))))))
+        (is (some #{"Canvas"} (:implementers node)))))))
 
 
 (deftest square-openfl-example
