@@ -108,26 +108,37 @@
 
 (defn- set-run-host-ui!
   [host]
-  (let [cli? (= host "cli-live")]
-    (set-hidden! "stage-wrap" cli?)
+  (let [cli? (= host "cli-live")
+        test? (= host "testharness-live")
+        form? (= host "form")
+        stage? (and (not cli?) (not test?) (not form?))]
+    (set-hidden! "stage-wrap" (not stage?))
+    (set-hidden! "form-wrap" (not form?))
     (set-hidden! "cli-wrap" (not cli?))
-    (set-hidden! "run-hint-canvas" cli?)
-    (set-hidden! "run-hint-cli" (not cli?))))
+    (set-hidden! "test-wrap" (not test?))
+    (set-hidden! "run-hint-canvas" (not stage?))
+    (set-hidden! "run-hint-cli" (not cli?))
+    (set-hidden! "run-hint-test" (not test?))))
 
 (defn- focus-run-input!
   [host]
   (js/setTimeout
    (fn []
-     (if (= host "cli-live")
-       (when-let [line (el "cli-line")]
-         (.focus line))
-       (focus-stage-keys!)))
+     (cond
+       (= host "cli-live") (when-let [line (el "cli-line")] (.focus line))
+       (or (= host "testharness-live") (= host "form")) nil
+       :else (focus-stage-keys!)))
    0))
 
 (defn- show-run-modal!
   [host]
   (blur-editor!)
   (set-run-host-ui! host)
+  (gobj/set (el "run-modal-title") "textContent"
+            (case host
+              "cli-live" "Terminal"
+              "testharness-live" "Unit tests"
+              "Program"))
   (gobj/set (.-body js/document) "style" "overflow: hidden")
   (gobj/set (el "run-modal") "hidden" false)
   (focus-run-input! host))
@@ -290,6 +301,11 @@
   (stop!)
   (show-error! (err-message e)))
 
+(defn- start-testharness!
+  [result]
+  (show-run-modal! "testharness-live")
+  (gobj/set (el "test-transcript") "textContent" (:message result)))
+
 (defn- start-program!
   [harness result]
   (show-run-modal! (:host result))
@@ -307,15 +323,14 @@
     (let [harness @!harness
           result (runtime/prepare (editor/text @!editor)
                                   {:graphics (.-wchntGraphics harness)
+                                   :form (.-wchntForm harness)
                                    :input (.-input harness)
                                    :console (.-wchntConsole harness)
                                    :maths (.-wchntMaths harness)})]
       (case (:kind result)
         :documentation (show-info! (:message result))
         :library (show-info! (:message result))
-        :testharness (if (:ok? result)
-                       (show-info! (:message result))
-                       (show-error! (:message result)))
+        :testharness (start-testharness! result)
         :program (start-program! harness result)))
     (catch :default e
       (on-run-error e))))
@@ -734,7 +749,8 @@
         canvas (el "stage")
         keys-el (el "stage-keys")
         harness (.create js/WCHNTHarness canvas keys-el
-                         (el "cli-transcript") (el "cli-line"))
+                         (el "cli-transcript") (el "cli-line")
+                         (el "form-stage"))
         theme (current-theme)
         seed-set (set seed-names)
         start-page (or (page-from-location)

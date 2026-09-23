@@ -85,14 +85,21 @@
                       autocorrect="off"
                       spellcheck="false"></textarea>
           </div>
+          <div id="form-wrap" hidden>
+            <div id="form-stage"></div>
+          </div>
           <div id="cli-wrap" hidden>
             <pre id="cli-transcript" aria-live="polite"></pre>
             <input id="cli-line" type="text" autocomplete="off"
                    autocorrect="off" spellcheck="false"
                    aria-label="Line input for program">
           </div>
+          <div id="test-wrap" hidden>
+            <pre id="test-transcript" aria-live="polite"></pre>
+          </div>
           <p id="run-hint-canvas" class="run-modal-hint">Click the play area (blue outline) so arrow keys reach the program, not the editor.</p>
           <p id="run-hint-cli" class="run-modal-hint" hidden>Type a line and press Enter. Close to stop. The host adds no extra text.</p>
+          <p id="run-hint-test" class="run-modal-hint" hidden>Unit test results. Close to dismiss.</p>
         </div>
       </div>
     </div>

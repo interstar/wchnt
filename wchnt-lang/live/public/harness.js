@@ -359,17 +359,22 @@
       transcriptEl.textContent += text;
       transcriptEl.scrollTop = transcriptEl.scrollHeight;
     }
-    return {
+    var self = {
+      format: format,
       print: function (s) {
         write(format(s));
+        return self;
       },
       println: function (s) {
         write(format(s) + "\n");
+        return self;
       },
       clear: function () {
         transcriptEl.textContent = "";
+        return self;
       }
     };
+    return self;
   }
 
   function makeMaths() {
@@ -427,7 +432,143 @@
     };
   }
 
-  function create(canvas, keysEl, transcriptEl, lineEl) {
+  function makeForm(root) {
+    var events = [];
+    var graphics = {};
+
+    function value(node, name) {
+      return node[name];
+    }
+
+    function event(id, kind, value) {
+      events.push({id: id, kind: kind, value: value});
+    }
+
+    function addCommonInput(input, id, kind) {
+      input.addEventListener("input", function () {
+        event(id, kind, input.value);
+      });
+      input.addEventListener("change", function () {
+        event(id, kind, input.value);
+      });
+    }
+
+    function render(node) {
+      var kind = node.__wchntClass;
+      if (kind === "Form") return render(value(node, "root"));
+      if (kind === "Panel") {
+        var panel = document.createElement("section");
+        panel.className = "wchnt-form-panel";
+        panel.dataset.wchntId = value(node, "id");
+        var children = value(node, "children") || [];
+        for (var i = 0; i < children.length; i++) {
+          panel.appendChild(render(children[i]));
+        }
+        return panel;
+      }
+      if (kind === "Label") {
+        var label = document.createElement("label");
+        label.dataset.wchntId = value(node, "id");
+        label.textContent = value(node, "text");
+        return label;
+      }
+      if (kind === "TextInput" || kind === "TextArea") {
+        var input = kind === "TextArea" ? document.createElement("textarea") : document.createElement("input");
+        var id = value(node, "id");
+        input.value = value(node, "value");
+        input.dataset.wchntId = id;
+        if (kind === "TextArea") {
+          input.rows = value(node, "rows");
+          input.cols = value(node, "cols");
+        } else {
+          input.type = "text";
+        }
+        addCommonInput(input, id, kind);
+        return input;
+      }
+      if (kind === "Slider") {
+        var slider = document.createElement("input");
+        var sliderId = value(node, "id");
+        slider.type = "range";
+        slider.min = value(node, "min");
+        slider.max = value(node, "max");
+        slider.step = value(node, "step");
+        slider.value = value(node, "value");
+        slider.dataset.wchntId = sliderId;
+        addCommonInput(slider, sliderId, kind);
+        return slider;
+      }
+      if (kind === "Button") {
+        var button = document.createElement("button");
+        var buttonId = value(node, "id");
+        button.type = "button";
+        button.textContent = value(node, "text");
+        button.dataset.wchntId = buttonId;
+        button.addEventListener("click", function () { event(buttonId, kind, true); });
+        return button;
+      }
+      if (kind === "Options") {
+        var select = document.createElement("select");
+        var selectId = value(node, "id");
+        var options = value(node, "options") || [];
+        for (var o = 0; o < options.length; o++) {
+          var option = document.createElement("option");
+          option.value = value(options[o], "value");
+          option.textContent = value(options[o], "label");
+          select.appendChild(option);
+        }
+        select.value = value(node, "selected");
+        select.dataset.wchntId = selectId;
+        addCommonInput(select, selectId, kind);
+        return select;
+      }
+      if (kind === "Canvas") {
+        var canvas = document.createElement("canvas");
+        var canvasId = value(node, "id");
+        canvas.width = value(node, "width");
+        canvas.height = value(node, "height");
+        canvas.dataset.wchntId = canvasId;
+        graphics[canvasId] = makeGraphics(canvas.getContext("2d"));
+        return canvas;
+      }
+      throw new Error("WCHNTForm cannot render " + kind);
+    }
+
+    var self = {
+      mount: function (form) {
+        while (root.firstChild) root.removeChild(root.firstChild);
+        graphics = {};
+        root.appendChild(render(form));
+        return self;
+      },
+      value: function (id) {
+        var node = root.querySelector('[data-wchnt-id="' + id + '"]');
+        if (!node) throw new Error("No form control named '" + id + "'");
+        return node.value;
+      },
+      number: function (id) {
+        return parseFloat(this.value(id));
+      },
+      pollEvents: function () {
+        var result = events;
+        events = [];
+        return result;
+      },
+      graphics: function (id) {
+        if (!graphics[id]) throw new Error("No form canvas named '" + id + "'");
+        return graphics[id];
+      },
+      clear: function () {
+        while (root.firstChild) root.removeChild(root.firstChild);
+        graphics = {};
+        events = [];
+        return self;
+      }
+    };
+    return self;
+  }
+
+  function create(canvas, keysEl, transcriptEl, lineEl, formRoot) {
     var ctx = canvas.getContext("2d");
     canvas.width = WIDTH;
     canvas.height = HEIGHT;
@@ -440,6 +581,7 @@
     var wchntGraphics = makeGraphics(ctx);
     var wchntConsole = makeConsole(transcriptEl);
     var wchntMaths = makeMaths();
+    var wchntForm = makeForm(formRoot);
 
     function stopCli() {
       if (cliOnKey && lineEl) {
@@ -520,6 +662,7 @@
       graphics: wchntGraphics,
       wchntConsole: wchntConsole,
       wchntMaths: wchntMaths,
+      wchntForm: wchntForm,
       input: input,
       start: start,
       startCli: startCli,

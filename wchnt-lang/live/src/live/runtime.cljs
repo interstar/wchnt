@@ -9,24 +9,31 @@
             [live.storage :as storage]))
 
 (def live-hosts
-  #{"canvas" "cli-live" "testharness-live"})
+  #{"canvas" "form" "cli-live" "testharness-live"})
 
 (defn- target-js-body
   [program]
-  (str (get-in program [:target-ir :init :haxe])
+  (let [bindings (get-in program [:target-ir :bindings])
+        trace-name (get-in bindings ["trace" :fn-name])]
+    (str (str/join "\n" (map :haxe (vals bindings)))
+       "\n"
+       (get-in program [:target-ir :init :haxe])
        "\n"
        (get-in program [:target-ir :step :haxe])
-       "\nreturn {init: init, step: step};"))
+       "\nreturn {init: init, step: step, trace: "
+       (or trace-name "null")
+       "};")))
 
 (defn- game-factory
-  [program]
+  [program-ref]
   (fn [& args]
-    (js-view/as-js
-     (js-view/wrap program
-                   (interpret/construct (:schema-ir program)
-                                        (:construction-ir program)
-                                        (or (:methods-ir program) [])
-                                        (mapv js-view/from-js args))))))
+    (let [program @program-ref]
+      (js-view/as-js
+       (js-view/wrap program
+                     (interpret/construct (:schema-ir program)
+                                          (:construction-ir program)
+                                          (or (:methods-ir program) [])
+                                          (mapv js-view/from-js args)))))))
 
 (defn- compile-js
   [arg-names body]
@@ -39,7 +46,8 @@
 
 (def ^:private reserved-js-names
   #{"wchntGraphics" "graphics" "input" "wchntConsole"
-    "wchntMaths" "__wchntClasses" "__wchntAssemblages" "init" "step" "assemblage"})
+    "wchntMaths" "wchntForm" "__wchntClasses" "__wchntAssemblages"
+    "init" "step" "assemblage"})
 
 (defn- class-ctors
   [program]
@@ -80,41 +88,43 @@
        (target-js-body program)))
 
 (defn- assemblage-object
-  [program]
-  (let [root (:root-class (:construction-ir program))]
-    (doto (js-obj)
-      (aset (str root "Assemblage")
-            (doto (js-obj)
-              (aset "factory" (game-factory program)))))))
+  [program-ref]
+  (let [program @program-ref]
+    (let [root (:root-class (:construction-ir program))]
+      (doto (js-obj)
+        (aset (str root "Assemblage")
+              (doto (js-obj)
+                (aset "factory" (game-factory program-ref))))))))
 
-(defn- bind-canvas
-  [program graphics input maths]
-    (let [ctor (compile-js ["wchntGraphics" "graphics" "input"
-                          "wchntMaths" "__wchntClasses" "__wchntAssemblages"]
-                         (target-with-ctors program))]
-    (.call ctor nil graphics graphics input maths (class-ctors program)
-           (assemblage-object program))))
-
-(defn- bind-cli
-  [program console maths]
-  (let [ctor (compile-js ["wchntConsole" "wchntMaths" "__wchntClasses" "__wchntAssemblages"]
-                         (target-with-ctors program))]
-    (.call ctor nil console maths (class-ctors program)
-           (assemblage-object program))))
+(defn- bind-live-target
+  [program-ref program host-api]
+  (let [standard-bindings (get-in program [:target-ir :plugin :standard :bindings])
+        arg-names (mapv :name standard-bindings)
+        values (mapv #(get host-api (:host-key %)) standard-bindings)
+        internal-names ["__wchntClasses" "__wchntAssemblages"]
+        ctor (compile-js (into arg-names internal-names)
+                         (target-with-ctors program))
+        args (into values [(class-ctors program)
+                           (assemblage-object program-ref)])]
+    (.apply ctor nil (to-array args))))
 
 (defn- bind-target
-  [program host-api]
-  (if (= "cli-live" (get-in program [:target-ir :host]))
-    (bind-cli program (:console host-api) (:maths host-api))
-    (bind-canvas program (:graphics host-api) (:input host-api)
-                 (:maths host-api))))
+  [program-ref program host-api]
+  (bind-live-target program-ref program host-api))
+
+(defn- install-target-functions
+  [program api]
+  (let [trace (.-trace api)]
+    (if (fn? trace)
+      (assoc-in program [:schema-ir :target-fns "trace"] trace)
+      program)))
 
 (defn- assert-live-host
   [program]
   (let [host (get-in program [:target-ir :host])]
     (when-not (contains? live-hosts host)
       (throw (ex-info
-              (str "Live Run expects %canvas, %cli-live, or %testharness-live"
+              (str "Live Run expects %canvas, %form, %cli-live, or %testharness-live"
                    (when host (str ", not %" host)))
               {:host host})))
     program))
@@ -133,7 +143,9 @@
                  (interpret/load-program
                   wchnt-markdown
                   {:resolve-page storage/resolve-page}))
-        api (bind-target program host-api)]
+        program-ref (atom program)
+        api (bind-target program-ref program host-api)]
+    (reset! program-ref (install-target-functions program api))
     {:kind :program
      :host (get-in program [:target-ir :host])
      :init (.-init api)
@@ -164,7 +176,7 @@
      :message "Library page — schema and methods check passed."}))
 
 (defn prepare
-  "Parse source. host-api is {:graphics :input :console :maths}.
+  "Parse source. host-api is {:graphics :form :input :console :maths}.
    Returns {:kind ...} with :init/:step/:host for programs, or a
    :testharness report for %testharness-live libraries."
   [wchnt-markdown host-api]

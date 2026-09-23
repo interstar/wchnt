@@ -1,6 +1,6 @@
 # WCHNT live page
 
-Browser interpreter: CodeMirror edits a `.wcn` file, Run constructs the heap and starts the `%canvas` frame loop. Schema / Construction / Methods are the same IR as the Haxe compiler. Target bodies are real JavaScript (`js/Function`). The harness (`public/harness.js`) owns the canvas, `graphics`, and `requestAnimationFrame`.
+Browser interpreter: CodeMirror edits a `.wcn` file, Run constructs the heap and starts the `%canvas` or `%form` frame loop. Schema / Construction / Methods are the same IR as the Haxe compiler. Target bodies are real JavaScript (`js/Function`). The harness (`public/harness.js`) owns the canvas, form DOM, standard wrappers, and `requestAnimationFrame`.
 
 Default buffer is `examples/bounce_canvas.wcn`.
 

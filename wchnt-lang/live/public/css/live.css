@@ -584,6 +584,45 @@ main {
   background: var(--stage-wrap-bg);
 }
 
+#form-wrap {
+  padding: 20px;
+  background: var(--stage-wrap-bg);
+  overflow: auto;
+}
+
+#form-stage {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.wchnt-form-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+}
+
+.wchnt-form-panel label {
+  font-weight: 600;
+}
+
+.wchnt-form-panel input,
+.wchnt-form-panel textarea,
+.wchnt-form-panel select,
+.wchnt-form-panel button {
+  max-width: 100%;
+  font: inherit;
+}
+
+.wchnt-form-panel canvas {
+  max-width: 100%;
+  border: 1px solid var(--border);
+  background: var(--stage-bg);
+}
+
 #stage {
   display: block;
   width: 800px;
@@ -627,7 +666,9 @@ main {
 }
 
 #stage-wrap[hidden],
+#form-wrap[hidden],
 #cli-wrap[hidden],
+#test-wrap[hidden],
 .run-modal-hint[hidden] {
   display: none;
 }
@@ -642,6 +683,29 @@ main {
 }
 
 #cli-transcript {
+  flex: 1;
+  margin: 0;
+  padding: 12px 16px;
+  overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 14px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text);
+  background: var(--stage-bg);
+}
+
+#test-wrap {
+  display: flex;
+  flex-direction: column;
+  width: 800px;
+  max-width: 100%;
+  height: min(600px, 70vh);
+  background: var(--stage-wrap-bg);
+}
+
+#test-transcript {
   flex: 1;
   margin: 0;
   padding: 12px 16px;
