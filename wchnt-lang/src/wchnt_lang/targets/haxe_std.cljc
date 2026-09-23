@@ -63,6 +63,7 @@ class WCHNTHelper implements IWCHNTHelper {
         for (i in 0...depth) ind += \"  \";
         return ind + Std.string(enumValue);
     }
+
 }")
 
 (def wchnt-runtime
@@ -345,20 +346,26 @@ class WCHNTConsole {
         return Std.string(value);
     }
 
-    public function print(value:Dynamic):Void {
+    public function print(value:Dynamic):WCHNTConsole {
         #if sys
         Sys.print(format(value));
         #else
         haxe.Log.trace(format(value), null);
         #end
+        return this;
     }
 
-    public function println(value:Dynamic):Void {
+    public function println(value:Dynamic):WCHNTConsole {
         #if sys
         Sys.println(format(value));
         #else
         haxe.Log.trace(format(value), null);
         #end
+        return this;
+    }
+
+    public function clear():WCHNTConsole {
+        return this;
     }
 }")
 

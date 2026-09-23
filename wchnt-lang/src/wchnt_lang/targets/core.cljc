@@ -4,14 +4,14 @@
             [wchnt-lang.targets.requires :as requires]))
 
 (def known-hosts
-  #{"terminal" "cli" "cli-live" "openfl" "canvas"})
+  #{"terminal" "cli" "cli-live" "openfl" "canvas" "form"})
 
 (def host-help
-  "%terminal, %cli, %cli-live, %openfl, or %canvas")
+  "%terminal, %cli, %cli-live, %openfl, %canvas, or %form")
 
 (def frame-hosts
   "Hosts that use %init / %step instead of %main (frame loop or line loop)."
-  #{"openfl" "canvas" "cli" "cli-live"})
+  #{"openfl" "canvas" "form" "cli" "cli-live"})
 
 (def lifecycle-names
   #{"main" "init" "step"})
@@ -144,7 +144,7 @@
 (defn parse-target
   "Turn Target section text into a host, lifecycle bodies, and % bindings.
    Blank input is empty. Non-empty input must start with %name.
-   Terminal requires %main. OpenFL, canvas, cli and cli-live require %init and %step, not %main.
+   Terminal requires %main. OpenFL, canvas, form, cli and cli-live require %init and %step, not %main.
    Host % names take no body. A host line is required for every non-empty Target."
   [text]
   (if (str/blank? (or text ""))

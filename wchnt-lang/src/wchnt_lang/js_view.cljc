@@ -207,6 +207,9 @@
                                         (not (string? prop))
                                         js/undefined
 
+                                        (= prop "__wchntClass")
+                                        (:wchnt/class (unwrap x))
+
                                         (= prop "toConstruction")
                                         (fn [& _] (describe x))
 

@@ -6,6 +6,6 @@
   {:name "openfl"
    :backend :haxe
    :std :haxe
-   :provided-types #{"WCHNTMaths" "WCHNTConsole" "WCHNTGraphics"}
+   :standard {:types #{"WCHNTMaths" "WCHNTConsole" "WCHNTGraphics"}}
    :parse-target core/parse-target
    :emit haxe/emit-program})

@@ -5,17 +5,20 @@
             [wchnt-lang.targets.cli :as cli]
             [wchnt-lang.targets.openfl :as openfl]
             [wchnt-lang.targets.canvas :as canvas]
+            [wchnt-lang.targets.form :as form]
             [wchnt-lang.targets.cli-live :as cli-live]
             [wchnt-lang.targets.testharness :as testharness]
             [wchnt-lang.targets.testharness-live :as testharness-live]
             [wchnt-lang.targets.core :as core]
-            [wchnt-lang.targets.haxe :as haxe]))
+            [wchnt-lang.targets.haxe :as haxe]
+            [wchnt-lang.targets.stdlib-signatures :as stdlib]))
 
 (def plugins
   {"terminal" terminal/plugin
    "cli" cli/plugin
    "openfl" openfl/plugin
    "canvas" canvas/plugin
+   "form" form/plugin
    "cli-live" cli-live/plugin
    "testharness" testharness/plugin
    "testharness-live" testharness-live/plugin})
@@ -39,12 +42,44 @@
   (if (str/blank? (or text ""))
     (core/parse-target text)
     (let [plugin (plugin-for text)
-          parsed ((:parse-target plugin) text)]
+          parsed ((:parse-target plugin) text)
+          standard-types (get-in plugin [:standard :types])
+          standard-classes (select-keys stdlib/signatures standard-types)
+          standard-requires
+          {:classes
+           (into {}
+                 (map (fn [[class-name methods]]
+                        [class-name
+                         {:methods
+                          (into {}
+                                (map (fn [[method-name spec]]
+                                       [method-name
+                                        (mapv (fn [overload]
+                                                {:args (:args overload)
+                                                 :arg-types (:args overload)
+                                                 :return (or (:return overload)
+                                                              (:return spec))})
+                                              (if-let [overloads (:overloads spec)]
+                                                overloads
+                                                [spec]))])
+                                     methods))}])
+                      standard-classes))}
+          requires-ir (:requires parsed)
+          merged-requires
+          (update requires-ir :classes
+                  (fn [classes]
+                    (reduce-kv
+                     (fn [result class-name standard-class]
+                       (update result class-name
+                               #(merge-with merge (or %) standard-class)))
+                     classes
+                     (:classes standard-requires))))]
       (assoc parsed
+             :requires merged-requires
              :plugin plugin
              :platform (:name plugin)
              :external-types (into (or (:external-types parsed) #{})
-                                   (:provided-types plugin))))))
+                                   standard-types)))))
 
 (defn emit
   "Delegate final target emission to the selected platform plugin."

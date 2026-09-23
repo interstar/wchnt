@@ -4,6 +4,7 @@
             [wchnt-lang.ast-utils :as ast-utils]
             [wchnt-lang.ir :as ir]
             [wchnt-lang.targets.requires :as target-requires]
+            [wchnt-lang.targets.stdlib-signatures :as stdlib]
             [wchnt-lang.template :as template]))
 
 (defn- unwrap-expr
@@ -990,7 +991,8 @@
 
 (defn- host-arg-ok?
   [expected actual]
-  (or (nil? actual)
+  (or (= expected "Any")
+      (nil? actual)
       (= expected actual)
       (and (= expected "Float") (= actual "Int"))))
 
@@ -1010,12 +1012,31 @@
    :external-type class-name
    :type (:return spec)})
 
+(defn- standard-method-spec
+  [class-name method arity]
+  (when-let [declared (get-in stdlib/signatures [class-name method])]
+    (let [overloads (or (:overloads declared) [declared])]
+      (or (some (fn [spec]
+                  (when (= arity (count (:args spec)))
+                    {:args (:args spec)
+                     :arg-types (:args spec)
+                     :return (or (:return spec) (:return declared))}))
+                overloads)
+          (throw (ex-info
+                  (str class-name "::" method
+                       " has no overload accepting " arity " argument(s)")
+                  {:external-class class-name
+                   :external-method method
+                   :arity arity
+                   :declared-arities (mapv #(count (:args %)) overloads)}))))))
+
 (defn- external-method-spec
   [ctx class-name method arity]
   (try
-    (target-requires/method-spec
-     (get-in (:schema-ir ctx) [:target-ir :requires])
-     class-name method arity)
+    (or (standard-method-spec class-name method arity)
+        (target-requires/method-spec
+         (get-in (:schema-ir ctx) [:target-ir :requires])
+         class-name method arity))
     (catch #?(:clj Exception :cljs :default) e
       (throw (ex-info
               (str (:class-name ctx) "::" (:method-name ctx)
@@ -1027,21 +1048,21 @@
                       :external-method method}))))))
 
 (defn- external-call
-  "Call an @ type using only the method declarations supplied by Target.
-   Undeclared external methods remain opaque/fluent: the compiler does not
-   invent a return type or inspect the platform class."
+  "Call an @ type using an explicit standard-library or Target signature.
+   The compiler never invents a fluent return type for an undeclared external
+   method."
   [receiver class-name method arg-nodes ctx]
   (when (ir/external-type? (:schema-ir ctx) class-name)
     (let [args (mapv #(convert-call-arg % ctx) arg-nodes)]
       (if-let [spec (external-method-spec ctx class-name method (count args))]
         (typed-external-call receiver class-name method args spec ctx)
-        {:expr :call
-         :receiver receiver
-         :method method
-         :args args
-         :arg-types (vec (repeat (count args) nil))
-         :external-type class-name
-         :type class-name}))))
+        (throw (ex-info (str class-name "::" method
+                             " has no declared external signature")
+                        {:class-name (:class-name ctx)
+                         :method-name (:method-name ctx)
+                         :external-class class-name
+                         :external-method method
+                         :arity (count args)}))))))
 
 (defn- imported-handle?
   [schema-ir class-name]

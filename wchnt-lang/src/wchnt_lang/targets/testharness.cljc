@@ -11,6 +11,6 @@
   {:name "testharness"
    :backend :haxe
    :std :haxe
-   :provided-types #{"WCHNTUnitTests"}
+   :standard {:types #{"WCHNTUnitTests"}}
    :parse-target parse-target
    :emit emit/emit-program})

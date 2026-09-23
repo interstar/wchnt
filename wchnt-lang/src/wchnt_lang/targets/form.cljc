@@ -1,13 +1,15 @@
-(ns wchnt-lang.targets.canvas
+(ns wchnt-lang.targets.form
+  "Live form target: DOM widgets are supplied by WCHNTForm."
   (:require [wchnt-lang.targets.core :as core]
             [wchnt-lang.targets.live-std :as live-std]))
 
 (def plugin
-  {:name "canvas"
+  {:name "form"
    :backend :live
    :std :live
-   :standard {:types #{"WCHNTMaths" "WCHNTConsole" "WCHNTGraphics"}
-              :bindings [{:name "wchntGraphics" :host-key :graphics}
+   :standard {:types #{"WCHNTMaths" "WCHNTConsole" "WCHNTGraphics" "WCHNTForm"}
+              :bindings [{:name "wchntForm" :host-key :form}
+                         {:name "wchntGraphics" :host-key :graphics}
                          {:name "graphics" :host-key :graphics}
                          {:name "input" :host-key :input}
                          {:name "wchntConsole" :host-key :console}

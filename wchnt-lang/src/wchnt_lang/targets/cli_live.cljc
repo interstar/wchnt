@@ -6,5 +6,7 @@
   {:name "cli-live"
    :backend :live
    :std :live
-   :provided-types #{"WCHNTMaths" "WCHNTConsole"}
+   :standard {:types #{"WCHNTMaths" "WCHNTConsole"}
+              :bindings [{:name "wchntConsole" :host-key :console}
+                         {:name "wchntMaths" :host-key :maths}]}
    :parse-target core/parse-target})

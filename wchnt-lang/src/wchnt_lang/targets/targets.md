@@ -52,12 +52,19 @@ The current availability is:
 | `%cli` | `WCHNTMaths`, `WCHNTConsole` |
 | `%openfl` | `WCHNTMaths`, `WCHNTConsole`, `WCHNTGraphics` |
 | `%canvas` | `WCHNTMaths`, `WCHNTConsole`, `WCHNTGraphics` |
+| `%form` | `WCHNTMaths`, `WCHNTConsole`, `WCHNTGraphics`, `WCHNTForm` |
 | `%cli-live` | `WCHNTMaths`, `WCHNTConsole` |
 | `%testharness` | `WCHNTUnitTests` |
 | `%testharness-live` | `WCHNTUnitTests` |
 
 These names are conventions supplied by the target. They are not WCHNT
 assemblages and do not participate in `Import`.
+
+`%form` is a live-only target for small browser applications whose UI is a
+WCHNT data model. The standard `WCHNTForm` capability renders a recursive
+panel/widget tree into DOM controls and reports control events back to Target.
+It is not a replacement for the WCHNT form model: WCHNT owns widget structure
+and layout, while `WCHNTForm` owns DOM realization and event wiring.
 
 ## Plugin API
 
@@ -76,7 +83,7 @@ plugins dynamically, but that is deliberately outside the language contract.
 * `core.cljc` contains shared target-block extraction and common IR shaping.
 * `requires.cljc` parses and validates `%requires` declarations.
 * `plugins.cljc` selects the plugin for a target directive.
-* `terminal.cljc`, `cli.cljc`, `openfl.cljc`, `canvas.cljc`,
+* `terminal.cljc`, `cli.cljc`, `openfl.cljc`, `canvas.cljc`, `form.cljc`,
   `cli_live.cljc`, `testharness.cljc`, and `testharness_live.cljc`
   describe the supported target platforms.
 * `%testharness` / `%testharness-live` share a custom parser

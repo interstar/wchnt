@@ -6,6 +6,6 @@
   {:name "terminal"
    :backend :haxe
    :std :haxe
-   :provided-types #{"WCHNTMaths" "WCHNTConsole"}
+   :standard {:types #{"WCHNTMaths" "WCHNTConsole"}}
    :parse-target core/parse-target
    :emit haxe/emit-program})

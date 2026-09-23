@@ -10,5 +10,5 @@
   {:name "testharness-live"
    :backend :live
    :std :live
-   :provided-types #{"WCHNTUnitTests"}
+   :standard {:types #{"WCHNTUnitTests"}}
    :parse-target parse-target})

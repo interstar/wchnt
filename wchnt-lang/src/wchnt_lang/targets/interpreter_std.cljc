@@ -1,41 +1,33 @@
 (ns wchnt-lang.targets.interpreter-std
-  "Compiler-owned host types (WCHNTMaths). Query methods have return
-   types; types not in the table stay fluent (return the receiver).")
+  "Runtime support for standard-library host objects. Signatures and fluent
+   behaviour come from stdlib-signatures.cljc; implementations remain here
+   only for the host objects that the interpreter actually executes."
+  (:require [wchnt-lang.targets.stdlib-signatures :as stdlib]))
 
-(def ^:private maths-specs
-  {"rand" {:arity 0 :return "Float"}
-   "pi" {:arity 0 :return "Float"}
-   "randInt" {:arity 1 :return "Int" :arg-types ["Int"]}
-   "sin" {:arity 1 :return "Float" :arg-types ["Float"]}
-   "cos" {:arity 1 :return "Float" :arg-types ["Float"]}
-   "tan" {:arity 1 :return "Float" :arg-types ["Float"]}
-   "asin" {:arity 1 :return "Float" :arg-types ["Float"]}
-   "acos" {:arity 1 :return "Float" :arg-types ["Float"]}
-   "atan" {:arity 1 :return "Float" :arg-types ["Float"]}
-   "abs" {:arity 1 :return "Float" :arg-types ["Float"]}
-   "floor" {:arity 1 :return "Int" :arg-types ["Float"]}
-   "ceil" {:arity 1 :return "Int" :arg-types ["Float"]}
-   "round" {:arity 1 :return "Int" :arg-types ["Float"]}
-   "sqrt" {:arity 1 :return "Float" :arg-types ["Float"]}
-   "log" {:arity 1 :return "Float" :arg-types ["Float"]}
-   "exp" {:arity 1 :return "Float" :arg-types ["Float"]}
-   "pow" {:arity 2 :return "Float" :arg-types ["Float" "Float"]}
-   "min" {:arity 2 :return "Float" :arg-types ["Float" "Float"]}
-   "max" {:arity 2 :return "Float" :arg-types ["Float" "Float"]}
-   "atan2" {:arity 2 :return "Float" :arg-types ["Float" "Float"]}
-   "hsv" {:arity 3 :return "Int" :arg-types ["Float" "Float" "Float"]}})
+(defn- one-method-spec
+  [spec]
+  (assoc spec
+         :arity (count (:args spec))
+         :arg-types (:args spec)))
 
-(def ^:private graphics-query-methods
-  {"color" {:arities #{1 3 4} :arg-types {1 ["Int"]
-                                             3 ["Int" "Int" "Int"]
-                                             4 ["Int" "Int" "Int" "Int"]}}
-   "red" {:arities #{1} :arg-types {1 ["Int"]}}
-   "green" {:arities #{1} :arg-types {1 ["Int"]}}
-   "blue" {:arities #{1} :arg-types {1 ["Int"]}}
-   "alpha" {:arities #{1} :arg-types {1 ["Int"]}}})
+(defn- method-spec
+  [[method-name {:keys [overloads] :as spec}]]
+  [method-name
+   (if overloads
+     (assoc spec :overloads (mapv one-method-spec overloads))
+     (one-method-spec spec))])
+
+(defn- arity-spec
+  [spec arity]
+  (if-let [overloads (:overloads spec)]
+    (some #(when (= arity (:arity %)) %) overloads)
+    (when (= arity (:arity spec)) spec)))
 
 (def host-api
-  {"WCHNTMaths" maths-specs})
+  (into {}
+        (map (fn [[class-name methods]]
+               [class-name (into {} (map method-spec methods))])
+             stdlib/signatures)))
 
 (defn known-host?
   [class-name]
@@ -46,39 +38,43 @@
    but the method or arity is wrong. Nil when class-name is not a host table type."
   [class-name method arity]
   (when-let [methods (get host-api class-name)]
-    (if-let [spec (get methods method)]
-      (if (= arity (:arity spec))
+    (if-let [declared (get methods method)]
+      (if-let [spec (arity-spec declared arity)]
         spec
         (throw (ex-info (str class-name "::" method " expected "
-                             (:arity spec) " argument(s), got " arity)
+                             (if (:overloads declared)
+                               (sort (map :arity (:overloads declared)))
+                               (:arity declared))
+                             " argument(s), got " arity)
                         {:class-name class-name :method method
-                         :expected (:arity spec) :got arity})))
+                         :expected (if (:overloads declared)
+                                     (sort (map :arity (:overloads declared)))
+                                     (:arity declared))
+                         :got arity})))
       (throw (ex-info (str "Unknown method '" method "' on " class-name)
                       {:class-name class-name :method method})))))
 
 (defn query?
   [class-name method]
-  (or (when-let [spec (get-in host-api [class-name method])]
-        (not= "Void" (:return spec)))
-      (when (= class-name "WCHNTGraphics")
-        (contains? graphics-query-methods method))))
+  (when-let [spec (get-in host-api [class-name method])]
+    (not (:fluent spec))))
 
 (defn query-spec
-  "Return the typed specification for a value-returning host query, or nil.
-   Graphics drawing methods remain fluent; only colour construction and
-   component extraction have a non-receiver result type."
+  "Return the declared specification for a value-returning host query."
   [class-name method arity]
-  (when-let [method-spec (and (= class-name "WCHNTGraphics")
-                              (get graphics-query-methods method))]
-    (when-not (contains? (:arities method-spec) arity)
-      (throw (ex-info (str class-name "::" method " expected one of "
-                           (sort (:arities method-spec))
+  (when-let [declared (get-in host-api [class-name method])]
+    (if-let [spec (arity-spec declared arity)]
+      spec
+      (throw (ex-info (str class-name "::" method " expected "
+                           (if (:overloads declared)
+                             (sort (map :arity (:overloads declared)))
+                             (:arity declared))
                            " argument(s), got " arity)
                       {:class-name class-name :method method
-                       :expected (:arities method-spec) :got arity})))
-    {:arity arity
-     :return "Int"
-     :arg-types (get-in method-spec [:arg-types arity])}))
+                       :expected (if (:overloads declared)
+                                   (sort (map :arity (:overloads declared)))
+                                   (:arity declared))
+                       :got arity})))))
 
 (defn- d
   [x]
