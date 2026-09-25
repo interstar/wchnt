@@ -299,6 +299,7 @@ class WCHNTGraphics {
 
 (def openfl-lifecycle
   "public var wchntGraphics:WCHNTGraphics;
+    public var wchntInput:WCHNTInput;
 
     public function new() {
         super();
@@ -310,6 +311,7 @@ class WCHNTGraphics {
     private function __wchntAdded(_e:Event):Void {
         removeEventListener(Event.ADDED_TO_STAGE, __wchntAdded);
         wchntGraphics = new WCHNTGraphics(this);
+        wchntInput = new WCHNTInput(this);
         init();
         addEventListener(Event.ENTER_FRAME, __wchntFrame);
     }
@@ -317,6 +319,118 @@ class WCHNTGraphics {
     private function __wchntFrame(_e:Event):Void {
         step();
     }")
+
+(def wchnt-input-class
+  "// Portable pointer and keyboard input for Target: %openfl.
+class WCHNTInput {
+    var surface:Sprite;
+    var px:Float;
+    var py:Float;
+    var pressed:Bool;
+    var attached:Bool;
+    var keys:Map<String, Bool>;
+    var pressedKeys:Array<String>;
+
+    public function new(surface:Sprite) {
+        this.surface = surface;
+        px = 0;
+        py = 0;
+        pressed = false;
+        attached = false;
+        keys = new Map<String, Bool>();
+        pressedKeys = [];
+        attach();
+    }
+
+    function width():Float {
+        return surface.stage == null ? 1.0 : surface.stage.stageWidth;
+    }
+
+    function height():Float {
+        return surface.stage == null ? 1.0 : surface.stage.stageHeight;
+    }
+
+    function clamp(value:Float, limit:Float):Float {
+        return value < 0 ? 0 : (value > limit ? limit : value);
+    }
+
+    function keyName(code:Int):String {
+        return switch (code) {
+            case Keyboard.LEFT: \"ArrowLeft\";
+            case Keyboard.RIGHT: \"ArrowRight\";
+            case Keyboard.UP: \"ArrowUp\";
+            case Keyboard.DOWN: \"ArrowDown\";
+            case Keyboard.SHIFT: \"Shift\";
+            default:
+                if (code >= 48 && code <= 57) String.fromCharCode(code) else null;
+        };
+    }
+
+    function onMove(e:MouseEvent):Void {
+        px = e.stageX;
+        py = e.stageY;
+    }
+
+    function onDown(_e:MouseEvent):Void { pressed = true; }
+    function onUp(_e:MouseEvent):Void { pressed = false; }
+
+    function onKeyDown(e:KeyboardEvent):Void {
+        var key = keyName(e.keyCode);
+        if (key != null) {
+            keys.set(key, true);
+            pressedKeys.push(key);
+        }
+    }
+
+    function onKeyUp(e:KeyboardEvent):Void {
+        var key = keyName(e.keyCode);
+        if (key != null) keys.set(key, false);
+    }
+
+    public function attach():WCHNTInput {
+        if (!attached && surface.stage != null) {
+            surface.stage.addEventListener(MouseEvent.MOUSE_MOVE, onMove);
+            surface.stage.addEventListener(MouseEvent.MOUSE_DOWN, onDown);
+            surface.stage.addEventListener(MouseEvent.MOUSE_UP, onUp);
+            surface.stage.addEventListener(KeyboardEvent.KEY_DOWN, onKeyDown);
+            surface.stage.addEventListener(KeyboardEvent.KEY_UP, onKeyUp);
+            attached = true;
+        }
+        return this;
+    }
+
+    public function detach():WCHNTInput {
+        if (attached && surface.stage != null) {
+            surface.stage.removeEventListener(MouseEvent.MOUSE_MOVE, onMove);
+            surface.stage.removeEventListener(MouseEvent.MOUSE_DOWN, onDown);
+            surface.stage.removeEventListener(MouseEvent.MOUSE_UP, onUp);
+            surface.stage.removeEventListener(KeyboardEvent.KEY_DOWN, onKeyDown);
+            surface.stage.removeEventListener(KeyboardEvent.KEY_UP, onKeyUp);
+            attached = false;
+        }
+        pressed = false;
+        keys = new Map<String, Bool>();
+        pressedKeys = [];
+        return this;
+    }
+
+    public function focus():WCHNTInput {
+        if (surface.stage != null) surface.stage.focus = surface;
+        return this;
+    }
+
+    public function mouseX():Int return Math.round(clamp(px, width()));
+    public function mouseY():Int return Math.round(clamp(py, height()));
+    public function mouseNX():Float return clamp(px, width()) / width();
+    public function mouseNY():Float return clamp(py, height()) / height();
+    public function mouseDown():Bool return pressed;
+    public function keyDown(key:String):Bool return keys.exists(key) && keys.get(key) == true;
+    public function keyPresses():Array<String> {
+        var result = pressedKeys;
+        pressedKeys = [];
+        return result;
+    }
+}")
 
 (def wchnt-console-class
   "// Portable text console for Target: %cli, %terminal, %openfl, live %cli-live.

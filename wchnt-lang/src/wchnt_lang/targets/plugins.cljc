@@ -95,3 +95,17 @@
                              (:host target-ir) ")")
                         {:host (:host target-ir)
                          :backend (:backend plugin)}))))))
+
+(defn validate
+  "Run the selected target's optional construction validation hook."
+  [cargo]
+  (if-let [validate-fn (get-in cargo [:stash :target-ir :plugin :validate-construction])]
+    (validate-fn cargo)
+    cargo))
+
+(defn validate-schema
+  "Run the selected target's optional schema validation hook."
+  [cargo]
+  (if-let [validate-fn (get-in cargo [:stash :target-ir :plugin :validate-schema])]
+    (validate-fn cargo)
+    cargo))

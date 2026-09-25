@@ -107,6 +107,7 @@
      :preamble (case host
                  "openfl" (str haxe-std/openfl-imports "\n\n"
                                haxe-std/openfl-graphics-wrapper "\n\n"
+                               haxe-std/wchnt-input-class "\n\n"
                                haxe-std/wchnt-console-class "\n\n"
                                haxe-std/wchnt-maths-class)
                  "cli" (str haxe-std/wchnt-console-class "\n\n"

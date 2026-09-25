@@ -32,7 +32,8 @@
    (p/processor #(:target %) "Extract target")
    (p/stash :target-wchnt)
    (p/processor target/parse-target "parse Target % blocks")
-   (p/stash :target-ir)])
+   (p/stash :target-ir)
+   (p/cargo-processor target/validate-schema "target-specific schema validation")])
 
 (defn- schema-ir-with-target-types
   [schema-ir target-ir]
@@ -192,6 +193,10 @@
     (p/retrieve :construction-ir)
     (p/validator schema/valid-construction-ir? "Construction IR matches schema"))])
 
+(defn- target-validation-stages
+  []
+  [(p/cargo-processor target/validate "target-specific construction validation")])
+
 (defn- schema-haxe-stages
   []
   [(p/retrieve :schema-ir)
@@ -223,7 +228,8 @@
           (attach-import-env-stages)
           (reaction-stages)
           (public-stages)
-          (construction-ir-stages)))
+          (construction-ir-stages)
+          (target-validation-stages)))
 
 (defn- ir-stages
   []

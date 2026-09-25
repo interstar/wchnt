@@ -69,6 +69,18 @@
     "println" {:args ["Any"] :return "WCHNTConsole" :fluent true}
     "clear" {:args [] :return "WCHNTConsole" :fluent true}}
 
+   "WCHNTInput"
+   {"mouseX" {:args [] :return "Int"}
+    "mouseY" {:args [] :return "Int"}
+    "mouseNX" {:args [] :return "Float"}
+    "mouseNY" {:args [] :return "Float"}
+    "mouseDown" {:args [] :return "Bool"}
+    "keyDown" {:args ["String"] :return "Bool"}
+    "keyPresses" {:args [] :return "Array<String>"}
+    "attach" {:args [] :return "WCHNTInput" :fluent true}
+    "detach" {:args [] :return "WCHNTInput" :fluent true}
+    "focus" {:args [] :return "WCHNTInput" :fluent true}}
+
    "WCHNTForm"
    {"mount" {:args ["Any"] :return "WCHNTForm" :fluent true}
     "value" {:args ["String"] :return "String"}

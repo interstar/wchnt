@@ -6,10 +6,9 @@
   {:name "canvas"
    :backend :live
    :std :live
-   :standard {:types #{"WCHNTMaths" "WCHNTConsole" "WCHNTGraphics"}
+   :standard {:types #{"WCHNTMaths" "WCHNTConsole" "WCHNTGraphics" "WCHNTInput"}
               :bindings [{:name "wchntGraphics" :host-key :graphics}
-                         {:name "graphics" :host-key :graphics}
-                         {:name "input" :host-key :input}
+                         {:name "wchntInput" :host-key :input}
                          {:name "wchntConsole" :host-key :console}
                          {:name "wchntMaths" :host-key :maths}]}
    :parse-target core/parse-target})

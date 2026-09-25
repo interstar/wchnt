@@ -34,7 +34,7 @@
            (map name)
            vec))))
 
-(declare describe)
+(declare describe from-js)
 
 (defn- describe-object
   [ctx obj]
@@ -105,7 +105,7 @@
       (and (view? recv) (mailbox-inject? ctx raw method-name))
       (wrap ctx
             (interpret/inject (:schema-ir ctx) (:methods-ir ctx) raw
-                              (mapv unwrap args)))
+                              (mapv from-js args)))
 
       (view? recv)
       (wrap ctx
@@ -178,8 +178,18 @@
   "Recover an interpreter value passed back from Target JS."
   [x]
   #?(:cljs
-     (if (or (nil? x) (number? x) (string? x) (boolean? x))
+     (cond
+       (or (nil? x) (number? x) (string? x) (boolean? x))
        x
+
+       ;; Target APIs expose WCHNT arrays as native JS arrays. Convert them
+       ;; back before storing them in the interpreter heap; otherwise a value
+       ;; such as WCHNTInput.keyPresses() is neither a Clojure vector nor a
+       ;; WCHNT object, so Methods such as `fold` are looked up as `::fold`.
+       (instance? js/Array x)
+       (mapv from-js (array-seq x))
+
+       :else
        (if-let [v (.get proxy->view x)]
          (unwrap v)
          (unwrap x)))

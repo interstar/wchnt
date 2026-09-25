@@ -2,6 +2,7 @@
   "Run a %canvas program: construct the heap, eval Target JS, record draws."
   (:require [wchnt-lang.interpret :as interpret]
             [wchnt-lang.js-view :as js-view]
+            [clojure.string :as str]
             [wchnt-lang.targets.interpreter-std :as host]
             [wchnt-lang.targets.live-js :as target-js]))
 
@@ -68,11 +69,13 @@
                                  (:construction-ir program)
                                  (or (:methods-ir program) [])
                                  (mapv js-view/from-js args))))
-        assemblage-name (str (:root-class (:construction-ir program))
-                             "Assemblage")]
+        root-class (:root-class (:construction-ir program))
+        root-variable (str (str/lower-case (subs root-class 0 1))
+                           (subs root-class 1))
+        assemblage-name (str root-class "Assemblage")]
     (atom {"wchntGraphics" graphics
-           "graphics" graphics
            "wchntMaths" (host/make-maths)
+           "__wchntRootVariable" root-variable
            assemblage-name {"factory" factory}})))
 
 (defn assert-canvas-host
@@ -101,7 +104,7 @@
     (target-js/call-js-fn env "init")
     (dotimes [_ n]
       (target-js/call-js-fn env "step"))
-    {:root (js-view/unwrap (get @env "assemblage"))
+    {:root (js-view/unwrap (get @env (get @env "__wchntRootVariable")))
      :draws (graphics-log graphics)}))
 
 #?(:clj
