@@ -10,13 +10,12 @@
   (interpret/load-program (slurp "live-examples/bounce_canvas.wcn")))
 
 (deftest js-view-reads-fields
-  (testing "wrapped Game exposes playArea.rect and ball.x as JS properties"
+  (testing "wrapped Game exposes playArea and ball fields as JS properties"
     (let [ctx (bounce-ctx)
           game (js-view/wrap ctx (:root ctx))]
       (is (= 200 (js-view/js-get (js-view/js-get game "ball") "x")))
-      (is (= 800 (js-view/js-get (js-view/js-get (js-view/js-get game "playArea")
-                                                "rect")
-                                "width"))))))
+      (is (= 800 (js-view/js-get (js-view/js-get game "playArea")
+                                 "width"))))))
 
 (deftest js-view-calls-step
   (testing "assemblage.step() returns a wrapped Game with a moved ball"
@@ -62,10 +61,10 @@
         (is (= 206 (get-in snapshot [:ball :x])))
         (is (= 155 (get-in snapshot [:ball :y]))))
       (is (= [[:clear]
-              [:begin-fill 0x2a422a]
-              [:draw-rect 0 0 800 600]
+              [:begin-fill 0x003300]
+              [:draw-rect 0 0 800 400]
               [:end-fill]
-              [:begin-fill 0xf2f2f2]
+              [:begin-fill 0xffffff]
               [:draw-circle 206 155 16]
               [:end-fill]]
              draws)))))

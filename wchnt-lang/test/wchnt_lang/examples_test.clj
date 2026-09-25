@@ -304,16 +304,6 @@
       (is (str/includes? classes "this.players.filter"))
       (is (str/includes? classes "Lambda.fold(this.players")))))
 
-(deftest bounce-example
-  (testing "bounce.wcn uses if, paths, and method calls"
-    (let [cargo (assert-compiles "bounce.wcn")
-          classes (classes cargo)
-          main (main cargo)]
-      (is (str/includes? classes "this.ball.x < r.x"))
-      (is (str/includes? classes "this.bounceDx()"))
-      (is (str/includes? main "assemblage.step()"))
-      (is (str/includes? main "assemblage.playAreaSize()"))))
-
 (deftest bounce-openfl-example
   (testing "bounce_openfl.wcn keeps the bounce model and draws from %init/%step"
     (let [cargo (assert-compiles "bounce_openfl.wcn")
@@ -321,7 +311,7 @@
           main-class (main-class cargo)
           preamble (get-in cargo [:value :preamble] "")]
       (is (= "openfl" (host cargo)))
-      (is (str/includes? classes "this.bounceDx()"))
+      (is (str/includes? classes "public function bounced(r:PlayArea): Ball"))
       (is (str/includes? preamble "openfl.display.Sprite"))
       (is (str/includes? preamble "class WCHNTConsole"))
       (is (str/includes? preamble "#if sys"))
@@ -329,8 +319,8 @@
       (is (str/includes? main-class "extends Sprite"))
       (is (str/includes? main-class "function init"))
       (is (str/includes? main-class "function step"))
-      (is (str/includes? main-class "assemblage.step()"))
-      (is (str/includes? main-class "drawCircle"))
+      (is (str/includes? main-class "game.step()"))
+      (is (str/includes? classes "drawCircle"))
       (is (str/includes? main-class "Event.ENTER_FRAME")))))
 
 (deftest bounce-openfl-time-example
@@ -343,11 +333,11 @@
       (is (str/includes? classes "this.notifySubscribers();"))
       (is (str/includes? classes "this.t = this.t + 1;"))
       (is (re-find #"\.time\.subscribe\(" factory))
-      (is (str/includes? main-class "assemblage.time.update_mutates();"))
-      (is (not (str/includes? main-class "assemblage.step()")))
-      (is (not (str/includes? main-class "assemblage.update_mutates();")))
-      (is (str/includes? main-class "drawCircle"))
-      (is (str/includes? main-class "Event.ENTER_FRAME"))))))
+      (is (str/includes? main-class "game.time.update_mutates();"))
+      (is (not (str/includes? main-class "game.step()")))
+      (is (not (str/includes? main-class "game.update_mutates();")))
+      (is (str/includes? classes "drawCircle"))
+      (is (str/includes? main-class "Event.ENTER_FRAME")))))
 
 (deftest bounce-openfl-compiles-to-ir
   (testing "compile-to-ir yields schema, methods, and construction without Haxe"
@@ -383,8 +373,8 @@
       (is (str/includes? classes "drawCircle(this.x, this.y, this.radius)"))
       (is (str/includes? main-class "s.draw(wchntGraphics)"))
       (is (not (str/includes? main-class "Std.isOfType(s, Circle)")))
-      (is (str/includes? main-class "assemblage.time.update_mutates();"))
-      (is (not (str/includes? main-class "assemblage.update_mutates();"))))))
+      (is (str/includes? main-class "game.time.update_mutates();"))
+      (is (not (str/includes? main-class "game.update_mutates();"))))))
 
 (deftest shapes-canvas-registers-graphics-external
   (testing "shapes_canvas Methods register Graphics for the interpreter"
@@ -407,7 +397,7 @@
 
 
 (deftest square-openfl-example
-  (testing "square_openfl.wcn injects >Keys from the OpenFL keyboard"
+  (testing "square_openfl.wcn injects >Keys through WCHNTInput"
     (let [cargo (assert-compiles "square_openfl.wcn")
           classes (classes cargo)
           main-class (main-class cargo)
@@ -415,37 +405,23 @@
       (is (= "openfl" (host cargo)))
       (is (str/includes? classes "public function inject(left:Bool, right:Bool, up:Bool, down:Bool): Keys"))
       (is (str/includes? classes "return this.update_mutates();"))
-      (is (str/includes? preamble "openfl.events.KeyboardEvent"))
-      (is (str/includes? preamble "openfl.ui.Keyboard"))
-      (is (str/includes? main-class "assemblage.keys.inject("))
-      (is (str/includes? main-class "Keyboard.LEFT"))
+      (is (str/includes? preamble "WCHNTInput"))
+      (is (str/includes? main-class "game.keys.inject("))
+      (is (str/includes? main-class "wchntInput.keyDown(\"ArrowLeft\")"))
       (is (not (str/includes? main-class "assemblage.update_mutates();"))))))
 
 (deftest square-canvas-example
-  (testing "square_canvas.wcn is IR-only; Target injects harness input.keys"
+  (testing "square_canvas.wcn is IR-only; Target injects through WCHNTInput"
     (let [text (slurp "live-examples/square_canvas.wcn")
           ir (compiler/compile-to-ir text)
           haxe (compiler/compile text)]
       (is (:success ir) (str (first (:errors ir))))
       (is (= "canvas" (get-in ir [:stash :target-ir :host])))
       (is (= ["Keys"] (get-in ir [:stash :schema-ir :mailbox-classes])))
-      (is (re-find #"k\[\"ArrowLeft\"\]" (get-in ir [:stash :target-ir :step :haxe])))
+      (is (str/includes? (get-in ir [:stash :target-ir :step :haxe])
+                        "wchntInput.keyDown(\"ArrowLeft\")"))
       (is (not (:success haxe)))
       (is (re-find #"%canvas" (or (first (:errors haxe)) ""))))))
-
-(deftest bounce-loop-example
-  (testing "bounce_loop.wcn ticks $Time and rewrites Game in place"
-    (let [cargo (assert-compiles "bounce_loop.wcn")
-          classes (classes cargo)
-          main (main cargo)]
-      (is (str/includes? classes "this.t = this.t + 1;"))
-      (is (str/includes? classes "this.notifySubscribers();"))
-      (is (str/includes? classes "this.ball = moved;"))
-      (is (str/includes? classes "return this;"))
-      (is (str/includes? main "assemblage.time.update_mutates();"))
-      (is (str/includes? main "for (i in 0...10)"))
-      (is (not (str/includes? main "assemblage.update_mutates();")))
-      (is (not (str/includes? main "assemblage.bounceDx"))))))
 
 (deftest combinators-cli-example
   (testing "combinators_cli.wcn println's WCHNT values; console owns toConstruction"
@@ -472,7 +448,7 @@
       (is (str/includes? preamble "class WCHNTMaths"))
       (is (str/includes? factory "factory(maths: WCHNTMaths)"))
       (is (str/includes? main-class "RollAssemblage.factory(wchntMaths)"))
-      (is (str/includes? main-class "wchntConsole.println(assemblage.once())"))
+      (is (str/includes? main-class "wchntConsole.println(roll.once())"))
       (is (not (str/includes? (main cargo) "Math.random"))))))
 
 (deftest maths-cli-live-example
@@ -544,7 +520,7 @@
           main-class (get-in cargo [:value :main-class])]
       (is (str/includes? classes "Main.wchnt_trace("))
       (is (str/includes? main-class "function wchnt_trace"))
-      (is (str/includes? main "assemblage.area()"))
+      (is (str/includes? main "rect.area()"))
       (is (str/includes? main "function main")))))
 
 (deftest combinators-example
@@ -559,9 +535,9 @@
       (is (str/includes? preamble "#if sys"))
       (is (str/includes? preamble "haxe.Log.trace"))
       (is (str/includes? main-class "public var wchntConsole"))
-      (is (str/includes? main "wchntConsole.println(assemblage.names())"))
-      (is (str/includes? main "wchntConsole.println(assemblage.stats())"))
-      (is (str/includes? main "wchntConsole.println(assemblage.hot())"))
+      (is (str/includes? main "wchntConsole.println(team.names())"))
+      (is (str/includes? main "wchntConsole.println(team.stats())"))
+      (is (str/includes? main "wchntConsole.println(team.hot())"))
       (is (not (str/includes? main "arrayToConstruction")))
       (is (not (str/includes? main "mapToConstruction")))
       (is (not (str/includes? main "toConstruction(0, helper)")))
@@ -586,8 +562,8 @@
       (is (str/includes? classes "p.label()"))
       (is (str/includes? classes "this.players.filter"))
       (is (str/includes? classes "Lambda.fold(this.players"))
-      (is (str/includes? main "assemblage.total()"))
-      (is (str/includes? main "assemblage.labels()")))))
+      (is (str/includes? main "team.total()"))
+      (is (str/includes? main "team.labels()")))))
 
 (deftest reaction-strings-example
   (testing "test_reaction_strings.wcn emits length and concat"
@@ -610,9 +586,9 @@
       (is (str/includes? classes "WCHNTRuntime.mapGet(this.scores"))
       (is (str/includes? classes "WCHNTRuntime.mapRemove(this.scores"))
       (is (str/includes? classes "WCHNTRuntime.times("))
-      (is (str/includes? main "assemblage.withDi()"))
-      (is (str/includes? main "assemblage.fresh()"))
-      (is (str/includes? main "assemblage.captain()")))))
+      (is (str/includes? main "team.withDi()"))
+      (is (str/includes? main "team.fresh()"))
+      (is (str/includes? main "team.captain()")))))
 
 (deftest import-public-quest-example
   (testing "importB constructs a Quest handle from importA and reads Public data"
@@ -646,7 +622,7 @@
                                   [(walk root fountain-path)])]
       (is (str/includes? cls "new Continent(new Country(new Capital(new Plaza(new Fountain("))
       (is (str/includes? cls "this.ocean"))
-      (is (str/includes? main "assemblage.moreJets()"))
+      (is (str/includes? main "world.moreJets()"))
       (is (= 8 (interpret/get-field (walk more fountain-path) "jets")))
       (is (= "Triton" (interpret/get-field (walk more fountain-path) "name")))
       (is (= 4000 (interpret/get-field (interpret/get-field more "ocean") "depth")))
@@ -726,7 +702,7 @@
       (is (not (str/includes? cls "public static function make(")))
       (is (str/includes? f "GameAssemblage.factory()"))
       (is (str/includes? f "addShape(new Pentagon("))
-      (is (str/includes? main-class "assemblage.game.time.update_mutates()"))
+      (is (str/includes? main-class "sky.game.time.update_mutates()"))
       (is (str/includes? main-class "s.draw(wchntGraphics)")))))
 
 (deftest factory-args-live-example

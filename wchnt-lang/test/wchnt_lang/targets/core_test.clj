@@ -1,9 +1,14 @@
 (ns wchnt-lang.targets.core-test
   (:require [clojure.test :refer :all]
+            [clojure.string :as str]
             [wchnt-lang.targets.core :as target]
             [wchnt-lang.targets.plugins :as plugins]
             [wchnt-lang.targets.requires :as requires]
             [wchnt-lang.compiler :as compiler]))
+
+(defn- form-example
+  []
+  (slurp "live-examples/form_calculator.wcn"))
 
 (deftest target-requires-types-external-method-calls
   (testing "@ target types and method signatures are available while checking Methods"
@@ -259,3 +264,33 @@
       (is (contains? (:external-types ir) "WCHNTConsole"))
       (is (some #(= {:name "wchntConsole" :host-key :console} %)
                 (get-in ir [:plugin :standard :bindings]))))))
+
+(deftest form-target-validates-widget-schema
+  (testing "missing and unexpected standard widget fields fail during schema validation"
+    (let [missing (str/replace (form-example)
+                               "Canvas = String/id Int/width Int/height"
+                               "Canvas = String/id Int/width")
+          extra (str/replace (form-example)
+                             "Canvas = String/id Int/width Int/height"
+                             "Canvas = String/id Int/width Int/height String/debug")
+          missing-cargo (compiler/compile-to-ir missing)
+          extra-cargo (compiler/compile-to-ir extra)]
+      (is (re-find #"Canvas is missing field\(s\): height"
+                   (first (:errors missing-cargo))))
+      (is (re-find #"Canvas has unexpected field\(s\): debug"
+                   (first (:errors extra-cargo)))))))
+
+(deftest form-target-validates-construction
+  (testing "widget construction arity and types are checked by the target hook"
+    (let [wrong-arity (str/replace (form-example)
+                                   "[:Canvas \"graph\" 800 400]"
+                                   "[:Canvas \"graph\" 800]")
+          wrong-type (str/replace (form-example)
+                                  "[:Canvas \"graph\" 800 400]"
+                                  "[:Canvas \"graph\" \"wide\" 400]")
+          arity-cargo (compiler/compile-to-ir wrong-arity)
+          type-cargo (compiler/compile-to-ir wrong-type)]
+      (is (re-find #"%form construction: Canvas .* expects 3 argument\(s\), got 2"
+                   (str (first (:errors arity-cargo)))))
+      (is (re-find #"%form construction: Canvas field 'width' expects Int, got String"
+                   (str (first (:errors type-cargo))))))))

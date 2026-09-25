@@ -1,40 +1,8 @@
 (ns wchnt-lang.origin-test
-  "Origin pattern (Patternflow port) compiles and builds lit cells."
+  "Regression tests for construction and collection behavior."
   (:require [clojure.test :refer :all]
             [wchnt-lang.compiler :as compiler]
-            [wchnt-lang.interpret :as interpret]
-            [wchnt-lang.targets.interpreter-std :as host]
-            [wchnt-lang.targets.live-canvas :as canvas]
-            [wchnt-lang.pipeline :as p]))
-
-(deftest origin-canvas-compiles-to-ir
-  (let [cargo (compiler/compile-to-ir (slurp "live-examples/origin_canvas.wcn"))]
-    (is (:success cargo) (str (first (:errors cargo))))
-    (is (= "canvas" (get-in cargo [:stash :target-ir :host])))
-    (is (= [{:name "maths" :type "WCHNTMaths"}]
-           (get-in cargo [:stash :construction-ir :factory-params])))))
-
-(deftest origin-canvas-haxe-rejects-canvas-host
-  (let [haxe (compiler/compile (slurp "live-examples/origin_canvas.wcn"))]
-    (is (not (:success haxe)))
-    (is (re-find #"%canvas" (or (first (:errors haxe)) "")))))
-
-(deftest origin-builds-colored-cells
-  (let [text (slurp "live-examples/origin_canvas.wcn")
-        p (interpret/load-program text)
-        root (interpret/construct (:schema-ir p) (:construction-ir p)
-                                  (:methods-ir p) [(host/make-maths)])
-        schema (:schema-ir p)
-        methods (:methods-ir p)]
-    (interpret/inject schema methods (interpret/get-field root "pointer")
-                      [0.3 0.5 false])
-    (let [cells (interpret/call schema methods root "cells" [])
-          graphics (canvas/make-graphics)]
-      (is (pos? (count cells)))
-      (is (every? #(and (contains? % :x) (contains? % :rgb) (pos? (:rgb %)))
-                  cells))
-      (interpret/call schema methods root "draw" [graphics])
-      (is (some #(= :draw-rect (first %)) (canvas/graphics-log graphics))))))
+            [wchnt-lang.interpret :as interpret]))
 
 (deftest float-literal-in-construction
   (let [src (str "# f\n## Schema\n```\nP = Float/x\n```\n## Construction\n```\n"

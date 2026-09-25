@@ -99,6 +99,13 @@
         (fn [e] (is (nil? e) (str e)) (done))))))
 
 #?(:cljs
+   (deftest js-input-arrays-round-trip-to-wchnt-vectors
+     (testing "native Target arrays become WCHNT arrays before Methods see them"
+       (let [keys (js-view/from-js (js/Array.of "1" "2" "3"))]
+         (is (vector? keys))
+         (is (= ["1" "2" "3"] keys))))))
+
+#?(:cljs
    (deftest pollution-spawns-and-resets
      (async done
        (load-example-async

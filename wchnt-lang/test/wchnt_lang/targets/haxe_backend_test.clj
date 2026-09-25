@@ -574,7 +574,7 @@ public static function main():Void {
         (is (str/includes? classes "class Keys"))
         (is (str/includes? classes "public function inject(left:Bool, right:Bool, up:Bool, down:Bool): Keys"))
         (is (str/includes? classes "return this.update_mutates();"))
-        (is (str/includes? (get-in cargo [:value :main-class]) "assemblage.keys.inject("))))))
+        (is (str/includes? (get-in cargo [:value :main-class]) "game.keys.inject("))))))
 
 (deftest arbitrary-mutating-method-emits-visible-haxe-name
   (testing "a WCHNT ! method becomes an argument-taking _mutates Haxe method"

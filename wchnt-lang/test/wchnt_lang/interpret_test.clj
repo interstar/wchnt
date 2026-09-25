@@ -137,17 +137,19 @@
           snapshot (interpret/materialize root)]
       (is (= "Game" (:wchnt/class snapshot)))
       (is (= "PlayArea" (get-in snapshot [:playArea :wchnt/class])))
-      (is (= "Rect" (get-in snapshot [:playArea :rect :wchnt/class])))
-      (is (= {:wchnt/class "Rect" :x 0 :y 0 :width 800 :height 600}
-             (get-in snapshot [:playArea :rect])))
+      (is (= {:wchnt/class "PlayArea" :width 800 :height 400}
+             (:playArea snapshot)))
       (is (= {:wchnt/class "Ball" :x 200 :y 150 :dx 6 :dy 5 :rad 16}
              (:ball snapshot))))))
 
-(deftest bounce-dx-away-from-walls
-  (testing "Game::bounceDx is +dx while the ball is inside the rect"
+(deftest bounce-ball-away-from-walls
+  (testing "Ball::bounced keeps velocity while the ball is inside the play area"
     (let [{:keys [schema-ir methods-ir root]} (bounce-program)]
-      (is (= 6 (interpret/call schema-ir methods-ir root "bounceDx" [])))
-      (is (= 5 (interpret/call schema-ir methods-ir root "bounceDy" []))))))
+      (let [area (interpret/get-field root "playArea")
+            ball (interpret/get-field root "ball")
+            bounced (interpret/call schema-ir methods-ir ball "bounced" [area])]
+        (is (= 6 (get bounced :dx)))
+        (is (= 5 (get bounced :dy)))))))
 
 (deftest bounce-step-moves-the-ball
   (testing "Game::step builds a new Game with the ball translated by dx/dy"
@@ -156,8 +158,8 @@
           root-snapshot (interpret/materialize root)
           next-snapshot (interpret/materialize next)]
       (is (= "Game" (:wchnt/class next-snapshot)))
-      (is (= (get-in root-snapshot [:playArea :rect])
-             (get-in next-snapshot [:playArea :rect])))
+      (is (= (:playArea root-snapshot)
+             (:playArea next-snapshot)))
       (is (= {:wchnt/class "Ball" :x 206 :y 155 :dx 6 :dy 5 :rad 16}
              (:ball next-snapshot))))))
 

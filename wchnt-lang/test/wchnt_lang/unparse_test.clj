@@ -61,7 +61,7 @@
   (testing "every schema feature survives parse -> unparse -> parse"
     (doseq [text ["Ball = Int/x Int/y Int/rad"
                   "Game = PlayArea [Shape]/shapes $Time @WCHNTGraphics/g"
-                  ">Input = Bool/left Bool/right"
+                  ">Inbox = Bool/left Bool/right"
                   "Shape = Circle | Square | Triangle"
                   "Dir = \"North\" | \"South\""
                   "Grid = {Int:Shape}/cells"

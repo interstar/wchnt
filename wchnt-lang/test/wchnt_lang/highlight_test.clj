@@ -32,7 +32,7 @@
           {:keys [spans]} (highlight/highlight src)]
       (is (some #{"Game"} (texts src spans :class)))
       (is (some #{"800"} (texts src spans :number)))
-      (is (some #{"bounceDx"} (texts src spans :method)))
+      (is (some #{"bounced"} (texts src spans :method)))
       (is (some #{"if"} (texts src spans :keyword)))
       (is (some #{"or"} (texts src spans :keyword)))
       (is (some #{"else"} (texts src spans :keyword)))
