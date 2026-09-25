@@ -45,7 +45,7 @@
                       {:body body})))))
 
 (def ^:private reserved-js-names
-  #{"wchntGraphics" "graphics" "input" "wchntConsole"
+  #{"wchntGraphics" "wchntInput" "wchntConsole"
     "wchntMaths" "wchntForm" "__wchntClasses" "__wchntAssemblages"
     "init" "step" "assemblage"})
 

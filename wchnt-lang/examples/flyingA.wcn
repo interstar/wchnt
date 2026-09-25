@@ -93,21 +93,21 @@ Shape
 
 
 %init
-var assemblage:Game;
+var game:Game;
 
 function init():Void {
-    assemblage = GameAssemblage.factory();
+    game = GameAssemblage.factory();
 }
 
 %step
 function step():Void {
-    assemblage.time.update_mutates();
-    var r = assemblage.playArea.rect;
+    game.time.update_mutates();
+    var r = game.playArea.rect;
     wchntGraphics.clear();
     wchntGraphics.beginFill(0x1a1a2e);
     wchntGraphics.drawRect(r.x, r.y, r.width, r.height);
     wchntGraphics.endFill();
-    for (s in assemblage.shapes) {
+    for (s in game.shapes) {
         s.draw(wchntGraphics);
     }
 }

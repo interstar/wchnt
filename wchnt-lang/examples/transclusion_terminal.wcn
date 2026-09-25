@@ -16,8 +16,8 @@ the Target is specific to this page.
 
 %main
 public static function main():Void {
-    var assemblage = GameAssemblage.factory();
-    trace(assemblage.double());
+    var game = GameAssemblage.factory();
+    trace(game.double());
 }
 ```
 

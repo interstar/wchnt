@@ -18,3 +18,8 @@ fi
 
 echo "==> Render website/_site/"
 python3 "$SCRIPT_DIR/build.py"
+
+echo "==> Copy Slides"
+mkdir _site/slides/
+cp ../slides/slides.html _site/slides/index.html
+cp -r ../slides/assets _site/slides/

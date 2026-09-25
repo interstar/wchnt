@@ -16,10 +16,20 @@ The first line of `## Target` must name a host (required — there is no default
 | `%openfl` | Haxe | `%init` + `%step` | `bounce_openfl.wcn`, `pollution_openfl.wcn` |
 | `%canvas` | JavaScript | `%init` + `%step` | `bounce_canvas.wcn`, `pollution_canvas.wcn` |
 
-- **`%name` helpers** — Haxe fragments callable from Methods as `%name(...)` (e.g. `%trace`).
+- **`%trace`** — the one diagnostic helper callable from Methods as `%trace(...)`.
+  Its implementation is supplied by the Target and may use any facilities of
+  that platform: Haxe `trace`, browser `console.log`, `alert`, or another
+  debugging sink. It must return the value it receives, because `%trace` is an
+  expression. It is available to live JavaScript Targets as well as Haxe
+  Targets when an explicit `%trace` block is present.
 - **`%requires`** — target-provided external classes and WCHNT-visible method signatures used by Methods, including imported methods. See **`method.md`**.
 
-Target owns loops, imports, frame callbacks, and harness objects (`wchntGraphics`, `wchntConsole`, `wchntMaths`, `input.keys` on canvas). Methods must not embed platform APIs except via `@` parameters supplied by Target.
+Target owns loops, imports, frame callbacks, and harness objects (`wchntGraphics`, `wchntConsole`, `wchntMaths`, `wchntInput`). Methods must not embed platform APIs except via `@` parameters supplied by Target, or the explicitly diagnostic `%trace(...)` escape hatch.
+
+`wchntInput.keyDown(String)` is for continuously held controls. For discrete
+keyboard actions, `wchntInput.keyPresses()` returns the queued key names since
+the previous call and clears that queue; inject the resulting array into a
+WCHNT mailbox for Methods to fold over.
 
 ## Maths (`wchntMaths`)
 
@@ -38,7 +48,7 @@ r2 = maths.randInt(10).
 ```
 
 `randInt(n)` is `0 .. n-1` and fails if `n <= 0`. `hsv(h, s, v)` returns a packed
-`0xRRGGBB` int for fills. See `examples/maths.wcn` and `live-examples/origin_canvas.wcn`.
+`0xRRGGBB` int for fills. See `examples/maths.wcn` and the canvas examples.
 
 ## Console (`wchntConsole`)
 
@@ -49,6 +59,9 @@ writes `wchntConsole.println(team.names())` — it does not call `toConstruction
 
 - **format** — objects via `toConstruction`; arrays and maps via the helper; a
   bare string is unchanged (adventure prose).
+- **clear** — clears the console output where the host supports it. The live
+  console clears its transcript; Haxe hosts expose the fluent operation and
+  may provide target-specific clearing behaviour.
 - **sink** — `Sys.print` / `Sys.println` on sys targets (neko `%cli`, native
   OpenFL); `haxe.Log.trace` on JS (`%terminal` → Node, HTML5 OpenFL).
 - `%cli` / `%cli-live` add a read loop; the console is still just print.
@@ -135,10 +148,9 @@ From `pollution_canvas.wcn`:
 
 ```javascript
 function step() {
-    var k = input.keys;
     assemblage.keys.inject(
-        !!k["ArrowLeft"], !!k["ArrowRight"],
-        !!k["ArrowUp"], !!k["ArrowDown"]);
+        wchntInput.keyDown("ArrowLeft"), wchntInput.keyDown("ArrowRight"),
+        wchntInput.keyDown("ArrowUp"), wchntInput.keyDown("ArrowDown"));
     assemblage.time.update_mutates();
     // … draw from assemblage fields …
 }
@@ -171,7 +183,7 @@ Always **inject, then tick**. If you tick Time before injecting keys, Game sees 
 Target or a Methods function receiving `@Graphics/g` performs drawing after the tick:
 
 - **bounce** — draw calls live in Target Haxe/JS (`bounce_openfl.wcn`, `bounce_canvas.wcn`).
-- **shapes** — `Shape::draw(@Graphics/g)` in Methods; Target passes `graphics` (`shapes_openfl.wcn`).
+- **shapes** — `Shape::draw(@Graphics/g)` in Methods; Target passes `wchntGraphics` (`shapes_openfl.wcn`).
 
 The **`wchntGraphics`** surface is shared by both hosts (same API, same visual result): `color`, `red`, `green`, `blue`, `alpha`, `background`, `clear`, `beginFill`, `endFill`, `lineStyle`, `noStroke`, `moveTo`, `lineTo`, `drawLine`, `drawRect`, `drawCircle`, `drawEllipse`, `fillText`. Shapes fill and/or stroke from the current state; `moveTo`/`lineTo`…`endFill` draws a filled/stroked path. OpenFL `%step` receives `wchntGraphics:WCHNTGraphics` on `Main` (does not shadow `Sprite.graphics`); Canvas `%step` receives the same name from `WCHNTHarness`. Parity example: `graphics_openfl.wcn` / `graphics_canvas.wcn`. See `live.md` and `website/content/wchntgraphics.md`.
 

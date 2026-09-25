@@ -1,6 +1,6 @@
 # Combinators on the CLI console
 
-Same assemblage as `combinators.wcn`. Target prints through `wchntConsole`.
+Same team as `combinators.wcn`. Target prints through `wchntConsole`.
 `println` formats WCHNT objects, arrays, and maps — Target does not call
 `toConstruction` itself.
 

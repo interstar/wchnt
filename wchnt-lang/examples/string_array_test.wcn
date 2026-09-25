@@ -19,8 +19,8 @@ StringList = [String]/xs
 
 %main
 public static function main():Void {
-    var assemblage = StringListAssemblage.factory();
+    var stringList = StringListAssemblage.factory();
     var helper = new WCHNTHelper();
-    trace(assemblage.toConstruction(0, helper));
+    trace(stringList.toConstruction(0, helper));
 }
 ```

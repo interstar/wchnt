@@ -62,24 +62,24 @@ Team::zeros = { 13.times({ i | i*1 }) }
 
 %main
 public static function main():Void {
-    var assemblage = TeamAssemblage.factory();
+    var team = TeamAssemblage.factory();
     var helper = new WCHNTHelper();
-    trace(assemblage.toConstruction(0, helper));
+    trace(team.toConstruction(0, helper));
     trace("headline");
-    trace(assemblage.headline());
+    trace(team.headline());
     trace("captain");
-    trace(assemblage.captain().toConstruction(0, helper));
+    trace(team.captain().toConstruction(0, helper));
     trace("bench");
-    trace(helper.arrayToConstruction(assemblage.bench(), 0));
+    trace(helper.arrayToConstruction(team.bench(), 0));
     trace("adaScore");
-    trace(assemblage.adaScore());
+    trace(team.adaScore());
     trace("noAda");
-    trace(helper.mapToConstruction(assemblage.noAda(), 0));
+    trace(helper.mapToConstruction(team.noAda(), 0));
     trace("withDi");
-    trace(assemblage.withDi().toConstruction(0, helper));
+    trace(team.withDi().toConstruction(0, helper));
     trace("fresh");
-    trace(assemblage.fresh().toConstruction(0, helper));
+    trace(team.fresh().toConstruction(0, helper));
     trace("zeros");
-    trace(helper.arrayToConstruction(assemblage.zeros(), 0));
+    trace(helper.arrayToConstruction(team.zeros(), 0));
 }
 ```

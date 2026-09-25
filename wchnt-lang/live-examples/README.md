@@ -18,7 +18,6 @@ These `.wcn` files use a **live** host (JavaScript Target + browser harness). Th
 | `combinators_cli.wcn` | Pair of `examples/combinators_cli.wcn`; `println` formats WCHNT values |
 | `maths_cli.wcn` | Pair of `examples/maths.wcn`; factory-inject `wchntMaths` |
 | `transclusion_cli.wcn` | Transcludes Schema, Construction, and Methods from `transclusion_shared.wcn` |
-| `origin_canvas.wcn` | Patternflow Origin port; mouse + Shift knobs, `drawRect` cells |
 
 The Play wiki seed set is `seed-map.txt`. `seed-from-live.sh` writes `seed/*.wcn`
 and `seed/index.txt`; the live page fetches that index.

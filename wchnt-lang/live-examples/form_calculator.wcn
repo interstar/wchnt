@@ -7,7 +7,7 @@ curve is drawn on the form's canvas by WCHNT code.
 ## Schema
 
 ```
-Calculator = Form :Graph Input @WCHNTMaths/maths @WCHNTForm/ui
+Calculator = Form :Graph Inbox @WCHNTMaths/maths @WCHNTForm/ui
 Form = Panel/root
 Panel = String/id [Node]/children
 Node = Panel | Label | TextInput | TextArea | Slider | Button | Options | Canvas
@@ -20,7 +20,7 @@ Option = String/value String/label
 Options = String/id [Option]/options String/selected
 Canvas = String/id Int/width Int/height
 Graph = String/id Int/width Int/height
->Input = String/function Float/range
+>Inbox = String/function Float/range
 ```
 
 ## Construction
@@ -41,7 +41,7 @@ Graph = String/id Int/width Int/height
         [:Slider "range" 1.0 20.0 0.1 10.0]
         [:Canvas "graph" 800 400]]]]
   [:Graph "graph" 800 400]
-  [:Input "sin" 10.0]
+  [:Inbox "sin" 10.0]
   maths
   ui]
 ```
@@ -49,10 +49,10 @@ Graph = String/id Int/width Int/height
 ## Methods
 
 ```
-Input::update! = { [:Input function range] }
+Inbox::update! = { [:Inbox function range] }
 
 Graph::valueAt = { Float/x |
-  switch (theCalculator.input.function)
+  switch (theCalculator.inbox.function)
     "sin" -> { theCalculator.maths.sin(x) }
     "cos" -> { theCalculator.maths.cos(x) }
     "tan" -> { theCalculator.maths.tan(x) }
@@ -60,7 +60,7 @@ Graph::valueAt = { Float/x |
 }
 
 Graph::draw = { @WCHNTGraphics/g |
-  range = theCalculator.input.range.
+  range = theCalculator.inbox.range.
   step = range / 160.0.
   xScale = width / range.
   yScale = height / 2.0.
@@ -79,7 +79,7 @@ Graph::draw = { @WCHNTGraphics/g |
 Calculator::step = {
   nextFunction = ui.value("function").
   nextRange = ui.number("range").
-  nextInput = [:Input nextFunction nextRange].
+  nextInput = [:Inbox nextFunction nextRange].
   next = [:Calculator form graph nextInput maths ui].
   drawn = next.graph.draw(ui.graphics("graph")).
   next
@@ -108,13 +108,13 @@ WCHNTGraphics::drawLine(Float,Float,Float,Float) -> WCHNTGraphics
 
 %init
 function init() {
-    assemblage = CalculatorAssemblage.factory(wchntMaths, wchntForm);
-    wchntForm.mount(assemblage.form);
-    assemblage.graph.draw(wchntForm.graphics("graph"));
+    calculator = CalculatorAssemblage.factory(wchntMaths, wchntForm);
+    wchntForm.mount(calculator.form);
+    calculator.graph.draw(wchntForm.graphics("graph"));
 }
 
 %step
 function step() {
-    assemblage = assemblage.step();
+    calculator = calculator.step();
 }
 ```

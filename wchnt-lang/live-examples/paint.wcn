@@ -14,10 +14,10 @@ paint.
 ## Schema
 
 ```
-Paint = Canvas Palette Input Brush/brush1 Brush/brush2
+Paint = Canvas Brush Palette Inbox
 Canvas = Int/width Int/height
 Brush = Int/x Int/y Int/rad Int/colour Bool/painting
->Input = Int/x Int/y Bool/down Int/key
+>Inbox = Int/x Int/y Bool/down [String]/keys
 Colour = "Black" | "White" | "Red" | "Green" | "Blue" | "Yellow" | "Cyan" | "Magenta" | "Orange"
 Palette = {Colour:Int}
 ```
@@ -27,6 +27,7 @@ Palette = {Colour:Int}
 ```
 [:Paint
   [:Canvas 800 600]
+  [:Brush 0 0 5 0xFF000000 false]
   [:Palette
     {Colour:Int
       Black:   0xFF000000
@@ -40,9 +41,7 @@ Palette = {Colour:Int}
       Orange:  0xFFFF8000
     }
   ]
-  [:Input 0 0 false 0]
-  [:Brush 0 0 5 0xFF000000 false]
-  [:Brush 0 0 5 0xFF000000 false]
+  [:Inbox 0 0 false [:Array/String]]
 ]
 ```
 
@@ -50,30 +49,30 @@ Palette = {Colour:Int}
 
 ```
 Paint::step = {
-  key = input.key.
-  nextColour = if (key == 0) { brush1.colour } else { palette.colourForKey(key) }.
-  nextBrush1 = [:Brush input.x input.y brush1.rad nextColour input.down].
-  nextBrush2 = [:Brush input.y input.x brush2.rad nextColour input.down].
-  [:Paint canvas palette input nextBrush1 nextBrush2]
+  nextColour = inbox.keys.fold(brush.colour, { current, key | palette.colourForKey(current, key)}).
+  nextBrush = [:Brush inbox.mouseX inbox.mouseY brush.rad nextColour inbox.down].
+  [:Paint canvas nextBrush palette inbox]
 }
 
-Input::update! = { [:Input x y down key] }
+Inbox::update! = { [:Inbox mouseX mouseY down keys] }
 
-Palette::colourForKey = { Int/key |
+Palette::colourForKey = { Colour/current, String/key  |
   switch (key)
-    1 -> { colourToInt.get(Black) }
-    2 -> { colourToInt.get(Red) }
-    3 -> { colourToInt.get(Green) }
-    4 -> { colourToInt.get(Blue) }
-    5 -> { colourToInt.get(Yellow) }
-    6 -> { colourToInt.get(Magenta) }
-    7 -> { colourToInt.get(Cyan) }
-    8 -> { colourToInt.get(Orange) }
-    else -> { colourToInt.get(White) }
+    "1" -> { Black }
+    "2" -> { Red }
+    "3" -> { Green }
+    "4" -> { Blue }
+    "5" -> { Yellow }
+    "6" -> { Magenta }
+    "7" -> { Cyan }
+    "8" -> { Orange }
+    else -> { current }
 }
 
 Brush::paint = { @WCHNTGraphics/g |
-  g.beginFill(colour).drawCircle(x, y, rad).endFill()
+  if (painting) {
+    g.beginFill(colour).drawCircle(x, y, rad).endFill()
+  } else {g}
 }
 
 Canvas::paint = { @WCHNTGraphics/g |
@@ -87,24 +86,17 @@ Canvas::paint = { @WCHNTGraphics/g |
 %canvas
 
 %init
-var assemblage;
+var paint;
 
 function init() {
-    assemblage = PaintAssemblage.factory();
-    assemblage.canvas.paint(wchntGraphics);
+    paint = PaintAssemblage.factory();
+    paint.canvas.paint(wchntGraphics);
 }
 
 %step
 function step() {
-    var key = 0;
-    for (var n = 1; n <= 9; n++) {
-        if (input.keys[String(n)]) { key = n; }
-    }
-    var mx = Math.round(input.mouse.x * 800);
-    var my = Math.round(input.mouse.y * 600);
-    assemblage.input.inject(mx, my, input.mouse.down, key);
-    assemblage = assemblage.step();
-    if (assemblage.brush1.painting) assemblage.brush1.paint(wchntGraphics);
-    if (assemblage.brush2.painting) assemblage.brush2.paint(wchntGraphics);
+    paint.inbox.inject(wchntInput.mouseX(), wchntInput.mouseY(), wchntInput.mouseDown(), wchntInput.keyPresses());
+    paint = paint.step();
+    paint.brush.paint(wchntGraphics);
 }
 ```

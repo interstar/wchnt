@@ -23,6 +23,10 @@ echo "  live build: $LIVE_ALIAS"
 echo "=========================================="
 echo
 
+echo "==> Project lint"
+./projectlint.sh
+echo
+
 echo "==> JVM compiler (clean, test, jar, uberjar)"
 ./build.sh
 echo

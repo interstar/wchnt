@@ -194,7 +194,8 @@
 (defn- render-reader!
   [content]
   (when-let [r (reader-el)]
-    (set! (.-innerHTML r) (render/render-html content))
+    (when-let [content-el (el "reader-content")]
+      (set! (.-innerHTML content-el) (render/render-html content)))
     (set! (.-scrollTop r) (get @!scroll @!current-page 0))))
 
 (defn- update-edit-button!
@@ -324,7 +325,7 @@
           result (runtime/prepare (editor/text @!editor)
                                   {:graphics (.-wchntGraphics harness)
                                    :form (.-wchntForm harness)
-                                   :input (.-input harness)
+                                   :input (.-wchntInput harness)
                                    :console (.-wchntConsole harness)
                                    :maths (.-wchntMaths harness)})]
       (case (:kind result)
@@ -514,7 +515,7 @@
 (defn- on-load-example!
   []
   (let [example (js/prompt
-                 "Example (bounce_canvas, square_canvas, pollution_canvas, adventure_cli, writepaths, flyingA, flyingB, factory_args, combinators_cli, maths_cli, origin_canvas):"
+                 "Example (bounce_canvas, square_canvas, pollution_canvas, adventure_cli, writepaths, flyingA, flyingB, factory_args, combinators_cli, maths_cli):"
                  "writepaths")]
     (when example
       (let [name (str/trim example)
@@ -529,7 +530,6 @@
                       "factory_args" (example-source "factory_args")
                       "combinators_cli" (example-source "combinators_cli")
                       "maths_cli" (example-source "maths_cli")
-                      "origin_canvas" (example-source "origin_canvas")
                       nil)]
         (if content
           (open-page-with-content! name content)
@@ -601,17 +601,24 @@
   (storage/reset-pages!)
   (js/location.reload))
 
+(def reset-warning
+  "Factory reset will delete every custom page saved in this browser and reload the default WCHNT pages. Export or copy your work first. Continue?")
+
+(defn- confirm-reset!
+  []
+  (when (js/confirm reset-warning)
+    (reset-wiki!)))
+
 (defn- on-reset-shortcut!
   [evt]
-  ;; Ctrl+Shift+Alt+W — invisible in the UI, deliberate, and confirmed.
+  ;; Ctrl+Shift+Alt+W — retained for desktop users, and confirmed.
   (when (and (.-ctrlKey evt)
              (.-shiftKey evt)
              (.-altKey evt)
              (not (.-metaKey evt))
              (= "w" (str/lower-case (or (.-key evt) ""))))
     (.preventDefault evt)
-    (when (js/confirm "Reset the WCHNT wiki? All saved pages will be deleted and the default examples reloaded.")
-      (reset-wiki!))))
+    (confirm-reset!)))
 
 (def theme-key "wchnt.theme")
 
@@ -683,6 +690,9 @@
   (on! "import-wiki" "click" (fn [_] (on-import-wiki!)))
   (on! "wiki-import-file" "change" on-import-file-selected!)
   (on! "theme-toggle" "click" on-theme-toggle!)
+  (on! "factory-reset" "click" (fn [_]
+                                   (close-all-sheets!)
+                                   (confirm-reset!)))
   (on! "search-input" "input" on-search-input!)
   (on! "search-input" "focus" on-search-input!)
   (on! "search-input" "keydown" on-search-key!)

@@ -28,14 +28,14 @@ Game::double = { value + value }
 %cli-live
 
 %init
-var assemblage;
+var game;
 
 function init() {
-    assemblage = GameAssemblage.factory();
+    game = GameAssemblage.factory();
 }
 
 %step
 function step(line) {
-    wchntConsole.println(assemblage.double());
+    wchntConsole.println(game.double());
 }
 ```

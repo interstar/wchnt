@@ -45,21 +45,21 @@ Pentagon::draw = { @WCHNTGraphics/g |
 
 
 %init
-var assemblage:Sky;
+var sky:Sky;
 
 function init():Void {
-    assemblage = SkyAssemblage.factory();
+    sky = SkyAssemblage.factory();
 }
 
 %step
 function step():Void {
-    assemblage.game.time.update_mutates();
-    var r = assemblage.game.playArea.rect;
+    sky.game.time.update_mutates();
+    var r = sky.game.playArea.rect;
     wchntGraphics.clear();
     wchntGraphics.beginFill(0x1a1a2e);
     wchntGraphics.drawRect(r.x, r.y, r.width, r.height);
     wchntGraphics.endFill();
-    for (s in assemblage.game.shapes) {
+    for (s in sky.game.shapes) {
         s.draw(wchntGraphics);
     }
 }

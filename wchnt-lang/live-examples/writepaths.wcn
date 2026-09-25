@@ -79,17 +79,17 @@ World::label = {
 %cli-live
 
 %init
-var assemblage;
+var game;
 
 function init() {
-    assemblage = GameAssemblage.factory();
+    game = GameAssemblage.factory();
     wchntConsole.println("jets | ocean | resize | or type a fountain name");
-    wchntConsole.println(assemblage.label());
+    wchntConsole.println(game.label());
 }
 
 %step
 function step(line) {
-    assemblage = assemblage.command(line);
-    wchntConsole.println(assemblage.label());
+    game = game.command(line);
+    wchntConsole.println(game.label());
 }
 ```

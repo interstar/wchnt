@@ -24,8 +24,8 @@ Book = String/title String/author
 
 %main
 public static function main():Void {
-    var assemblage = DBAssemblage.factory();
+    var db = DBAssemblage.factory();
     var helper = new WCHNTHelper();
-    trace(assemblage.toConstruction(0, helper));
+    trace(db.toConstruction(0, helper));
 }
 ```

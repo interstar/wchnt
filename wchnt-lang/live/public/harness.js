@@ -202,6 +202,7 @@
     };
     for (var d = 0; d <= 9; d++) { keys[String(d)] = false; }
     var mouse = { x: 0.5, y: 0.5, down: false };
+    var pressedKeys = [];
     var active = false;
     var pointerEl = mouseEl || focusEl;
 
@@ -215,11 +216,13 @@
       if (!active) return;
       if (e.key === "Shift" || e.code === "ShiftLeft" || e.code === "ShiftRight") {
         keys.Shift = true;
+        pressedKeys.push("Shift");
         e.preventDefault();
         return;
       }
       if (/^[0-9]$/.test(e.key)) {
         keys[e.key] = true;
+        pressedKeys.push(e.key);
         e.preventDefault();
         e.stopPropagation();
         return;
@@ -227,6 +230,7 @@
       var name = arrowName(e);
       if (!name) return;
       keys[name] = true;
+      pressedKeys.push(name);
       e.preventDefault();
       e.stopPropagation();
       if (global.document.activeElement !== focusEl) {
@@ -279,12 +283,32 @@
       keys.ArrowDown = false;
       keys.Shift = false;
       for (var d = 0; d <= 9; d++) { keys[String(d)] = false; }
+      pressedKeys = [];
       mouse.down = false;
+    }
+
+    function surfaceWidth() {
+      return (mouseEl && mouseEl.width) || (pointerEl && pointerEl.clientWidth) || 1;
+    }
+
+    function surfaceHeight() {
+      return (mouseEl && mouseEl.height) || (pointerEl && pointerEl.clientHeight) || 1;
     }
 
     return {
       keys: keys,
       mouse: mouse,
+      mouseX: function () { return Math.round(mouse.x * surfaceWidth()); },
+      mouseY: function () { return Math.round(mouse.y * surfaceHeight()); },
+      mouseNX: function () { return mouse.x; },
+      mouseNY: function () { return mouse.y; },
+      mouseDown: function () { return mouse.down; },
+      keyDown: function (key) { return !!keys[String(key)]; },
+      keyPresses: function () {
+        var result = pressedKeys.slice();
+        pressedKeys = [];
+        return result;
+      },
       attach: function () {
         active = true;
         focusEl.addEventListener("keydown", onDown, true);
@@ -574,7 +598,7 @@
     canvas.height = HEIGHT;
     canvas.setAttribute("tabindex", "-1");
     var focusEl = keysEl || canvas;
-    var input = makeInput(focusEl, canvas);
+    var wchntInput = makeInput(focusEl, canvas);
     var raf = null;
     var running = false;
     var cliOnKey = null;
@@ -596,20 +620,20 @@
         global.cancelAnimationFrame(raf);
         raf = null;
       }
-      input.detach();
+      wchntInput.detach();
       stopCli();
     }
 
     function start(init, step, onError) {
       cancelLoop();
       running = true;
-      input.attach();
-      input.focus();
+      wchntInput.attach();
+      wchntInput.focus();
       try {
         init();
       } catch (e) {
         running = false;
-        input.detach();
+        wchntInput.detach();
         if (onError) onError(e);
         return;
       }
@@ -659,11 +683,10 @@
 
     return {
       wchntGraphics: wchntGraphics,
-      graphics: wchntGraphics,
       wchntConsole: wchntConsole,
       wchntMaths: wchntMaths,
       wchntForm: wchntForm,
-      input: input,
+      wchntInput: wchntInput,
       start: start,
       startCli: startCli,
       stop: function () {

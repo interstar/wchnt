@@ -31,14 +31,14 @@ Player::initial = { name.substring(0, 1) }
 
 %main
 public static function main():Void {
-    var assemblage = PlayerAssemblage.factory();
+    var player = PlayerAssemblage.factory();
     var helper = new WCHNTHelper();
-    trace(assemblage.toConstruction(0, helper));
+    trace(player.toConstruction(0, helper));
     trace("nameLen");
-    trace(assemblage.nameLen());
+    trace(player.nameLen());
     trace("tag");
-    trace(assemblage.tag());
+    trace(player.tag());
     trace("initial");
-    trace(assemblage.initial());
+    trace(player.initial());
 }
 ```

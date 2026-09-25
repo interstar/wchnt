@@ -294,7 +294,8 @@ Ball::move = {
 - Method calls: `this.move()`, `ball.step(playArea.rect)`, `a.b.c()`
 - Constructing: `[:Ball 1 2 3 4 5]`, arrays and maps as in Construction
 - Lambdas: `{ x | x * 2 }`
-- Target commands: `%trace(x)` — an expression, bound in Target
+- Target command: `%trace(x)` — the explicit, value-preserving diagnostic
+  escape hatch bound in Target
 
 Bitwise operators require `Int` operands and use signed 32-bit two's-complement
 results. Hex literals range from `0x0` through `0xFFFFFFFF`; the latter has the
@@ -422,8 +423,10 @@ that slot is a compile error.
 
 ### Target commands
 
-`%name(...)` is a call to a function defined in Target, usable as an
-expression. `%trace(x)` yields `x`. Unknown `%name` fails until Target binds it.
+`%trace(...)` calls the explicitly supplied diagnostic function in Target and
+is usable as an expression. The implementation can use platform facilities
+such as Haxe tracing, browser `console.log`, or `alert`, and should return its
+argument. Other arbitrary `%name(...)` calls are not part of the language.
 
 ---
 
@@ -444,7 +447,7 @@ Target changes.
 The first line of a non-empty `## Target` must name a host. There is no
 default.
 
-- **`%name` helpers** bind functions callable from Methods (e.g. `%trace`).
+- **`%trace`** is the one diagnostic function callable from Methods.
 - **`wchntGraphics`** is the portable drawing surface (`clear`, `beginFill`,
   `drawRect`, `drawCircle`, `endFill`, `lineStyle`, `moveTo`, `lineTo`, …).
 - **`wchntConsole`** is the text output object (`print` / `println`).

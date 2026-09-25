@@ -15,7 +15,7 @@ Sketch = String/name @Pen
 ## Construction
 
 ```
-[:Sketch "star" pen]
+[:Sketch "Blue Pen" pen]
 ```
 
 ## Methods

@@ -58,26 +58,15 @@ Game::draw = { @WCHNTGraphics/g |
 %openfl
 
 %init
-var assemblage:Game;
-var down:Map<Int, Bool> = new Map();
+var game:Game;
 
 function init():Void {
-    assemblage = GameAssemblage.factory();
-    stage.addEventListener(KeyboardEvent.KEY_DOWN, function(e:KeyboardEvent) {
-        down.set(e.keyCode, true);
-    });
-    stage.addEventListener(KeyboardEvent.KEY_UP, function(e:KeyboardEvent) {
-        down.set(e.keyCode, false);
-    });
-}
-
-function held(code:Int):Bool {
-    return down.exists(code) && down.get(code);
+    game = GameAssemblage.factory();
 }
 
 %step
 function step():Void {
-    assemblage.keys.inject(held(Keyboard.LEFT), held(Keyboard.RIGHT), held(Keyboard.UP), held(Keyboard.DOWN));
-    assemblage.draw(wchntGraphics);
+    game.keys.inject(wchntInput.keyDown("ArrowLeft"), wchntInput.keyDown("ArrowRight"), wchntInput.keyDown("ArrowUp"), wchntInput.keyDown("ArrowDown"));
+    game.draw(wchntGraphics);
 }
 ```

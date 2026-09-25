@@ -85,17 +85,17 @@ WCHNTMaths::sin(Float) -> Float
 WCHNTMaths::cos(Float) -> Float
 
 %init
-var assemblage;
+var system;
 
 function init() {
-    assemblage = SystemAssemblage.factory();
+    system = SystemAssemblage.factory();
     wchntGraphics.background(0x05070d, 0.5);
 }
 
 %step
 function step() {
-    assemblage = assemblage.tick();
+    system = system.tick();
     wchntGraphics.clear();
-    assemblage.draw(wchntGraphics, wchntMaths);
+    system.draw(wchntGraphics, wchntMaths);
 }
 ```

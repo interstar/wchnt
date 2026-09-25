@@ -15,7 +15,6 @@ flyingA              flyingA
 flyingB              flyingB
 factory_args         factory_args
 combinators_cli      combinators
-origin_canvas        origin
 maths_cli            maths
 transclusion_shared  transclusion_shared
 transclusion_cli     transclusion_cli
@@ -26,3 +25,4 @@ lander               lander
 paint                paint
 form_calculator      form_calculator
 unittests            unittests
+butterfly            butterfly

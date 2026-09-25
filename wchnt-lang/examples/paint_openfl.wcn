@@ -12,10 +12,10 @@ the platform input, injects it, steps, and asks WCHNT to paint.
 ## Schema
 
 ```
-Paint = Canvas Palette Input Brush/brush1 Brush/brush2
+Paint = Canvas Brush Palette Inbox
 Canvas = Int/width Int/height
 Brush = Int/x Int/y Int/rad Int/colour Bool/painting
->Input = Int/x Int/y Bool/down Int/key
+>Inbox = Int/x Int/y Bool/down [String]/keys
 Colour = "Black" | "White" | "Red" | "Green" | "Blue" | "Yellow" | "Cyan" | "Magenta" | "Orange"
 Palette = {Colour:Int}
 ```
@@ -24,7 +24,8 @@ Palette = {Colour:Int}
 
 ```
 [:Paint
-  [:Canvas 700 700]
+  [:Canvas 800 600]
+  [:Brush 0 0 5 0xFF000000 false]
   [:Palette
     {Colour:Int
       Black:   0xFF000000
@@ -38,9 +39,7 @@ Palette = {Colour:Int}
       Orange:  0xFFFF8000
     }
   ]
-  [:Input 0 0 false 0]
-  [:Brush 0 0 5 0xFF000000 false]
-  [:Brush 0 0 5 0xFF000000 false]
+  [:Inbox 0 0 false [:Array/String]]
 ]
 ```
 
@@ -48,30 +47,41 @@ Palette = {Colour:Int}
 
 ```
 Paint::step = {
-  key = input.key.
-  nextColour = if (key == 0) { brush1.colour } else { palette.colourForKey(key) }.
-  nextBrush1 = [:Brush input.x input.y brush1.rad nextColour input.down].
-  nextBrush2 = [:Brush input.y input.x brush2.rad nextColour input.down].
-  [:Paint canvas palette input nextBrush1 nextBrush2]
+  nextColour = inbox.keys.fold(brush.colour, { current, key |
+    switch (key)
+      "1" -> { palette.colourForKey(key) }
+      "2" -> { palette.colourForKey(key) }
+      "3" -> { palette.colourForKey(key) }
+      "4" -> { palette.colourForKey(key) }
+      "5" -> { palette.colourForKey(key) }
+      "6" -> { palette.colourForKey(key) }
+      "7" -> { palette.colourForKey(key) }
+      "8" -> { palette.colourForKey(key) }
+      else -> { current }
+  }).
+  nextBrush = [:Brush inbox.x inbox.y brush.rad nextColour inbox.down].
+  [:Paint canvas nextBrush palette inbox]
 }
 
-Input::update! = { [:Input x y down key] }
+Inbox::update! = { [:Inbox x y down keys] }
 
-Palette::colourForKey = { Int/key |
+Palette::colourForKey = { String/key |
   switch (key)
-    1 -> { colourToInt.get(Black) }
-    2 -> { colourToInt.get(Red) }
-    3 -> { colourToInt.get(Green) }
-    4 -> { colourToInt.get(Blue) }
-    5 -> { colourToInt.get(Yellow) }
-    6 -> { colourToInt.get(Magenta) }
-    7 -> { colourToInt.get(Cyan) }
-    8 -> { colourToInt.get(Orange) }
+    "1" -> { colourToInt.get(Black) }
+    "2" -> { colourToInt.get(Red) }
+    "3" -> { colourToInt.get(Green) }
+    "4" -> { colourToInt.get(Blue) }
+    "5" -> { colourToInt.get(Yellow) }
+    "6" -> { colourToInt.get(Magenta) }
+    "7" -> { colourToInt.get(Cyan) }
+    "8" -> { colourToInt.get(Orange) }
     else -> { colourToInt.get(White) }
 }
 
 Brush::paint = { @WCHNTGraphics/g |
-  g.beginFill(colour).drawCircle(x, y, rad).endFill()
+  if (painting) {
+    g.beginFill(colour).drawCircle(x, y, rad).endFill()
+  } else {g}
 }
 
 Canvas::paint = { @WCHNTGraphics/g |
@@ -85,53 +95,17 @@ Canvas::paint = { @WCHNTGraphics/g |
 %openfl
 
 %init
-var assemblage:Paint;
-var down:Map<Int, Bool> = new Map();
-var pointerX:Int = 0;
-var pointerY:Int = 0;
-var mouseDown:Bool = false;
+var paint:Paint;
 
 function init():Void {
-    assemblage = PaintAssemblage.factory();
-    assemblage.canvas.paint(wchntGraphics);
-    stage.addEventListener(KeyboardEvent.KEY_DOWN, function(e:KeyboardEvent) {
-        down.set(e.keyCode, true);
-    });
-    stage.addEventListener(KeyboardEvent.KEY_UP, function(e:KeyboardEvent) {
-        down.set(e.keyCode, false);
-    });
-    stage.addEventListener(MouseEvent.MOUSE_MOVE, function(e:MouseEvent) {
-        pointerX = Std.int(e.stageX);
-        pointerY = Std.int(e.stageY);
-    });
-    stage.addEventListener(MouseEvent.MOUSE_DOWN, function(e:MouseEvent) {
-        pointerX = Std.int(e.stageX);
-        pointerY = Std.int(e.stageY);
-        mouseDown = true;
-    });
-    stage.addEventListener(MouseEvent.MOUSE_UP, function(e:MouseEvent) {
-        pointerX = Std.int(e.stageX);
-        pointerY = Std.int(e.stageY);
-        mouseDown = false;
-    });
-}
-
-function held(code:Int):Bool {
-    return down.exists(code) && down.get(code);
-}
-
-function digit():Int {
-    for (n in 1...10) {
-        if (held(Keyboard.NUMBER_1 + n - 1)) return n;
-    }
-    return 0;
+    paint = PaintAssemblage.factory();
+    paint.canvas.paint(wchntGraphics);
 }
 
 %step
 function step():Void {
-    assemblage.input.inject(pointerX, pointerY, mouseDown, digit());
-    assemblage = assemblage.step();
-    if (assemblage.brush1.painting) assemblage.brush1.paint(wchntGraphics);
-    if (assemblage.brush2.painting) assemblage.brush2.paint(wchntGraphics);
+    paint.inbox.inject(wchntInput.mouseX(), wchntInput.mouseY(), wchntInput.mouseDown(), wchntInput.keyPresses());
+    paint = paint.step();
+    paint.brush.paint(wchntGraphics);
 }
 ```

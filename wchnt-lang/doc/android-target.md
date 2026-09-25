@@ -45,7 +45,7 @@ Methods must not embed Android APIs directly; platform handles pass through Targ
 | Target parser | `src/wchnt_lang/target.cljc` | `%terminal`, `%openfl`, `%canvas` hosts |
 | Haxe emitter | `src/wchnt_lang/compiler.cljc` | `emit-main-class`, OpenFL lifecycle |
 | `WCHNTGraphics` | `src/wchnt_lang/haxe_helpers.cljc` | Portable draw API for OpenFL Target |
-| Canvas harness | `live/public/harness.js` | Browser equivalent of `WCHNTGraphics` + `input.keys` |
+| Canvas harness | `live/public/harness.js` | Browser equivalent of `WCHNTGraphics` + `WCHNTInput` |
 | Build script | `go.sh` | WCHNT → Haxe; OpenFL branch writes `project.xml`, runs `lime test neko` |
 | Examples | `examples/pollution_openfl.wcn`, `examples/pong_openfl.wcn` | OpenFL demos |
 | Live examples | `live-examples/pollution_canvas.wcn`, `live-examples/pong_canvas.wcn` | Same logic, `%canvas` Target |
@@ -126,7 +126,7 @@ Keep the seam small — mirror OpenFL/canvas:
 | `%init` | One-time setup (listeners, dimensions) |
 | `%step` | Each frame: inject input → `time.update_mutates()` → draw |
 | `wchntGraphics` | `clear`, `beginFill`, `endFill`, `lineStyle`, `drawRect`, `drawCircle`, `moveTo`, `lineTo`, `fillText` |
-| `%name` helpers | Optional Haxe/Java fragments callable from Methods |
+| `%trace` | Optional Haxe/Java diagnostic function callable from Methods |
 
 `WCHNTGraphics` on Android wraps `android.graphics.Canvas` and `Paint`, matching the API already documented in `target.md` for OpenFL and canvas hosts.
 

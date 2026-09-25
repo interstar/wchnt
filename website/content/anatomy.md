@@ -35,7 +35,7 @@ In additional to normal components. (Eg. the `Ball` as something owned by a `Gam
 | Sigil | Name | Example | Meaning | 
 |-------|------|---------|---------|
 | *(none)* | normal | Game = Ball | Game has-a Ball | 
-| `:` | context-dependent | Car = :Engine | Car has-    an Engine, and an Engine *must* be part of a car. An Engine automatically gets a reference (`theCar`) back to its parent. |
+| `:` | context-dependent | Car = :Engine | Car has-an Engine, and an Engine *must* be part of a car. An Engine automatically gets a reference (`theCar`) back to its parent. |
 | `+` | delegate | Student = String/id +Person | Student reuses Person by delegation; Person's fields and methods are automatically promoted onto Student | 
 | `@` | external | Game = Ball Player @GraphicsContext | GraphicsContext is borrowed from outside and its life-cycle is managed beyond the assemblage | 
 | `$` | reactive | Game = Ball Player $Time | Game automatically subscribes to changes in Time |
@@ -72,7 +72,7 @@ An external component is simultaneously one which is defined outside the assembl
 Game = :PlayArea Ball @GraphicsContext
 ```
 
-In the previous examples, any class referenced on the right hand side of the = sign must be declared in the assemblage. The external class is the exception. WCHNT assumes it's **not** defined within the assemblage at all, and comes from another assemblage, or the platform, framework or wider context within which the program is run. An object of this class will need to exist prior to the Game's construction and be passed as an argument to the construction. We assume that the object will live on after our assemblage has finished and that it is someone else's responsibility to destroy it.
+In the previous examples, any class referenced on the right hand side of the = sign must be declared in the assemblage. The external class is the exception. Wchnt assumes it's **not** defined within the assemblage at all, and comes from another assemblage, or the platform, framework or wider context within which the program is run. An object of this class will need to exist prior to the Game's construction and be passed as an argument to the construction. We assume that the object will live on after our assemblage has finished and that it is someone else's responsibility to destroy it.
 
 
 #### "Reactive" components ($)
@@ -86,11 +86,11 @@ Time = Int/t
 
 This declares that Game is a dependent of Time. If the Time value changes, the Game will update itself. Behind the scenes we turn the Time object into an observable and the Game object becomes a subscriber to it. When the value `t` in the Time object updates, Game will automatically receive an `update()` message.
 
-Note that WCHNT also takes inspiration from functional programming. I'm a big fan of immutability. And most methods in WCHNT are single expressions which cannot mutate the object. In fact there is only one method that can mutate an object "in place", the `update()` method.
+Note that wchnt also takes inspiration from functional programming. I'm a big fan of immutability. And most methods in wchnt are single expressions which cannot mutate the object. In fact there is only one method that can mutate an object "in place", the `update()` method.
 
 
 #### "Mailbox" classes (>) 
-It's presumed that WCHNT programs are run in a harness or external framework which manages perhaps the top level game loop or REPL loop. 
+It's presumed that wchnt programs are run in a harness or external framework which manages perhaps the top level game loop or REPL loop. 
 
 Mailbox classes are how this external environment passes information into the assemblage.
 
@@ -120,7 +120,7 @@ Action = "Run" | "Jump" | "Duck" | "Shoot"
 ```
 #### Collections
 
-WCHNT supports two standard collections. Arrays (aka lists or vectors), and Maps (aka dictionaries, associative arrays etc). Because it's a typed language, we need to type these collections too.
+Wchnt supports two standard collections. Arrays (aka lists or vectors), and Maps (aka dictionaries, associative arrays etc). Because it's a typed language, we need to type these collections too.
 
 ```
 Item = Weapon | Potion | Treasure 
@@ -137,7 +137,7 @@ Here the `Item` is an interface implemented by the `Weapon`, `Potion` and `Treas
 
 The **Construction** phase creates an instance of an entire assemblage. Basically it defines a factory that constructs all the objects and wires them together appropriately.
 
-We use a format based on Clojure's "hiccup" where an object is defined as a list of data in square brackets, with the first element being the name of the class in Clojure's :keyword format (ie. with a colon on the front.) IMHO hiccup is more readable than XML or JSON. And easy to work with in Clojure, the language in which the WCHNT compiler is written.
+We use a format based on Clojure's "hiccup" where an object is defined as a list of data in square brackets, with the first element being the name of the class in Clojure's :keyword format (ie. with a colon on the front.) IMHO hiccup is more readable than XML or JSON. And easy to work with in Clojure, the language in which the wchnt compiler is written.
 
 Here's an example Construction.
 
@@ -192,7 +192,7 @@ If `Game = Ball Player/p1 Player/p2 @GraphicsContext` and the GraphicsContext co
        [:Player 100 100]
        graphicsContext]
 ```
-The WCHNT compiler will spot that graphicsContext is an unrecognised name in a slot typed for an external component, deduce that this component must come from the platform, and add it as an argument required by the factory. Eg. in the target platform code (in say Haxe or JS or whatever our target platform is) you would have to say something like
+The wchnt compiler will spot that graphicsContext is an unrecognised name in a slot typed for an external component, deduce that this component must come from the platform, and add it as an argument required by the factory. Eg. in the target platform code (in say Haxe or JS or whatever our target platform is) you would have to say something like
 
 ```
 var game = gameFactory(graphicsContext);
@@ -232,7 +232,7 @@ Ball::bounceDx = { PlayArea/playArea |
 }
 ```
 
-Note that in WCHNT, `if else ` is an expression, not a control structure. If the condition is true, the whole expression evaluates to the result of executing the first block. Otherwise the second. 
+Note that in wchnt, `if else ` is an expression, not a control structure. If the condition is true, the whole expression evaluates to the result of executing the first block. Otherwise the second. 
 
 Almost all methods are expressions that return a new value which is either a primitive or an object. To construct a new return object we use the same syntax as the Construction phase of the program. In fact Method syntax is a superset of Construction syntax. It can do everything constructions can. Plus some standard arithmetic, logic etc. And accessing the locally bound names within the object.
 
@@ -288,9 +288,9 @@ Note that the accumulator is the first argument to the fold and the code-block t
 
 ### Target Phase
 
-All programs run in some kind of environment. And often it's the interface between your program and that environment that causes the most trouble. The philosophy of WCHNT is to make this environmental dependency more explicit and legible.
+All programs run in some kind of environment. And often it's the interface between your program and that environment that causes the most trouble. The philosophy of wchnt is to make this environmental dependency more explicit and legible.
 
-The **Target** phase is the place where we put information about how the environment calls into our code. Right now, when WCHNT is still very embryonic, we have two target environments for it. One is compilation to the [Haxe](https://haxe.org/) language. The other is an [interpreter](play/) running in the browser where you can play with WCHNT today.
+The **Target** phase is the place where we put information about how the environment calls into our code. Right now, when wchnt is still very embryonic, we have two target environments for it. One is compilation to the [Haxe](https://haxe.org/) language. The other is an [interpreter](play/) running in the browser where you can play with WCHNT today.
 
 The Target consists of configuration flags and target specific code to provide the main or game loop. For Haxe compilation target specific code is written in Haxe itself. In the browser it's in Javascript.
 
@@ -330,9 +330,9 @@ The step() function is the payload for a default "game loop" that the OpenFL har
 
 You'll notice that this particular program doesn't mutate the assemblage. Game's step() function just creates a new Game object at each step. Which is clean but inefficient. To mutate the Game in position we'd have to put the mutating code in Game's `update()` method and call `assemblage.update();` in this target code.
 
-The rest of this function is about actually drawing the state of the game with the `wchntGraphics` that object comes from the harness. In this example we do the actual drawing in Haxe, leaving the WCHNT code decoupled from the actual rendering.
+The rest of this function is about actually drawing the state of the game with the `wchntGraphics` that object comes from the harness. In this example we do the actual drawing in Haxe, leaving the wchnt code decoupled from the actual rendering.
 
-But it is also possible to define draw() functions *in* WCHNT and pass the wchntGraphics object in as an external component.
+But it is also possible to define draw() functions *in* wchnt and pass the wchntGraphics object in as an external component.
 
 ```wchnt
 Ball::draw = {@WCHNTGraphics/g | g.beginFill(0xf2f2f2).drawCircle(x,y,rad).endFill()}
@@ -347,13 +347,13 @@ The choice is what makes sense in the particular application and target environm
 
 The target will need to provide a WCHNTGraphics class with those beginFill, drawCircle, and endFill methods.
 
-And note that WCHNT doesn't have imperative programming, so a sequence of graphics calls like this has to be written chained together in "*fluent*" style. 
+And note that wchnt doesn't have imperative programming, so a sequence of graphics calls like this has to be written chained together in "*fluent*" style. 
 
-WCHNT doesn't hide or resolve all your environment or platform integration problems. IMHO it's always hard to interface between the purity of data manipulation inside the program and the messy outside world. But the hope is that by making the choices more visible. And placing them directly in the assemblage definition rather than relegated to obscure external config files, we actually make dealing with it more straightforward.
+Wchnt doesn't hide or resolve all your environment or platform integration problems. IMHO it's always hard to interface between the purity of data manipulation inside the program and the messy outside world. But the hope is that by making the choices more visible. And placing them directly in the assemblage definition rather than relegated to obscure external config files, we actually make dealing with it more straightforward.
 
 The structure of an assemblage file still enforces a clean separation in the program between the different layers of your system : the inner data structure, the initialisation from data, the behaviour, and finally this platform integration. (I sometimes borrow the term "shearing layers" from Stewart Brand to talk about these different layers.)
 
-The hunch behind WCHNT and assemblage programming is that, in the small, this separation, and this organisation is easier to read and reason about and manage, easier to navigate, and just generally more comfortable to work with, than the highly splintered way that OO languages normally organise their code.
+The hunch behind wchnt and assemblage programming is that, in the small, this separation, and this organisation is easier to read and reason about and manage, easier to navigate, and just generally more comfortable to work with, than the highly splintered way that OO languages normally organise their code.
 
 
 ### Import Phase (and Public Phase)
@@ -385,7 +385,7 @@ Game::update
 Game::addShape
 ```
 
-4) It can also refer to *interfaces*. We can add Shape to the export list. But note we cannot add a concrete class. The reason is simple. In WCHNT, the construction of a class is based on knowing its inner structure. But between assemblages we are hiding the inner structure of classes. It's OK to export specific method calls with specific argument lists. And to export interfaces which are only known in terms of their method signatures. But the shape of classes must remain hidden between assemblages.
+4) It can also refer to *interfaces*. We can add Shape to the export list. But note we cannot add a concrete class. The reason is simple. In wchnt, the construction of a class is based on knowing its inner structure. But between assemblages we are hiding the inner structure of classes. It's OK to export specific method calls with specific argument lists. And to export interfaces which are only known in terms of their method signatures. But the shape of classes must remain hidden between assemblages.
 
 
 ```wchnt
@@ -408,7 +408,7 @@ Then in the construction of `flyingB` we can say:
 [:Sky flying.make().addShape([:Pentagon 640 90 36 4])]
 ```
 
-Note the following. Classes are not first class objects in WCHNT. At least, not at the moment. We can't send messages to them. But `flying` the imported assemblage from `flyingA` *is* an object. That accepts the Game::make() message. That function creates a new Game object which, in the construction, is suitable to fill the slot declared by the schema as @Game. 
+Note the following. Classes are not first class objects in wchnt. At least, not at the moment. We can't send messages to them. But `flying` the imported assemblage from `flyingA` *is* an object. That accepts the Game::make() message. That function creates a new Game object which, in the construction, is suitable to fill the slot declared by the schema as @Game. 
 
 6) The public API of `flyingA` *also* publishes `Game::addShape()`, a function which adds a new object of a class that implements the `Shape` interface to the Game. Note that `flyingB` still can't create instances of any of the classes from `flyingA`. But it *can* define new classes, such as `Pentagon`, which implement the interface. And can be added to the Game.
 

@@ -1,13 +1,11 @@
 # Bounce on canvas (live interpreter)
-
-Same Schema, Construction, and Methods as `bounce_openfl.wcn`. Target is `%canvas`: step the game, then `draw`. The Haxe backend does not emit this host; use `compile-to-ir` and the interpreter (`doc/live.md`).
+ 
 
 ## Schema
 
 ```
 Game = PlayArea Ball
-PlayArea = Rect
-Rect = Int/x Int/y Int/width Int/height
+PlayArea = Int/width Int/height
 Ball = Int/x Int/y Int/dx Int/dy Int/rad
 ```
 
@@ -15,7 +13,7 @@ Ball = Int/x Int/y Int/dx Int/dy Int/rad
 
 ```
 [:Game
-  [:PlayArea [0 0 800 600]]
+  [:PlayArea 800 400]
   [:Ball 200 150 6 5 16]
 ]
 ```
@@ -23,33 +21,31 @@ Ball = Int/x Int/y Int/dx Int/dy Int/rad
 ## Methods
 
 ```
-Game::bounceDx = {
-  r = playArea.rect.
-  if ((ball.x < r.x) or (ball.x > (r.x + r.width))) { -ball.dx } else { ball.dx }
+Ball::bounced = { PlayArea/r |
+  ndx = if ((x < 0) or (x > r.width)) { -dx  } else { dx }.
+  ndy = if ((y < 0) or (y > r.height)) { -dy } else { dy }.
+  [:Ball (x+ndx) (y+ndy) ndx ndy rad]
 }
 
-Game::bounceDy = {
-  r = playArea.rect.
-  if ((ball.y < r.y) or (ball.y > (r.y + r.height))) { -ball.dy } else { ball.dy }
-}
 
 Game::step = {
-  ndx = this.bounceDx().
-  ndy = this.bounceDy().
-  [:Game playArea [:Ball (ball.x + ndx) (ball.y + ndy) ndx ndy ball.rad]]
+  [:Game playArea ball.bounced(playArea)]
 }
 
 Ball::draw = { @WCHNTGraphics/g |
-  g.beginFill(15921906).drawCircle(x, y, rad).endFill()
+  g.beginFill(0xffffff).drawCircle(x, y, rad).endFill()
+}
+
+PlayArea::draw = { @WCHNTGraphics/g |
+  g.beginFill(0x003300).drawRect(0, 0, width, height).endFill()
 }
 
 Game::draw = { @WCHNTGraphics/g |
-  r = playArea.rect.
-  bg = g.beginFill(2769450).drawRect(r.x, r.y, r.width, r.height).endFill().
-  ball.draw(g)
+  drawnPA = playArea.draw(g).
+  drawnBal = ball.draw(g).
+  this
 }
 ```
-
 
 ## Target
 
@@ -57,16 +53,16 @@ Game::draw = { @WCHNTGraphics/g |
 %canvas
 
 %init
-var assemblage;
+var game;
 
 function init() {
-    assemblage = GameAssemblage.factory();
+    game = GameAssemblage.factory();
 }
 
 %step
 function step() {
-    assemblage = assemblage.step();
+    game = game.step();
     wchntGraphics.clear();
-    assemblage.draw(wchntGraphics);
+    game.draw(wchntGraphics);
 }
 ```

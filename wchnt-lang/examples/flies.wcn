@@ -89,12 +89,12 @@ WCHNTMaths::pi() -> Float
 
 %main
 public static function main():Void {
-    var assemblage = WallAssemblage.factory(wchntMaths).init();
+    var wall = WallAssemblage.factory(wchntMaths).init();
     var helper = new WCHNTHelper();
-    trace(assemblage.toConstruction(0, helper));
+    trace(wall.toConstruction(0, helper));
     for (i in 0...3) {
-        assemblage = assemblage.step(1, 0.0, 0.0, 0.0, 0.0);
-        trace(assemblage.toConstruction(0, helper));
+        wall = wall.step(1, 0.0, 0.0, 0.0, 0.0);
+        trace(wall.toConstruction(0, helper));
     }
 }
 ```

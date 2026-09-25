@@ -27,7 +27,12 @@
     </header>
     <p id="error" hidden></p>
     <main>
-      <div id="reader" class="cm-s-material-darker" hidden></div>
+      <div id="reader" class="cm-s-material-darker" hidden>
+        <div id="stability-warning" role="status">
+          WCHNT is evolving rapidly and older code may need updating. Please keep a separate copy of your work and be prepared to use factory reset when necessary; it deletes all custom pages saved in this browser.
+        </div>
+        <div id="reader-content"></div>
+      </div>
       <div id="editor"></div>
     </main>
     <nav id="bottom-bar" aria-label="Primary actions">
@@ -46,6 +51,7 @@
         <button id="export-wiki" type="button">Save All (export)</button>
         <button id="import-wiki" type="button">Load All (import)</button>
         <button id="theme-toggle" type="button" aria-label="Toggle light/dark theme">Light</button>
+        <button id="factory-reset" class="danger-action" type="button">Factory reset (dangerous)</button>
       </div>
       <input id="wiki-import-file" type="file" accept=".wcn,.txt,text/plain" hidden>
     </div>

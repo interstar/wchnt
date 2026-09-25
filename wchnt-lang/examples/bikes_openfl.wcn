@@ -69,17 +69,17 @@ Game::step = {
 WCHNTMaths::randInt(Int) -> Int
 
 %init
-var assemblage:Game;
+var game:Game;
 
 function init():Void {
-    assemblage = GameAssemblage.factory(wchntMaths);
+    game = GameAssemblage.factory(wchntMaths);
 }
 
 %step
 function step():Void {
-    assemblage = assemblage.step();
-    var w = assemblage.w;
-    var h = assemblage.h;
+    game = game.step();
+    var w = game.w;
+    var h = game.h;
     var horizon = Std.int(h / 2);
 
     wchntGraphics.background(0x18EAFF, 0.196);
@@ -97,7 +97,7 @@ function step():Void {
         wchntGraphics.endFill();
     }
 
-    for (bk in assemblage.bikes) {
+    for (bk in game.bikes) {
         var fx = bk.x + bk.size + Std.int(bk.size / 20);
         wchntGraphics.beginFill(bk.colour);
         wchntGraphics.lineStyle(1, 0x000000);

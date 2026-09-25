@@ -27,7 +27,7 @@ Far term this is the Smalltalk-like live system. v1 is a page: editor, canvas, R
 5. **Layout:** `wchnt-lang/live/` in this repo. CLJS compiles against `src/` with **lein-cljsbuild** (`lein live`). Runtime is static HTML + JS in `live/public/` — served as the website Play page, as a PWA, and inside Electron. No Node server for the web app.
 6. **Out of scope for v1:** debugger/stepper, REPL, Neh-Thalggu wiring, sound.
 
-**Wiki (2026-09):** the live page stores `.wcn` pages in **localStorage**. **New Page** creates a sibling page; **Load example** copies canvas/cli demos including `origin_canvas` and `maths_cli`. Prose may contain **`[[PageName]]`** links — click to navigate (navigation only; class reuse is **`## Import`**). On first visit the wiki is seeded from `live/public/seed/` (`welcome`, `bounce`, `shapes`, `square`, `pollution`, `pong`, `adventure`, `writepaths`, `flyingA`, `flyingB`, `factory_args`, `combinators`, `maths`, `origin`) — a seed page is written only if no page of that name exists, so existing user data is never overwritten. Run on a documentation page reports “nothing to run”; on a library page it is a schema/methods check pass.
+**Wiki (2026-09):** the live page stores `.wcn` pages in **localStorage**. **New Page** creates a sibling page; **Load example** copies canvas/cli demos including `maths_cli`. Prose may contain **`[[PageName]]`** links — click to navigate (navigation only; class reuse is **`## Import`**). On first visit the wiki is seeded from `live/public/seed/` (`welcome`, `bounce`, `shapes`, `square`, `pollution`, `pong`, `adventure`, `writepaths`, `flyingA`, `flyingB`, `factory_args`, `combinators`, `maths`) — a seed page is written only if no page of that name exists, so existing user data is never overwritten. Run on a documentation page reports “nothing to run”; on a library page it is a schema/methods check pass.
 
 Methods with `@Type/name` parameters also live in **`## Methods`**; their target-provided signatures come from **`%requires`**. See **`method.md`**.
 
@@ -111,13 +111,16 @@ lein live-test
 - Method call `obj.step()` → look up Methods IR for that class, interpret the body, wrap the return.
 - Primitives (`Int`, `String`, `Bool`) unwrap to JS numbers/strings/booleans so `b.x` in Target is a number.
 
-`graphics` is **not** an interpreter object. It is the harness object, injected into the JS scope of `%init` / `%step` (same role as OpenFL’s Sprite `graphics`).
+`wchntGraphics` is **not** an interpreter object. It is the portable harness object, injected into the JS scope of `%init` / `%step`.
 
-`input` is the other harness object. `input.keys` is a held snapshot (`ArrowLeft` /
-`ArrowRight` / `ArrowUp` / `ArrowDown`, plus `Shift`). `input.mouse` is `{x, y}` in
-`0..1` relative to the canvas (updated on mousemove). Target writes keys and/or
+`wchntInput` is the other standard-library object. `wchntInput.keyDown(String)`
+queries a held key (`ArrowLeft` / `ArrowRight` / `ArrowUp` / `ArrowDown`, plus
+`Shift`). `wchntInput.mouseNX()` and `wchntInput.mouseNY()` return normalized
+coordinates; `wchntInput.mouseX()` and `wchntInput.mouseY()` return pixel
+coordinates. `wchntInput.keyPresses()` returns and clears all discrete key-down
+events collected since the previous call. Target writes keys and/or
 mouse into `>` mailboxes with `inject` each frame (`examples/square_canvas.wcn`,
-`live-examples/origin_canvas.wcn`). Click the canvas first so keys do not go to
+the canvas examples). Click the canvas first so keys do not go to
 the editor.
 
 `GameAssemblage.factory` is supplied by the live page; it runs Construction IR and returns a wrapped root.
@@ -154,7 +157,7 @@ live/
 
 Page: CodeMirror (full `.wcn` markdown), error line, canvas (800×600 to match OpenFL window), Run / Stop.
 
-**Harness (plain JS, v1):** own the `<canvas>`, 2D context, `graphics` object, `requestAnimationFrame` loop that calls `init` once and `step` each frame. No WCHNT knowledge.
+**Harness (plain JS, v1):** owns the `<canvas>`, 2D context, `wchntGraphics` object, and `requestAnimationFrame` loop that calls `init` once and `step` each frame. No WCHNT knowledge.
 
 **CLJS:** parse → IR → interpret Construction; install the generated assemblage wrapper into the harness scope; `eval` or `new Function` the Target JS bodies with that scope. Parse errors come from the cargo; runtime errors from the interpreter.
 

@@ -31,8 +31,8 @@ Engine::carModel = { theCar.model }
 
 %main
 public static function main():Void {
-    var assemblage = CarAssemblage.factory();
+    var car = CarAssemblage.factory();
     var helper = new WCHNTHelper();
-    trace(assemblage.toConstruction(0, helper));
+    trace(car.toConstruction(0, helper));
 }
 ```

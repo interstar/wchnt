@@ -15,16 +15,16 @@ the Target is specific to this page.
 %cli-live
 
 %init
-var assemblage;
+var game;
 
 function init() {
-    assemblage = GameAssemblage.factory();
+    game = GameAssemblage.factory();
     wchntConsole.println("press enter to double 21");
 }
 
 %step
 function step(line) {
-    wchntConsole.println(assemblage.double());
+    wchntConsole.println(game.double());
 }
 ```
 

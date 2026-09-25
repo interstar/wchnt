@@ -16,7 +16,7 @@ Success for the *idea* is other OO languages adopting assemblage programming. WC
 
 ## Current state (honest)
 
-**Works.** Markdown mainfile → schema grammar → schema IR → Haxe classes. Construction → unified grammar → construction IR → factory. Methods (lets, paths, calls, `if`, collections, typed params, interface signatures, `update` + `$` notify). Target is a real section: `%name` Haxe helpers callable from Methods, `%main` or OpenFL `%init`/`%step`. Construction programs without a host entry fail. Schema class `Main` is reserved. Examples are the spec; `go.sh` compiles terminal examples to JS/Node and OpenFL examples via lime.
+**Works.** Markdown mainfile → schema grammar → schema IR → Haxe classes. Construction → unified grammar → construction IR → factory. Methods (lets, paths, calls, `if`, collections, typed params, interface signatures, `update` + `$` notify). Target is a real section: `%trace` is the diagnostic helper callable from Methods, with `%main` or OpenFL `%init`/`%step`. Construction programs without a host entry fail. Schema class `Main` is reserved. Examples are the spec; `go.sh` compiles terminal examples to JS/Node and OpenFL examples via lime.
 
 **OpenFL drawing.** Bounce still draws in Target Haxe (`bounce_openfl.wcn`). Shapes draw from Methods: `@Graphics/g` on `Shape::draw`, Target only supplies the host `Graphics` (`shapes_openfl.wcn`). See **`doc/method.md`**.
 
@@ -77,7 +77,7 @@ Codegen must not grow new knowledge of Instaparse node shapes. If it still does 
 | Schema | Working | See **`doc/schema.md`**. Ordinary, `:`, `$` codegen. Schema `@` fields parsed (`:external`) but not distinct yet. Class name `Main` is reserved. |
 | Construction | Working | Same expression grammar as Methods. |
 | Methods | Working for v1 | Official heading `## Methods`. Arithmetic, logic, lets, paths, calls, `if`, collections, strings, typed params, interface signatures, `@Type/name` extern params, in-place `update`. Informal name: reaction. |
-| Target | Working | Terminal: `%terminal` + `%main`. OpenFL/canvas: `%init` / `%step`. `%name` Haxe is callable from Methods. |
+| Target | Working | Terminal: `%terminal` + `%main`. OpenFL/canvas: `%init` / `%step`. `%trace` is callable from Methods when defined in Target. |
 
 Schema, Construction, Methods, and Target are the program phases.
 
@@ -127,7 +127,7 @@ What the host is for:
 
 - **terminal** — compiler emits `class Main` with static `main()`. `go.sh` runs `haxe -js … -main Main` then Node. `%main` is required. `%init` / `%step` are not allowed.
 - **openfl** — compiler emits `class Main extends Sprite`. `%init` once, `%step` every frame. `go.sh` / lime. Target bodies are Haxe.
-- **canvas** — planned. Live interpreter only (`doc/live.md`). Same `%init` / `%step` roles; bodies are JavaScript. JS harness owns the canvas and a `graphics` object. The Haxe backend does not emit this host.
+- **canvas** — planned. Live interpreter only (`doc/live.md`). Same `%init` / `%step` roles; bodies are JavaScript. JS harness owns the canvas and a `wchntGraphics` object. The Haxe backend does not emit this host.
 
 Do not invent a second grammar for this. Windowed examples: `examples/bounce_openfl.wcn`, `bounce_openfl_time.wcn`, `shapes_openfl.wcn`, `square_openfl.wcn` (`>` mailbox / arrow keys). Canvas ports: `examples/bounce_canvas.wcn`, `square_canvas.wcn`.
 

@@ -43,8 +43,8 @@ WCHNTMaths::sin(Float) -> Float
 
 %main
 public static function main():Void {
-    var assemblage = RollAssemblage.factory(wchntMaths);
-    wchntConsole.println(assemblage.once());
-    wchntConsole.println(assemblage.wave());
+    var roll = RollAssemblage.factory(wchntMaths);
+    wchntConsole.println(roll.once());
+    wchntConsole.println(roll.wave());
 }
 ```

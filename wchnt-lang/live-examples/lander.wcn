@@ -218,27 +218,26 @@ WCHNTMaths::floor(Float) -> Int
 WCHNTMaths::round(Float) -> Int
 
 %init
-var assemblage;
+var game;
 
 function init() {
-    assemblage = GameAssemblage.factory(wchntMaths);
+    game = GameAssemblage.factory(wchntMaths);
     wchntGraphics.background(0x05070d, 1);
 }
 
 %step
 function step() {
-    var k = input.keys;
-    assemblage.keys.inject(!!k["ArrowLeft"], !!k["ArrowRight"], !!k["ArrowUp"], !!k["ArrowDown"]);
-    assemblage.time["update!"]();
+    game.keys.inject(wchntInput.keyDown("ArrowLeft"), wchntInput.keyDown("ArrowRight"), wchntInput.keyDown("ArrowUp"), wchntInput.keyDown("ArrowDown"));
+    game.time["update!"]();
 
     wchntGraphics.clear();
-    assemblage.draw(wchntGraphics);
+    game.draw(wchntGraphics);
     wchntGraphics.noStroke();
 
     wchntGraphics.beginFill(0xd8dee9);
-    wchntGraphics.fillText(assemblage.ship.readout(), 12, 12);
-    wchntGraphics.fillText(assemblage.scoreLine(), 12, 34);
-    wchntGraphics.fillText(assemblage.banner(), 12, 64);
+    wchntGraphics.fillText(game.ship.readout(), 12, 12);
+    wchntGraphics.fillText(game.scoreLine(), 12, 34);
+    wchntGraphics.fillText(game.banner(), 12, 64);
     wchntGraphics.endFill();
 }
 ```

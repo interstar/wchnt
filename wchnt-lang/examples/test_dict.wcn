@@ -25,8 +25,8 @@ Config2 = {BuildType : String}/environments
 
 %main
 public static function main():Void {
-    var assemblage = AppAssemblage.factory();
+    var app = AppAssemblage.factory();
     var helper = new WCHNTHelper();
-    trace(assemblage.toConstruction(0, helper));
+    trace(app.toConstruction(0, helper));
 }
 ```

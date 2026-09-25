@@ -56,22 +56,22 @@ Team::joined = { players.fold("", { acc, p | acc.concat(p.name) }) }
 
 %main
 public static function main():Void {
-    var assemblage = TeamAssemblage.factory();
+    var team = TeamAssemblage.factory();
     wchntConsole.println("names");
-    wchntConsole.println(assemblage.names());
+    wchntConsole.println(team.names());
     wchntConsole.println("scorers");
-    wchntConsole.println(assemblage.scorers());
+    wchntConsole.println(team.scorers());
     wchntConsole.println("total");
-    wchntConsole.println(assemblage.total());
+    wchntConsole.println(team.total());
     wchntConsole.println("boosted");
-    wchntConsole.println(assemblage.boosted());
+    wchntConsole.println(team.boosted());
     wchntConsole.println("hot");
-    wchntConsole.println(assemblage.hot());
+    wchntConsole.println(team.hot());
     wchntConsole.println("sum");
-    wchntConsole.println(assemblage.sum());
+    wchntConsole.println(team.sum());
     wchntConsole.println("stats");
-    wchntConsole.println(assemblage.stats());
+    wchntConsole.println(team.stats());
     wchntConsole.println("joined");
-    wchntConsole.println(assemblage.joined());
+    wchntConsole.println(team.joined());
 }
 ```

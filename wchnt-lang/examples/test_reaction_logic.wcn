@@ -32,8 +32,8 @@ Rect::contains = {px, py | (px >= x) and (px <= (x + width)) and (py >= y) and (
 
 %main
 public static function main():Void {
-    var assemblage = GameAssemblage.factory();
+    var game = GameAssemblage.factory();
     var helper = new WCHNTHelper();
-    trace(assemblage.toConstruction(0, helper));
+    trace(game.toConstruction(0, helper));
 }
 ```

@@ -27,7 +27,6 @@ few headings — `## Schema`, `## Construction`, `## Methods`, and `## Target`.
 - **[[factory_args]]** — Target builds a `Pen` and passes it into `SketchAssemblage.factory(pen)`.
 - **[[combinators]]** — `map` / `filter` / `fold` on arrays and maps. Press Enter; `println` formats the values.
 - **[[maths]]** — `wchntMaths` injected via `@`. Press Enter to pull three `randInt`s.
-- **[[origin]]** — Patternflow concentric tiles. Move the mouse; hold Shift for mode/freq.
 
 ## Learn more
 

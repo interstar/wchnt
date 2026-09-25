@@ -1,6 +1,6 @@
 # Steer a square (live canvas)
 
-Same Schema, Construction, and Methods as `square_openfl.wcn`, except the live `>Keys` mailbox carries **Int/dx Int/dy** computed in Target from `input.keys` (Firefox on Linux does not deliver Up/Down to a canvas reliably).
+Same Schema, Construction, and Methods as `square_openfl.wcn`, except the live `>Keys` mailbox carries **Int/dx Int/dy** computed in Target from `WCHNTInput.keyDown` (Firefox on Linux does not deliver Up/Down to a canvas reliably).
 
 Click the **play area** (blue outline) after Run, then use the arrow keys.
 
@@ -56,18 +56,17 @@ Game::draw = { @WCHNTGraphics/g |
 %canvas
 
 %init
-var assemblage;
+var game;
 
 function init() {
-    assemblage = GameAssemblage.factory();
+    game = GameAssemblage.factory();
 }
 
 %step
 function step() {
-    var k = input.keys;
-    var dx = (k["ArrowRight"] ? 6 : 0) + (k["ArrowLeft"] ? -6 : 0);
-    var dy = (k["ArrowDown"] ? 6 : 0) + (k["ArrowUp"] ? -6 : 0);
-    assemblage.keys.inject(dx, dy);
-    assemblage.draw(wchntGraphics);
+    var dx = (wchntInput.keyDown("ArrowRight") ? 6 : 0) + (wchntInput.keyDown("ArrowLeft") ? -6 : 0);
+    var dy = (wchntInput.keyDown("ArrowDown") ? 6 : 0) + (wchntInput.keyDown("ArrowUp") ? -6 : 0);
+    game.keys.inject(dx, dy);
+    game.draw(wchntGraphics);
 }
 ```

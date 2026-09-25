@@ -45,14 +45,14 @@ Game::draw = { @WCHNTGraphics/g |
 %openfl
 
 %init
-var assemblage:Game;
+var game:Game;
 
 function init():Void {
-    assemblage = GameAssemblage.factory();
+    game = GameAssemblage.factory();
 }
 
 %step
 function step():Void {
-    assemblage.draw(wchntGraphics);
+    game.draw(wchntGraphics);
 }
 ```

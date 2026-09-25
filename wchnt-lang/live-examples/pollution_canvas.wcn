@@ -135,19 +135,18 @@ Game::draw = { @WCHNTGraphics/g |
 %canvas
 
 %init
-var assemblage;
+var game;
 
 function init() {
-    assemblage = GameAssemblage.factory();
+    game = GameAssemblage.factory();
 }
 
 %step
 function step() {
-    var k = input.keys;
-    assemblage.keys.inject(!!k["ArrowLeft"], !!k["ArrowRight"], !!k["ArrowUp"], !!k["ArrowDown"]);
-    assemblage.time["update!"]();
+    game.keys.inject(wchntInput.keyDown("ArrowLeft"), wchntInput.keyDown("ArrowRight"), wchntInput.keyDown("ArrowUp"), wchntInput.keyDown("ArrowDown"));
+    game.time["update!"]();
     wchntGraphics.clear();
-    assemblage.draw(wchntGraphics);
+    game.draw(wchntGraphics);
 }
 
 ```

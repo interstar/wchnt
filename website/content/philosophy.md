@@ -1,4 +1,3 @@
-
 # Philosophy of WCHNT
 
 This page describes the principles that wchnt is built on.
@@ -100,8 +99,8 @@ I believe the opposite. Firstly that a language which is good for humans to read
 * Smalltalk (a live OO environment)
 * Clojure (data-driven FP, and immutability)
 * UML (explicit classification of has-a relationships)
-* COBOL (puts the shape of data at the beginning)
-* Haskell (the first time I saw the `data` statement and declaration of ADTs my mind was blown by how
+* COBOL (puts the shape of data at the beginning of a file)
+* Haskell (the first time I saw the `data` statement and declaration of ADTs my mind was blown by how elegantly simple they were.
 * Java (the *anti-inspiration* ... often my philosophy is "what would Java do? Do the opposite")
 * Processing (In one sense I might call this a proto "assemblage" language. It reconfigures Java so that multiple classes live in a single tab and encourages thinking of that as a kind of granularity. Also it makes the its platform immediately accessible and useful which turns out to be the secret of making programming fun)
 * Wiki (shout out to the wisdom of Ward Cunningham)
@@ -109,5 +108,22 @@ I believe the opposite. Firstly that a language which is good for humans to read
 
 ### The Goals
 
+**This is even more speculative waffle than the rest of the documentation here. You don't need to read it**
 
+Right now, wchnt is being written to scratch three separate itches.
 
+Firstly, I write some experimental interactive music software. This kind of software is large enough not to be trivial. It involves interaction, animated graphics and audio. Performance has to be sufficient to generate audio and keep control timings accurate. It needs to be cross-platform, and in the form of plugins, needs to interface with C++ frameworks. It needs to handle a lot of changing state.
+
+On the other hand, it's not a massive codebase. And doesn't need big data, very sophisticated graphics, high reliability, multiple simultaneous users or integration with "enterprise" frameworks or hosting.
+
+At the moment I'm using Haxe for the bulk of this software. It gets transpiled to C++ or JS and bridges to the host platform through small C++ or JS wrappers. In many other situations I'd prefer Clojure. But, Clojure isn't a great fit for cross-platform between JS and C++, or for the stateful interactivity and audio-rate synthesis.
+
+That is my target niche for wchnt. Something that allows an individual programmer to develop personal, local-first and interactive tools. Eventually I hope to port the suite of apps I'm making to wchnt.
+
+I've done an Android musical app, and experienced a lot of frustration with that. So moving past the desktop, I hope that wchnt will eventually be suitable for creating mobile apps too.
+
+Secondly, I used Smalltalk in the past, and I still have a lot of romanticism about the ideals of a Smalltalk-like system : a live environment, largely written in itself, bootstrapped and supremely hackable. Computing as a personal playground and workspace. I'm not alone in wanting this as my personal computing environment.
+
+While I applaud the Smalltalk world for keeping the flame alive and for its ongoing development, there are some things I *don't* like so much about it. In particular, it feels to me that Smalltalk is too attached to, and dragged down by, its 1970s era desktop GUI. Every Smalltalk immediately boots itself from existing DNA with a copy of that desktop and those UX patterns. I've wanted to see a Smalltalk-like thing willing to completely ditch the desktop and rethink its user interface paradigm for more modern devices. A Smalltalk tablet would be an awesome thing. Smalltalk with a document-model UI, in the web-browser, working through standard html form components would be very nice. One inspiration might be Jupyter Notebook. A place to combine texts, fragments of code, graphs, interactive control panels etc. And, of course, hyperlinks. Or we could imagine something even more drastic. A UX more like a social media feed or chat interface. Behind the scenes, it would still be live object system. And would still have the tools to edit everything. But the UI components and paradigm would be tuned to the phone sized touch screen and other modalities.
+
+Given that Smalltalk, so far, seems to have left this lane open, I'd like to prototype some ideas for it in wchnt. 

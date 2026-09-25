@@ -71,16 +71,16 @@ World::label = {
 
 %main
 public static function main():Void {
-    var assemblage = WorldAssemblage.factory();
+    var world = WorldAssemblage.factory();
     var helper = new WCHNTHelper();
-    trace(assemblage.toConstruction(0, helper));
+    trace(world.toConstruction(0, helper));
     trace("moreJets");
-    trace(assemblage.moreJets().toConstruction(0, helper));
+    trace(world.moreJets().toConstruction(0, helper));
     trace("renameFountain");
-    trace(assemblage.renameFountain("Arethusa").toConstruction(0, helper));
+    trace(world.renameFountain("Arethusa").toConstruction(0, helper));
     trace("deeperOcean");
-    trace(assemblage.deeperOcean().toConstruction(0, helper));
+    trace(world.deeperOcean().toConstruction(0, helper));
     trace("resize");
-    trace(assemblage.resize().toConstruction(0, helper));
+    trace(world.resize().toConstruction(0, helper));
 }
 ```

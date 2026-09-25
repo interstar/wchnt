@@ -20,8 +20,8 @@ Config = BuildType/environment
 
 %main
 public static function main():Void {
-    var assemblage = ConfigAssemblage.factory();
+    var config = ConfigAssemblage.factory();
     var helper = new WCHNTHelper();
-    trace(assemblage.toConstruction(0, helper));
+    trace(config.toConstruction(0, helper));
 }
 ```

@@ -33,9 +33,9 @@ public static function wchnt_trace<T>(x:T):T {
 
 %main
 public static function main():Void {
-    var assemblage = RectAssemblage.factory();
+    var rect = RectAssemblage.factory();
     var helper = new WCHNTHelper();
-    trace(assemblage.toConstruction(0, helper));
-    assemblage.area();
+    trace(rect.toConstruction(0, helper));
+    rect.area();
 }
 ```

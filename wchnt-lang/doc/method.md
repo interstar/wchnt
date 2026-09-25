@@ -46,7 +46,7 @@ Construction is the same expression language, narrowed to a single top-level blo
 
 ## What already compiles
 
-Arithmetic, comparisons, bitwise Int operations, `and` / `or` / `not`, returning a construction, and named block args. `%` between values is modulo (`x % width`), same precedence as `*` and `/`. Bitwise operators are `~`, `&`, `^`, `|`, `<<`, `>>`, and `>>>`; they require Int operands and use signed 32-bit two's-complement results. `%name(...)` is still a Target command. Examples: `examples/test_reaction_arithmetic.wcn`, `examples/test_reaction_logic.wcn`.
+Arithmetic, comparisons, bitwise Int operations, `and` / `or` / `not`, returning a construction, and named block args. `%` between values is modulo (`x % width`), same precedence as `*` and `/`. Bitwise operators are `~`, `&`, `^`, `|`, `<<`, `>>`, and `>>>`; they require Int operands and use signed 32-bit two's-complement results. `%trace(...)` is the Target diagnostic command. Examples: `examples/test_reaction_arithmetic.wcn`, `examples/test_reaction_logic.wcn`.
 
 ```
 Rect::area = { width * height }
@@ -324,7 +324,11 @@ Unknown fields, a field plus a path under it (`playArea = …, playArea.rect.wid
 
 ### 7. Target commands in a method — Done as expressions
 
-`%name(...)` is a call to a function defined in Target. It is an **expression**, not a third kind of line. Blocks stay lets plus one result. `%trace(x)` yields `x`.
+`%trace(...)` is the one Target-defined diagnostic call available in Methods. It
+is an **expression**, not a third kind of line. Blocks stay lets plus one
+result. The Target implementation may print, log, alert, or otherwise signal,
+but should return its argument so `%trace(x)` yields `x`. It must be explicitly
+defined in the Target section.
 
 ```
 Rect::area = { %trace(width * height) }
@@ -333,7 +337,7 @@ ndx = %trace(this.bounceDx()).
 [:Game playArea moved time]
 ```
 
-Unknown `%name` fails until Target binds it. `%main` is Haxe and is the program entry; Methods are not auto-run. See `examples/bounce_loop.wcn` and `examples/test_target_trace.wcn`.
+`%trace` fails until Target binds it. `%main` is Haxe and is the program entry; Methods are not auto-run. See `examples/bounce_loop.wcn` and `examples/test_target_trace.wcn`.
 
 ### 8. Typed parameters, interface signatures, and `@` externs — Done
 
@@ -431,7 +435,7 @@ Each slice: an `examples/*.wcn` file, tests on Haxe strings, no Haxe compiler in
 5. **`update!` rules.** Done. In-place rewrite of `this`, identity slots patch not replace, `$` notify with no args, no child percolation.
 6. **Array `concat` and index.** `times`, array `get(index)`, map `get`/`remove`, `head`/`tail`, and `substring` are done.
 6b. **Write paths.** Done. `[:Class | path = expr]` copies unspecified fields from `this` or a named source.
-7. **Target `%` expansion.** Done as expressions plus `%main` Haxe. Unknown `%name` fails. Methods are not auto-run.
+7. **Target `%trace` expansion.** Done as an expression plus `%main` Haxe. Methods are not auto-run.
 8. **Typed params, interface signatures, `@Type/name`.** Done. `shapes_openfl.wcn` is the example. Void host chains unroll in codegen.
 
 Do not add a second grammar. Do not add `for` unless combinators on collections are clearly the wrong shape. Do not add a statement language for Methods (host `Void` chains are unrolled, not a new syntax).

@@ -4,11 +4,10 @@ A toy text adventure for the `%cli` host. Target prints through `wchntConsole`;
 the host only reads lines. `Game::look` and `Game::move` own every word the
 player sees. Type `N`, `E`, `S`, or `W` to travel.
 
-Geography is two enums plus sparse maps. `LocationId` names rooms;
-`Direction` names exits. A missing key means no path — not an empty string.
-`WorldMap` holds the rooms so the class is not called `Map` (that name is
-the `{K:V}` collection). Exits store `LocationId`, not `Location`, so the
-graph does not have to be built as circular object references.
+A simple old-school text adventure to demonstrate the `%cli-live` target that gives us `wchntConsole`.
+
+Geography is two enums plus sparse maps. A missing exit key means no path.
+
 `Game::move` uses a write-path so `worldMap` is kept and only `here` and
 `msg` are rewritten.
 
@@ -19,7 +18,7 @@ Game = WorldMap LocationId/here String/msg
 WorldMap = {LocationId : Location}/places
 Location = String/description {Direction : LocationId}/exits
 LocationId = "Village" | "NorthGate" | "Market" | "Tavern" | "Temple" | "ForestEdge" | "River" | "DeepForest" | "Cave" | "Hilltop"
-Direction = "N" | "E" | "S" | "W"
+Direction = "N" | "E" | "S" | "W" | "Unknown"
 ```
 
 ## Construction
@@ -58,31 +57,41 @@ hilltop =    [:Location "Hilltop"       {Direction:LocationId S:NorthGate}].
 ## Methods
 
 ```
+
+Game::parseDirection = {String/line |
+	switch(line)
+      "N"->{N}
+      "E"->{E}
+      "S"->{S}
+      "W"->{W}
+      else->{Unknown}
+}
+
+WorldMap::getLocation = {LocationId/id | places.get(id)}
+
+WorldMap::nextFrom = {LocationId/id, Direction/d |
+  loc = this.getLocation(id).
+  loc.exits.get(d,id)
+}
+
+WorldMap::isExitFrom = {LocationId/id,Direction/d |
+  loc = this.getLocation(id).
+  loc.exits.exists(d)
+}
+
 Game::look = {
   places = worldMap.places.
-  room = places.get(here).
+  room = worldMap.getLocation(here).
   "You are in {place}.".tpl({String:String "place": room.description})
 }
 
 Game::move = { String/line |
-  places = worldMap.places.
-  loc = places.get(here).
-  exits = loc.exits.
-  isExit = switch (line)
-    "N" -> { exits.exists(N) }
-    "E" -> { exits.exists(E) }
-    "S" -> { exits.exists(S) }
-    "W" -> { exits.exists(W) }
-    else -> { false }.
-  next = switch (line)
-    "N" -> { exits.get(N, here) }
-    "E" -> { exits.get(E, here) }
-    "S" -> { exits.get(S, here) }
-    "W" -> { exits.get(W, here) }
-    else -> { here }.
-  room = places.get(next).
+  direction = this.parseDirection(line).
+  isExit = worldMap.isExitFrom(here,direction).
+  next = worldMap.nextFrom(here,direction).
+  nextRoom = worldMap.getLocation(next).
   out = if (isExit) {
-    "You are in {place}.".tpl({String:String "place": room.description})
+    "You are in {place}.".tpl({String:String "place": nextRoom.description})
   } else {
     "You can't go that way."
   }.
@@ -96,16 +105,16 @@ Game::move = { String/line |
 %cli
 
 %init
-var assemblage:Game;
+var game:Game;
 
 function init():Void {
-    assemblage = GameAssemblage.factory();
-    wchntConsole.println(assemblage.look());
+    game = GameAssemblage.factory();
+    wchntConsole.println(game.look());
 }
 
 %step
 function step(line:String):Void {
-    assemblage = assemblage.move(line);
-    wchntConsole.println(assemblage.msg);
+    game = game.move(line);
+    wchntConsole.println(game.msg);
 }
 ```

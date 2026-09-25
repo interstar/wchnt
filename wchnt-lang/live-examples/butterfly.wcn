@@ -69,7 +69,6 @@ Palette::colourForKey = { Colour/current, String/key  |
     else -> { current }
 }
 
-
 Brush::paint = { @WCHNTGraphics/g |
   col = thePaint.palette.colourToInt.get(colour).
   if (painting) {
@@ -88,20 +87,23 @@ Canvas::paint = { @WCHNTGraphics/g |
 ## Target
 
 ```
-%openfl
-
+%canvas
+ 
 %init
-var paint:Paint;
+var paint;
 
-function init():Void {
+function init() {
     paint = PaintAssemblage.factory();
     paint.canvas.paint(wchntGraphics);
 }
 
 %step
-function step():Void {
-    paint.inbox.inject(wchntInput.mouseX(), wchntInput.mouseY(), wchntInput.mouseDown(), wchntInput.keyPresses());
+function step() {
+    var mx = wchntInput.mouseX();
+    var my = wchntInput.mouseY();
+    paint.inbox.inject(mx, my, wchntInput.mouseDown(), wchntInput.keyPresses());
     paint = paint.step();
     paint.brush.paint(wchntGraphics);
+
 }
 ```

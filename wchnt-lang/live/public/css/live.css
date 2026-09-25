@@ -70,6 +70,17 @@ header {
   background: var(--panel);
 }
 
+#stability-warning {
+  margin: 0 auto 18px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--info-bg);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 h1 {
   margin: 0;
   font-size: 16px;
@@ -228,6 +239,10 @@ h1 {
   text-align: left;
   padding: 12px;
   font-size: 15px;
+}
+
+#more-sheet .sheet-panel button.danger-action {
+  color: var(--error);
 }
 
 #pages-filter {

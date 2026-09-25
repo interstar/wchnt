@@ -1,6 +1,6 @@
 # WCHNTMaths on the live CLI
 
-Same assemblage as `examples/maths.wcn`. Target is `%cli-live`.
+Same roll as `examples/maths.wcn`. Target is `%cli-live`.
 `wchntMaths` is the host handle; press Enter to roll.
 
 ## Schema
@@ -39,16 +39,16 @@ WCHNTMaths::randInt(Int) -> Int
 WCHNTMaths::sin(Float) -> Float
 
 %init
-var assemblage;
+var roll;
 
 function init() {
-    assemblage = RollAssemblage.factory(wchntMaths);
+    roll = RollAssemblage.factory(wchntMaths);
     wchntConsole.println("enter to roll");
 }
 
 %step
 function step(line) {
-    wchntConsole.println(assemblage.once());
-    wchntConsole.println(assemblage.wave());
+    wchntConsole.println(roll.once());
+    wchntConsole.println(roll.wave());
 }
 ```
