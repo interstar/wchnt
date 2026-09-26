@@ -167,6 +167,41 @@
       (validate-reactive-component! (:name assemblage) component assemblage-names)))
   assemblages)
 
+(defn- validate-context-exclusivity!
+  "A class marked :context under parent P may only appear as :context of P.
+  It cannot be :context of two parents, nor a component of another class.
+  Same parent with multiple :Engine/e1 :Engine/e2 is allowed."
+  [assemblages]
+  (let [usages (for [assemblage assemblages
+                     component (:components assemblage)]
+                 {:parent (:name assemblage)
+                  :child (:type-name component)
+                  :relationship (:relationship component)})
+        by-child (group-by :child usages)]
+    (doseq [[child child-usages] by-child]
+      (let [ctx-usages (filterv #(= :context-specific (:relationship %)) child-usages)
+            ctx-parents (set (map :parent ctx-usages))]
+        (when (seq ctx-usages)
+          (when (> (count ctx-parents) 1)
+            (throw (ex-info (str child " is context-specific (:) to more than one parent class ("
+                                 (str/join ", " (sort ctx-parents))
+                                 "). A : context child may have only one parent class.")
+                            {:child child :parents ctx-parents})))
+          (let [parent (first ctx-parents)
+                foreign (->> child-usages
+                             (remove #(= parent (:parent %)))
+                             (map :parent)
+                             set
+                             sort)]
+            (when (seq foreign)
+              (throw (ex-info (str child " is context-specific to " parent
+                                   " so it cannot also be a component of "
+                                   (str/join ", " foreign))
+                              {:child child
+                               :context-parent parent
+                               :foreign-parents foreign}))))))))
+  assemblages)
+
 (defn- interface-name-set
   [interfaces]
   (set (map :name interfaces)))
@@ -346,7 +381,8 @@
         
         assemblages (->> (map transform-composition-line composition-lines)
                          validate-component-names!
-                         validate-reactive-components!)]
+                         validate-reactive-components!
+                         validate-context-exclusivity!)]
     (assert-no-reserved-class-names! assemblages)
     (assert-inlet-only-on-classes! schema-ast)
     (let [interfaces (map transform-disjunction-line disjunction-lines)

@@ -37,9 +37,13 @@
   (contains? (interface-names schema-ir) class-name))
 
 (defn- valid-type-name?
-  "True when type-name is a primitive, schema class, interface, enum, external, or collection type."
+  "True when type-name is a primitive, schema class, interface, enum, external, or collection type.
+  Void is not a WCHNT type — every method returns its last expression's value."
   [schema-ir type-name]
-  (or (contains? #{"Int" "Float" "String" "Bool" "Void"} type-name)
+  (when (= "Void" type-name)
+    (throw (ex-info "Void is not a WCHNT type; every method returns its last expression"
+                    {:type-name type-name})))
+  (or (contains? #{"Int" "Float" "String" "Bool"} type-name)
       (contains? (assemblage-names schema-ir) type-name)
       (contains? (interface-names schema-ir) type-name)
       (contains? (enum-names schema-ir) type-name)
@@ -2232,11 +2236,8 @@
      :body nil}))
 
 (defn- return-types-compatible?
-  [annotated inferred schema-ir]
-  (or (= annotated inferred)
-      (and (= annotated "Void")
-           (or (nil? inferred)
-               (ir/external-type? schema-ir inferred)))))
+  [annotated inferred _schema-ir]
+  (= annotated inferred))
 
 (defn- concrete-method-def->ir
   [method-node schema-ir lookup-method target-fns]
@@ -2262,6 +2263,9 @@
         param-type-by-name (into {} (map (juxt :name :type) parameters))
         let-types (let-type-map lets schema-ir class-name param-type-by-name)
         inferred-return (expr-return-type body schema-ir class-name param-type-by-name let-types)]
+    (when return-type
+      (assert-valid-type! schema-ir return-type
+                          {:class-name class-name :method-name method-name}))
     (when (and return-type inferred-return
                (not (return-types-compatible? return-type inferred-return schema-ir)))
       (throw (ex-info (str class-name "::" method-name " return type annotation "
@@ -2270,9 +2274,6 @@
                        :method-name method-name
                        :annotated return-type
                        :inferred inferred-return})))
-    (when return-type
-      (assert-valid-type! schema-ir return-type
-                          {:class-name class-name :method-name method-name}))
     (let [final-return (or return-type inferred-return)]
       (when-not final-return
         (throw (ex-info (str "Cannot determine return type of " class-name
