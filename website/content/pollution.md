@@ -170,7 +170,7 @@ Game::draw = { @WCHNTGraphics/g |
   border = g.lineStyle(2, 65280).drawRect(r.x, r.y, r.width, r.height).noStroke().
   afterObs = pollutants.fold(border, { acc, Pollutant/o | o.draw(acc) }).
   player.draw(afterObs).beginFill(13154404).fillText("Score: {score}".tpl({String:String "score": score.str()}), 12, 24)
-} -> Void
+}
 ```
 
 Colours are packed RGB integers (`13154404` is `0xc8c864`, `16737764` is `0xff6464`,

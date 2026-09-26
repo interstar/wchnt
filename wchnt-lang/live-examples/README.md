@@ -24,4 +24,4 @@ and `seed/index.txt`; the live page fetches that index.
 
 OpenFL / terminal / `%cli` examples stay in **`examples/`** and run via `./go.sh` or `./go_all_examples.sh`.
 
-Target drawing uses **`wchntGraphics`**. Target text I/O uses **`wchntConsole`** (`print` / `println`). See `doc/target.md`.
+Target drawing uses **`wchntGraphics`**. Target text I/O uses **`wchntConsole`** (`print` / `println`). See `doc/language.md`.

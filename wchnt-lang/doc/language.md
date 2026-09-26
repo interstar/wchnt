@@ -164,9 +164,46 @@ Rect = Int/x Int/y Int/width Int/height
   (`PlayArea` → `playArea`).
 - `/name` overrides the field name and is **required** when two components
   share a type.
-- Primitives: `Int`, `Float`, `String`, `Bool`. A type not defined in the Schema
-  is assumed to come from the host (and usually appears as `@Type` in Methods
-  or Schema when borrowed).
+
+### Types: builtins, schema classes, externals
+
+Every type name in Schema or Methods falls into exactly one of three buckets.
+An unrecognised bare name is **not** silently treated as a host type.
+
+| Kind | Examples | How you write it |
+|------|----------|------------------|
+| **Builtin primitives** | `Int`, `Float`, `String`, `Bool` | Bare name; closed set; no Schema definition |
+| **Schema types** | `Ball`, `Shape`, `Action` | Defined on a Schema line (class, sum, or enum) |
+| **Externals** | `WCHNTGraphics`, `WCHNTMaths`, OpenFL `Graphics` | Explicit `@Type` (Schema field or Methods param) plus Target `%requires` |
+
+**Primitives** are the only outsiders that omit `@`. They are language scalars
+supplied by every host and by the CLJC interpreter. They cannot carry `$`,
+`:`, `+`, or `@` sigils, and they are not identity objects.
+
+**Schema types** are the assemblage. Ordinary / `:` / `$` / `+` components
+must name a Schema class (or, for ordinary fields, a primitive). `$` on a sum
+interface is rejected — observables are concrete classes.
+
+**Externals** are borrowed host values. Use `@` whenever the type is not a
+primitive and not defined in this Schema (including standard-library handles
+such as `@WCHNTMaths/maths`). In Methods, a bare unknown type fails
+(`Unknown type 'Graphics'`); write `@Graphics/g` and declare it in
+`%requires`. In Schema, prefer `@Graphics` over a bare `Graphics` field: only
+`@` slots get free Construction names as factory parameters and opaque
+external semantics.
+
+*(Planned)* A related sigil **`%`** will mark *constructible* host values
+(`%Date/dob`, `[:Date "…"]`) declared via `Type::CONSTRUCT(...)` in
+`%requires`. See [`platform_constructable.md`](platform_constructable.md).
+
+Related forms that are also language-built, but not Schema primitives:
+
+- **Collections** — `[Player]` and `{String:Int}` (see below); not written as
+  bare `Array` / `Map` field types.
+
+There is no `Void` or `Null` in WCHNT. Every method is an expression whose
+value is its last statement. Host Target code may use platform `Void` in
+`%main` / `%init` signatures; that is outside WCHNT Methods.
 
 ### Collections
 
@@ -240,6 +277,14 @@ that reference via `setContext` when the assemblage is built.
 ```wchnt
 Engine::carModel = { theCar.model }
 ```
+
+A context child has **one** parent class. These fail fast:
+
+- `Car = :Engine` and `Truck = :Engine` (two parent classes)
+- `Car = :Engine` and `Truck = Engine` (also a component elsewhere)
+- `Car = Engine` and `Truck = :Engine` (same conflict the other way)
+
+Same parent twice is fine: `Fleet = :Engine/e1 :Engine/e2`.
 
 #### Delegate (`+`)
 
@@ -359,7 +404,8 @@ Clock::advance! = { Int/delta | [:Clock (t + delta)] }
 - Arguments go before `|` in the block.
 - Parameters may be bare (`px`), schema-typed (`Rect/bounds`), or external
   (`@WCHNTGraphics/g`). A type is required for field access on an argument.
-- Return types may follow the block: `-> Void`, `-> Shape`.
+- Return types may be annotated after the block: `-> Shape`. Every method
+  returns its last expression; there is no `Void` return type.
 - Interface methods use an empty body:
   `Shape::step = { Int/width | } -> Shape`.
 - Fields of `this` are bare names; calls on the receiver use `this.move()`.
@@ -642,7 +688,7 @@ fillText(String,Float,Float):WCHNTGraphics
 
 `color(x)` is grayscale; three- and four-argument forms pack RGB(A). Host APIs
 that look imperative are written as a **single chained call** in Methods;
-codegen may unroll Void-returning chains. Example:
+codegen may unroll host-side void chains onto the fluent receiver. Example:
 `examples/shapes_openfl.wcn`, `examples/graphics_openfl.wcn`.
 
 ### `WCHNTInput`
@@ -776,3 +822,11 @@ browser/live twins. Philosophy and assemblage motivation: [`intro.md`](intro.md)
 - Putting host / Clojure / Haxe glue into Methods instead of Target `@`
   parameters and `%requires`.
 - Omitting the final `else` on `if` / `switch`, or mixing branch result types.
+- Annotating a method `-> Void` — every method returns its last expression;
+  there is no Void or Null in WCHNT.
+
+---
+
+## Style
+
+- when writing an assemblage, put as much of the logic in the wchnt code as possible. The target language code should be as "thin" as possible. A place only for what is genuinely platform specific either because it uses platform specific classes or inbuilt functionality, or because it manipulates and prepares data that only make sense on this target.

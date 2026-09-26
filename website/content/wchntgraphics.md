@@ -107,14 +107,15 @@ with identical calls — a smoke test that the two hosts agree.
 ## Passing wchntGraphics to Methods
 
 You can hand `wchntGraphics` into a `@WCHNTGraphics/g` method and call it there. The calls chain in
-source; the compiler unrolls the `Void` chain for you:
+source; the compiler unrolls host-side void chains for you. Prefer returning the
+graphics handle (fluent) — there is no `Void` in WCHNT Methods:
 
 ```wchnt
-Shape::draw = { @WCHNTGraphics/g | } -> Void
+Shape::draw = { @WCHNTGraphics/g | } -> WCHNTGraphics
 
 Circle::draw = { @WCHNTGraphics/g |
   g.beginFill(15316448).drawCircle(x, y, radius).endFill()
-} -> Void
+}
 ```
 
 Then, from Target:

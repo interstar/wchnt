@@ -297,7 +297,7 @@ will evaluate to 43
 
 A code block demarcated by { } is like a block in Smalltalk. It's a first class citizen of the language. And can take arguments, becoming a lambda expression. Schema often derives field names from types (`PlayArea` → `playArea`); method arguments cannot, so the names are always written.
 
-Arguments may be a bare name (`y`), a schema type (`Rect/bounds`, `Shape/s`), or a target-provided external type (`@Graphics/g`). Return types may be annotated after the block (`-> Shape`, `-> Void`). All methods, including those using target externals, belong in **Methods**; `%requires` in **Target** declares the external signatures available to the whole program.
+Arguments may be a bare name (`y`), a schema type (`Rect/bounds`, `Shape/s`), or a target-provided external type (`@Graphics/g`). Return types may be annotated after the block (`-> Shape`). Every method returns its last expression — there is no `Void` in WCHNT. All methods, including those using target externals, belong in **Methods**; `%requires` in **Target** declares the external signatures available to the whole program.
 
 {x | x * 2}
 

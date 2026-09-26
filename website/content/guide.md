@@ -507,6 +507,5 @@ events or keyboard APIs directly.
 9. Use section transclusion for cross-platform source sharing.
 10. Remember that `[[Page]]` by itself is only a navigational hyperlink.
 
-For deeper reference, see [Schema](../doc/schema.md), [Methods](../doc/method.md),
-[Target](../doc/target.md), [Import](../doc/import.md),
-[Live environment](../doc/live.md), and [Type inference](../doc/type-inference.md).
+For deeper reference, see the [Language Guide](../doc/language.md),
+[Live environment](../doc/live.md), and historical notes in [doc/attic/](../doc/attic/).

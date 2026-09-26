@@ -122,9 +122,7 @@ edit an assemblage and watch it run.
 The source repository keeps the precise, up-to-date specs in `doc/`. If this site and the code
 disagree, the code and its examples win. Key files:
 
-- `doc/schema.md` — Schema: five sigils, types, identity / mutability, Import / Public
-- `doc/import.md` — the inter-assemblage membrane
-- `doc/method.md` — Methods, `update!`, write-paths, `tpl`, interfaces, `@` externs
-- `doc/target.md` — Target hosts and the inject-then-tick pattern
+- `doc/language.md` — user-facing language bible (Schema, Methods, Import, Target, stdlib)
+- `doc/attic/` — historical development specs (not live documentation)
 - `doc/live.md` — the live interpreter and browser page
 - `doc/plan.md` — the compiler architecture and what's next

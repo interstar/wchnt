@@ -75,9 +75,11 @@ Creates a distributable JAR file at `target/wchnt-lang.jar` that can be used as 
 - `live/` - Browser interpreter page (CodeMirror + canvas)
 - `doc/` - Documentation
   - `intro.md` - Language introduction and philosophy
-  - `language.md` - Complete language reference
-  - `plan.md` - Future development plans
-  - `live.md` - Interpreter and live-page plan
+  - `language.md` - User-facing language bible
+  - `liveterminal.md` - JVM live OS / pagestore design sketch
+  - `plan.md` - Compiler development plans
+  - `live.md` - Browser interpreter and live-page plan
+  - `attic/` - Historical feature-era specs (not live docs)
 
 ## Using the JAR Library
 
@@ -96,9 +98,10 @@ The Java plugin API (`wchnt_lang.WchntAPI`) is documented below.
 ## Learn More
 
 - Read the [Introduction](doc/intro.md) for language philosophy and concepts
-- Check the [Language Guide](doc/language.md) for complete syntax reference
-- [Schema](doc/schema.md), [Methods](doc/method.md), and [Plan](doc/plan.md) are the working specs
-- Short slice list: [TODO.md](TODO.md)
+- Read the [Language Guide](doc/language.md) — the user-facing language bible
+- Compiler roadmap: [Plan](doc/plan.md); short slice list: [TODO.md](TODO.md)
+- Live OS / terminal sketch: [liveterminal.md](doc/liveterminal.md)
+- Historical feature specs (attic): [doc/attic/](doc/attic/)
 
 ## Scripts
 

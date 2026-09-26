@@ -152,13 +152,13 @@ Game::draw = { @WCHNTGraphics/g |
   r = playArea.
   bg = g.beginFill(2769450).drawRect(r.x, r.y, r.width, r.height).endFill().
   ball.draw(g)
-} -> Void
+}
 ```
 ````
 
 Colours are packed RGB integers (`2769450` is `0x2a2a2a`, `15921906` is `0xf2f2f2`).
-`Ball::draw` returns the graphics handle so callers can chain; `Game::draw` is
-annotated `-> Void` because it is only called for its side effect.
+`Ball::draw` and `Game::draw` return the graphics handle (the value of the last
+expression) so callers can chain. There is no `Void` return type in WCHNT.
 
 ## 6. Target — where it runs
 

@@ -183,7 +183,7 @@ The open design question is whether Methods needs **`do { … }`** for sequentia
 - Complicates the interpreter and Haxe backends (statement vs expression).
 - Invites imperative style in Methods, which the language has deliberately kept functional + `update!` for mutation.
 
-**Current stance:** keep Methods as **expression + `let` bindings + final value**; use chained calls (Haxe Void unroll) or separate methods for host drawing. Revisit `do` only if Void unrolling and `let` chains prove insufficient in real examples (shapes, Pong, Gbloink!).
+**Current stance:** keep Methods as **expression + `let` bindings + final value**; use chained calls (host void unroll in codegen) or separate methods for host drawing. Revisit `do` only if fluent chains and `let` prove insufficient in real examples (shapes, Pong, Gbloink!). There is no WCHNT `Void` return type.
 
 ---
 
