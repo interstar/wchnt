@@ -3,7 +3,7 @@
 
    TDD contract: these tests define the target behaviour and are expected to
    FAIL until the grammar, reaction IR, Haxe emission, and interpreter support
-   are implemented. See doc/type-inference.md for the surrounding numeric rules."
+   are implemented. See doc/language.md for the surrounding numeric rules."
   (:require [clojure.test :refer :all]
             [clojure.string :as str]
             [instaparse.core :as insta]

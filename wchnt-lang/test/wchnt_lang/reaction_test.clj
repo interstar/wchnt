@@ -39,6 +39,12 @@ Ball = Int/x Int/y Int/dx Int/dy Int/rad")
       (is (= :field (get-in area [:body :parts 0 :expr])))
       (is (= "width" (get-in area [:body :parts 0 :name]))))))
 
+(deftest void-return-annotation-fails
+  (testing "Void is not a WCHNT return type"
+    (is (thrown-with-msg? Exception #"Void is not a WCHNT type"
+                          (methods-ir rect-ball-schema
+                                      "Rect::paint = { x } -> Void")))))
+
 (deftest move-method-ir
   (testing "Ball::move constructs a new Ball with arithmetic args"
     (let [move (first (methods-ir rect-ball-schema
