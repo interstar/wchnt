@@ -2,7 +2,7 @@
 
 Notes for people working on the WCHNT **compiler, interpreter, and test suite** — not for authors of `.wcn` programs.
 
-Language semantics live in `intro.md`, `schema.md`, `method.md`, `import.md`, and `target.md`. Pipeline architecture: `plan.md`. Live interpreter: `live.md`.
+Language semantics live in `intro.md` and `language.md`. Pipeline architecture: `plan.md`. Live interpreter: `live.md`. Historical feature notes: `attic/`.
 
 This file collects **implementation gotchas**: places where the two backends (Haxe codegen and the Clojure interpreter) look different under the hood, but should behave the same when WCHNT’s public rules are followed.
 
@@ -22,7 +22,7 @@ WCHNT distinguishes:
 
 Ordinary children (`Player`, `Ball`, `Pollutant`, …) are **not** identity objects: `Game::update!` may replace them with new constructions each frame.
 
-See `method.md` §5 and `schema.md` for the user-facing rules.
+See `language.md` for the user-facing mutability / identity rules.
 
 ### What the backends do
 
@@ -87,7 +87,7 @@ The asymmetry only matters when **tooling or tests bypass the public API**.
 
 ### When to fix the backend instead of the test
 
-If a test uses `get-field` / `call` / the JS view and **Haxe and the interpreter still disagree**, that is a **bug**, not a documented gotcha. File it against the backend that diverges from `method.md` and `schema.md`.
+If a test uses `get-field` / `call` / the JS view and **Haxe and the interpreter still disagree**, that is a **bug**, not a documented gotcha. File it against the backend that diverges from `language.md`.
 
 ---
 
@@ -259,7 +259,7 @@ When touching import:
   `:object` constructions.
 - `Class : Interface =` on the importer implements a **published** sum. It is not `+` and not `extends`.
 
-See `doc/import.md`, `examples/importA.wcn` / `importB.wcn`, `examples/flyingA.wcn` / `flyingB.wcn`.
+See `doc/language.md` (Import / Public), `examples/importA.wcn` / `importB.wcn`, `examples/flyingA.wcn` / `flyingB.wcn`.
 
 ---
 

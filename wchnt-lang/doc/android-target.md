@@ -4,7 +4,7 @@
 
 This document records how WCHNT might target Android for demonstration programs (Pong, Pollution, and similar canvas-style games). It covers the backend choice, harness template, and build/sideload pipeline.
 
-See also: `target.md` (Target as shearing layer), `plan.md` (compiler architecture), `live.md` (canvas host + interpreter).
+See also: `language.md` (Target as shearing layer), `plan.md` (compiler architecture), `live.md` (canvas host + interpreter).
 
 ## Motivation
 
@@ -30,7 +30,7 @@ Regardless of backend path:
 | Methods | Unchanged |
 | Target | **Host-specific** — `%init`, `%step`, input inject, draw calls |
 
-Target follows the established inject-then-tick pattern (see `target.md`):
+Target follows the established inject-then-tick pattern (see `language.md`):
 
 1. Read input (keyboard, touch, swipe) and `inject` into `>` mailboxes.
 2. Call `assemblage.time.update_mutates()` once per frame.
@@ -50,7 +50,7 @@ Methods must not embed Android APIs directly; platform handles pass through Targ
 | Examples | `examples/pollution_openfl.wcn`, `examples/pong_openfl.wcn` | OpenFL demos |
 | Live examples | `live-examples/pollution_canvas.wcn`, `live-examples/pong_canvas.wcn` | Same logic, `%canvas` Target |
 
-There is **no Android implementation** in the compiler today. `target.md` notes that Android swipe input would replace the keyboard inject body only.
+There is **no Android implementation** in the compiler today. `language.md` notes that Android swipe input would replace the keyboard inject body only.
 
 ## Backend choice: two paths
 
@@ -128,7 +128,7 @@ Keep the seam small — mirror OpenFL/canvas:
 | `wchntGraphics` | `clear`, `beginFill`, `endFill`, `lineStyle`, `drawRect`, `drawCircle`, `moveTo`, `lineTo`, `fillText` |
 | `%trace` | Optional Haxe/Java diagnostic function callable from Methods |
 
-`WCHNTGraphics` on Android wraps `android.graphics.Canvas` and `Paint`, matching the API already documented in `target.md` for OpenFL and canvas hosts.
+`WCHNTGraphics` on Android wraps `android.graphics.Canvas` and `Paint`, matching the API already documented in `language.md` for OpenFL and canvas hosts.
 
 ### Reference: original Pollution harness
 

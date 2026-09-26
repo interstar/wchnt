@@ -62,7 +62,7 @@ Ladder (cheap → deep):
 
 ## Running on mobile
 
-Today Run assumes 800×600 landscape and **arrow keys via a hidden textarea**. **The Target section declares the mobile run environment** (manifest-style), consistent with `target.md`:
+Today Run assumes 800×600 landscape and **arrow keys via a hidden textarea**. **The Target section declares the mobile run environment** (manifest-style), consistent with `language.md`:
 
 - **Virtual controller** — keypad / d-pad / swipe / tilt; host injects into `>` mailboxes.
 - **Orientation / aspect** — portrait/landscape, aspect intent.

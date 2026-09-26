@@ -2,7 +2,7 @@
 
 Working plan for a Clojure interpreter and a browser page that edits and runs WCHNT. The Haxe/OpenFL compiler stays. This is a second **backend**, not a second language.
 
-Language philosophy: `intro.md`. Compiler architecture: `plan.md`. Methods: **`method.md`**. Target hosts: **`target.md`** (and `plan.md` for pipeline context).
+Language philosophy: `intro.md`. Compiler architecture: `plan.md`. Language bible: **`language.md`**.
 
 ---
 
@@ -29,7 +29,7 @@ Far term this is the Smalltalk-like live system. v1 is a page: editor, canvas, R
 
 **Wiki (2026-09):** the live page stores `.wcn` pages in **localStorage**. **New Page** creates a sibling page; **Load example** copies canvas/cli demos including `maths_cli`. Prose may contain **`[[PageName]]`** links — click to navigate (navigation only; class reuse is **`## Import`**). On first visit the wiki is seeded from `live/public/seed/` (`welcome`, `bounce`, `shapes`, `square`, `pollution`, `pong`, `adventure`, `writepaths`, `flyingA`, `flyingB`, `factory_args`, `combinators`, `maths`) — a seed page is written only if no page of that name exists, so existing user data is never overwritten. Run on a documentation page reports “nothing to run”; on a library page it is a schema/methods check pass.
 
-Methods with `@Type/name` parameters also live in **`## Methods`**; their target-provided signatures come from **`%requires`**. See **`method.md`**.
+Methods with `@Type/name` parameters also live in **`## Methods`**; their target-provided signatures come from **`%requires`**. See **`language.md`**.
 
 ---
 
@@ -87,7 +87,7 @@ Canvas Target should be the same shape in JS (`function init` / `function step`,
 
 ### Inject-then-tick
 
-For games with keyboard input plus a frame clock, Target injects `>` mailboxes then ticks `$Time` once per frame. Full pattern: **`doc/target.md`**.
+For games with keyboard input plus a frame clock, Target injects `>` mailboxes then ticks `$Time` once per frame. Full pattern: **`doc/language.md`** (Target / inject-then-tick).
 
 ### Semantics tests in the browser
 

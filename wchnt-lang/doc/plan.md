@@ -18,7 +18,7 @@ Success for the *idea* is other OO languages adopting assemblage programming. WC
 
 **Works.** Markdown mainfile → schema grammar → schema IR → Haxe classes. Construction → unified grammar → construction IR → factory. Methods (lets, paths, calls, `if`, collections, typed params, interface signatures, `update` + `$` notify). Target is a real section: `%trace` is the diagnostic helper callable from Methods, with `%main` or OpenFL `%init`/`%step`. Construction programs without a host entry fail. Schema class `Main` is reserved. Examples are the spec; `go.sh` compiles terminal examples to JS/Node and OpenFL examples via lime.
 
-**OpenFL drawing.** Bounce still draws in Target Haxe (`bounce_openfl.wcn`). Shapes draw from Methods: `@Graphics/g` on `Shape::draw`, Target only supplies the host `Graphics` (`shapes_openfl.wcn`). See **`doc/method.md`**.
+**OpenFL drawing.** Bounce still draws in Target Haxe (`bounce_openfl.wcn`). Shapes draw from Methods: `@Graphics/g` on `Shape::draw`, Target only supplies the host `Graphics` (`shapes_openfl.wcn`). See **`doc/language.md`**.
 
 **Does not work as a language yet.** Schema `@` fields are stored as `:external` but still codegen like ordinary components.
 
@@ -28,7 +28,7 @@ Success for the *idea* is other OO languages adopting assemblage programming. WC
 
 - **Cargo pipeline** (`pipeline.cljc`). Compiler bugs throw. Bad user input fails the cargo. Stash intermediate results.
 - **Two grammars** (`grammars.cljc`): one schema grammar, one unified construction/expression grammar. Construction is *not* a grammar generated from the schema.
-- **Markdown mainfile** with ordered sections. Prose around the fences is optional. Reserved sections: `Import`, `Schema`, `Construction`, `Methods`, `Public`, `Target`. Pages without compile sections are **documentation** (ignored by the compiler). Schema-only pages are **libraries** (Haxe classes, no `Main`). Target-provided external signatures are declared in Target `%requires` and apply to local and imported methods alike. **`## Import`** loads sibling assemblages through their `## Public` list (`doc/import.md`). A section heading ending in **`[[page]]`** transcludes that section from the named page before parsing (`doc/import.md`). Other **`[[links]]`** in prose are wiki navigation (live only).
+- **Markdown mainfile** with ordered sections. Prose around the fences is optional. Reserved sections: `Import`, `Schema`, `Construction`, `Methods`, `Public`, `Target`. Pages without compile sections are **documentation** (ignored by the compiler). Schema-only pages are **libraries** (Haxe classes, no `Main`). Target-provided external signatures are declared in Target `%requires` and apply to local and imported methods alike. **`## Import`** loads sibling assemblages through their `## Public` list (`doc/language.md`). A section heading ending in **`[[page]]`** transcludes that section from the named page before parsing. Other **`[[links]]`** in prose are wiki navigation (live only).
 - **One IR.** Schema IR is maps of assemblages, components, and relationship sigils. Construction IR is objects to allocate, assignments, and wiring. Haxe is a backend. We are not inserting extra IR layers between flatten and codegen.
 - **Flattening as a construction problem**, not a second architecture: nested literals become an ordered list of object creations. Finish that so codegen sees values and variable names, not leftover AST — or stop pretending and call it a decorated AST. Prefer finishing flatten.
 - **Examples in `examples/`** are the language spec. Unit tests of abandoned APIs are not.
@@ -74,7 +74,7 @@ Codegen must not grow new knowledge of Instaparse node shapes. If it still does 
 
 | Section | Status | Notes |
 |---|---|---|
-| Schema | Working | See **`doc/schema.md`**. Ordinary, `:`, `$` codegen. Schema `@` fields parsed (`:external`) but not distinct yet. Class name `Main` is reserved. |
+| Schema | Working | See **`doc/language.md`**. Ordinary, `:`, `$` codegen. Schema `@` fields parsed (`:external`) but not distinct yet. Class name `Main` is reserved. |
 | Construction | Working | Same expression grammar as Methods. |
 | Methods | Working for v1 | Official heading `## Methods`. Arithmetic, logic, lets, paths, calls, `if`, collections, strings, typed params, interface signatures, `@Type/name` extern params, in-place `update`. Informal name: reaction. |
 | Target | Working | Terminal: `%terminal` + `%main`. OpenFL/canvas: `%init` / `%step`. `%trace` is callable from Methods when defined in Target. |
@@ -83,7 +83,7 @@ Schema, Construction, Methods, and Target are the program phases.
 
 ## How Target names the environment
 
-Full Target reference (hosts, inject-then-tick, drawing): **`doc/target.md`**.
+Full Target reference (hosts, inject-then-tick, drawing): **`doc/language.md`**.
 
 The host is **not** a CLI flag and **not** a markdown heading. Schema, Construction, and Methods stay the same file. Target names the outer environment, because that is the shearing layer that changes when you move from a Node dump to a windowed frame.
 
@@ -150,7 +150,7 @@ Compile / eyeball / examples / docs / header are the plugin surface. Do not brea
 1. **Cleanup pass on the live path.** Done.
 2. **`$` stubs actually wired.** Done. `update` exists; notify is live.
 3. **Target as a real section.** Done. `%main` (terminal) or `%init`/`%step` (OpenFL). Host `%terminal` / `%openfl`.
-4. **Methods in the expression grammar.** Done for the v1 surface in **`doc/method.md`**.
+4. **Methods in the expression grammar.** Done for the v1 surface in **`doc/language.md`**.
 5. **OpenFL Main.** Done. `bounce_openfl.wcn`, `shapes_openfl.wcn`, `pong_openfl.wcn`. Next on the Haxe path: Gbloink!.
 6. **Live interpreter + browser.** Done for v1 (`doc/live.md`). Canvas: bounce, square, pollution, pong, shapes.
 
