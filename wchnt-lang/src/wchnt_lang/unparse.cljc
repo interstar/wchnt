@@ -141,7 +141,7 @@
 (defn- kv-pair-str
   [pair depth ctx]
   (let [[k v] (children pair)]
-    (str (arg-str k depth ctx) " " (arg-str v depth ctx))))
+    (str (arg-str k depth ctx) ": " (arg-str v depth ctx))))
 
 (defn- unparse-map-construction
   "A {Key:Val k v ...} construction."

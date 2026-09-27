@@ -235,7 +235,7 @@
                                              "{String:Int \"Ada\":3 \"Cy\":5}")))))
     (is (= :MapConstruction
            (first (inner-expr (assert-parses parse-construction
-                                             "{String:Int \"Ada\" 3}")))))
+                                             "{String:Int \"Ada\":3}")))))
     (let [arg-list (construction-arg-list
                     (assert-parses parse-construction
                                    "[:Team name [:Array/Player] {String:Int}]"))]

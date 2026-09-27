@@ -44,8 +44,8 @@
   (testing "array and map constructions survive parse -> unparse -> parse"
     (doseq [text ["[:Array/Shape [:Circle 1 2 3 4] [:Square 5 6 7 8]]"
                   "[:Array/Int 1 2 3]"
-                  "{Int:Shape 1 [:Circle 1 2 3 4]}"
-                  "{Int:Shape 1 [:Circle 1 2 3 4] 2 [:Square 5 6 7 8]}"
+                  "{Int:Shape 1: [:Circle 1 2 3 4]}"
+                  "{Int:Shape 1: [:Circle 1 2 3 4] 2: [:Square 5 6 7 8]}"
                   "{String:Int}"
                   "[:Game [:PlayArea [0 0 800 600]] [:Array/Shape [:Circle 1 2 3 4]]]"]]
       (is (= (g/parse-construction text) (reparse text))

@@ -3,11 +3,19 @@
 The P5 bicycle sketch, translated. `wchntMaths` is injected through the
 factory (a free name in each `@WCHNTMaths` slot collapses to one factory
 argument); every Bicycle keeps the shared reference and pulls `randInt`s in
-`step`. Target draws the scene with the portable `wchntGraphics` API.
+its helpers.
 
 Construction cannot call `maths.randInt` yet (construction lets only accept
 literals/constructions), so the five bikes start from fixed, varied values;
-all the ongoing randomness lives in `Bicycle::step`.
+all the ongoing randomness lives in the Bicycle helpers.
+
+`Bicycle::step` builds **one** new Bicycle per tick. Its small helpers return
+plain values — `randomY`, `freshSpeed`, `freshSize`, `willTipOver`,
+`willDeflate` — instead of rebuilding the whole bike, so the step stays a
+single construction.
+
+Drawing lives in WCHNT `## Methods`: `Game::draw` paints the sky and a coarse
+field gradient, then asks each bike to draw itself. Target only steps and draws.
 
 ## Schema
 
@@ -30,33 +38,83 @@ b5 = [:Bicycle 160 430 45 1 0 0 13172735 maths].
 ## Methods
 
 ```
+Bicycle::randomY = { Int/h | (h / 2) + maths.randInt((h / 2)) }
+
+Bicycle::freshSpeed = { 1 + maths.randInt(4) }
+
+Bicycle::freshSize = { 50 + maths.randInt(50) }
+
+Bicycle::willTipOver = { maths.randInt(800) == 0 }
+
+Bicycle::willDeflate = { maths.randInt(3000) == 0 }
+
 Bicycle::step = { Int/w, Int/h |
-  x1 = x + dx.
-  wrappedX = (x1 > (w + size)).
-  x2 = if (wrappedX) { (0 - (size * 4)) } else { x1 }.
-  y2 = if (wrappedX) { ((h / 2) + maths.randInt((h / 2))) } else { y }.
-  y3 = y2 + dy.
-  fell = (y3 > (h + 100)).
-  y4 = if (fell) { ((h / 2) + maths.randInt((h / 2))) } else { y3 }.
-  dy2 = if (fell) { 0 } else { dy }.
-  dx2 = if (fell) { 1 + maths.randInt(4) } else { dx }.
-  x3 = if (fell) { -100 } else { x2 }.
-  falling = (maths.randInt(800) == 0).
-  dx3 = if (falling) { 0 } else { dx2 }.
-  dy3 = if (falling) { 10 } else { dy2 }.
-  size2 = size - dSize.
-  tiny = (size2 < 1).
-  x4 = if (tiny) { -100 } else { x3 }.
-  size3 = if (tiny) { 50 + maths.randInt(50) } else { size2 }.
-  dSize2 = if (tiny) { 0 } else { dSize }.
-  shrinking = (maths.randInt(3000) == 0).
-  dSize3 = if (shrinking) { 1 } else { dSize2 }.
-  [:Bicycle x4 y4 size3 dx3 dy3 dSize3 colour maths]
+  nx = x + dx.
+  wrapped = nx > (w + size).
+  rideX = if (wrapped) { (0 - (size * 4)) } else { nx }.
+  rideY = if (wrapped) { this.randomY(h) } else { y }.
+  landed = (rideY + dy) > (h + 100).
+  groundX = if (landed) { -100 } else { rideX }.
+  groundY = if (landed) { this.randomY(h) } else { (rideY + dy) }.
+  groundDx = if (landed) { this.freshSpeed() } else { dx }.
+  groundDy = if (landed) { 0 } else { dy }.
+  tipping = this.willTipOver().
+  nextDx = if (tipping) { 0 } else { groundDx }.
+  nextDy = if (tipping) { 10 } else { groundDy }.
+  smaller = size - dSize.
+  regrowing = smaller < 1.
+  nextX = if (regrowing) { -100 } else { groundX }.
+  nextSize = if (regrowing) { this.freshSize() } else { smaller }.
+  dSize0 = if (regrowing) { 0 } else { dSize }.
+  deflating = this.willDeflate().
+  nextDSize = if (deflating) { 1 } else { dSize0 }.
+  [:Bicycle nextX groundY nextSize nextDx nextDy nextDSize colour maths]
+}
+
+Bicycle::frontWheelX = { x + size + (size / 20) }
+
+Bicycle::draw = { @WCHNTGraphics/g |
+  fx = this.frontWheelX().
+  g.beginFill(colour)
+   .lineStyle(1, 0x000000)
+   .drawCircle(x, y, size / 2)
+   .drawCircle(x, y, size / 4)
+   .drawCircle(fx, y, size / 2)
+   .drawCircle(fx, y, size / 4)
+   .drawLine(x, y, fx, y)
+   .noStroke()
+}
+
+Game::fieldColour = { Int/i, Int/horizon |
+  r = 150 - (((i + 1) * horizon) / 100).
+  rr = if (r > 0) { r } else { 0 }.
+  g = 255 - (((i + 1) * horizon) / 200).
+  gg = if (g > 0) { g } else { 0 }.
+  b = 100 - (((i + 1) * horizon) / 50).
+  bb = if (b > 0) { b } else { 0 }.
+  (rr * 65536) + (gg * 256) + bb
+}
+
+Game::drawField = { @WCHNTGraphics/g |
+  horizon = h / 2.
+  bandH = 8.
+  bands = horizon / bandH.
+  rows = bands.times({ Int/b |
+    y = horizon + (b * bandH).
+    g.beginFill(this.fieldColour(b * bandH, horizon)).drawRect(0, y, w, bandH).endFill()
+  }).
+  g
 }
 
 Game::step = {
   moved = bikes.map({ Bicycle/b | b.step(w, h) }).
   [:Game moved w h]
+}
+
+Game::draw = { @WCHNTGraphics/g |
+  sky = g.background(0x18EAFF, 0.196).clear().
+  field = this.drawField(sky).
+  bikes.fold(field, { acc, Bicycle/b | b.draw(acc) })
 }
 ```
 
@@ -78,35 +136,6 @@ function init() {
 %step
 function step() {
     game = game.step();
-    var w = game.w;
-    var h = game.h;
-    var horizon = h / 2;
-
-    wchntGraphics.background(0x18EAFF, 0.196);
-    wchntGraphics.clear();
-
-    var r = 150, g = 255, b = 100;
-    var dr = horizon / 100, dg = horizon / 200, db = horizon / 50;
-    for (var i = 0; i < horizon; i++) {
-        r -= dr; g -= dg; b -= db;
-        var rr = Math.max(0, r) | 0;
-        var gg = Math.max(0, g) | 0;
-        var bb = Math.max(0, b) | 0;
-        wchntGraphics.beginFill(rr * 65536 + gg * 256 + bb);
-        wchntGraphics.drawRect(0, horizon + i, w, 2);
-        wchntGraphics.endFill();
-    }
-
-    for (var bk of game.bikes) {
-        var fx = bk.x + bk.size + ((bk.size / 20) | 0);
-        wchntGraphics.beginFill(bk.colour);
-        wchntGraphics.lineStyle(1, 0x000000);
-        wchntGraphics.drawCircle(bk.x, bk.y, bk.size / 2);
-        wchntGraphics.drawCircle(bk.x, bk.y, bk.size / 4);
-        wchntGraphics.drawCircle(fx, bk.y, bk.size / 2);
-        wchntGraphics.drawCircle(fx, bk.y, bk.size / 4);
-        wchntGraphics.drawLine(bk.x, bk.y, fx, bk.y);
-        wchntGraphics.noStroke();
-    }
+    game.draw(wchntGraphics);
 }
 ```

@@ -10,6 +10,7 @@ square_canvas        square
 pollution_canvas     pollution
 pong_canvas          pong
 adventure_cli        adventure
+ispy_cli             ispy
 writepaths           writepaths
 flyingA              flyingA
 flyingB              flyingB

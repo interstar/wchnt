@@ -1,7 +1,17 @@
-# Bounce on canvas (live interpreter)
+# Bounce
+
+A simple bouncing ball example to get you started.
+
+This is a markdown document, but it is, *also* wchnt source code which can be executed by clicking the Run button. The section headings and code blocks are an essential part of the syntax of the language.
  
 
 ## Schema
+
+The **Schema** is where we write the overall shape of the data in our program. In this case we are defining three classes called `Game`, `PlayArea` and `Ball` and how they fit together.
+
+A Game is made of or contains a PlayArea and a Ball. The PlayArea holds the dimensions of the play area. Two Ints called `width` and `height` respectively. Ball has `x` and `y` coordinates. `dx` and `dy` are the current movement in each dimension. And `rad` is radius.
+
+Note how all three classes, their components and their relationships are defined in one place.
 
 ```
 Game = PlayArea Ball
@@ -10,6 +20,8 @@ Ball = Int/x Int/y Int/dx Int/dy Int/rad
 ```
 
 ## Construction
+
+The **Construction** actually builds the objects with their initial data values. We use nested square bracket lists, with the class-name as the first element (with a colon in front), and the values of each field in the same order they appear in the schema. A Game is made of the PlayArea and the Ball, so it needs to be construction with constructions of those objects nested inside.
 
 ```
 [:Game
@@ -20,11 +32,22 @@ Ball = Int/x Int/y Int/dx Int/dy Int/rad
 
 ## Methods
 
+The **Methods** section is where we define the behaviour of all the classes. These are just like methods in other OO languages except we define them with ClassName::methodName and we assign a code block to the name. A code block is in curly brackets. The first items before the vertical bar `|` are the arguments; in the `bounced` case a `PlayArea` called `r`. After the bar we have a sequence of statements separated by `.` The last statement in the block is the value it returns. And is usually the construction of another object. Earlier statments are all "let-bindings" ie. assignments of intermediate values to temporary variables.
+
+Note that the `if` in wchnt is an expression which evaluates to either the first or the second blocks.
+
+Note that the method `bounced` does not change the Ball in place. Instead it returns a new Ball with the position changed and the direction of movement reversed if it has collided with the boundaries of the PlayArea.
+
+Similarly, the `step()` method of `Game` is returning a new Game with the same playArea, but a bounced Ball. 
+
+The `draw()` methods receive a `@WCHNTGraphics` object as argument from the enclosing platform or environment. This is a canvas or graphicsContext on which our code can draw.
+
+
 ```
 Ball::bounced = { PlayArea/r |
-  ndx = if ((x < 0) or (x > r.width)) { -dx  } else { dx }.
-  ndy = if ((y < 0) or (y > r.height)) { -dy } else { dy }.
-  [:Ball (x+ndx) (y+ndy) ndx ndy rad]
+  newDx = if ((x < 0) or (x > r.width)) { -dx  } else { dx }.
+  newDy = if ((y < 0) or (y > r.height)) { -dy } else { dy }.
+  [:Ball (x+newDx) (y+newDy) newDx newDy rad]
 }
 
 
@@ -43,11 +66,22 @@ PlayArea::draw = { @WCHNTGraphics/g |
 Game::draw = { @WCHNTGraphics/g |
   drawnPA = playArea.draw(g).
   drawnBal = ball.draw(g).
-  this
+  g
 }
 ```
-
 ## Target
+
+The **Target** section in wchnt is a place to put the code which is specific to the target platform on which our code can run. Very often code we write must interface with some external context and in most languages that is usually relegated to obscure config files where it's hard to find and reason about.
+
+In wchnt we have a philosophy of trying to make this as visible and accessible as possible. To the extent of putting it in the same file as the rest of the code. A Target starts by saying which target type, or type of context this program is meant to be inside. In this case, the `%canvas` which is the graphical canvas context of a wchnt live environment.
+
+The %canvas target type already implies certain things. That our program will consist of an %init phase which is called once at the beginning, and a %step phase which is called repeatedly on every step or frame in a recurring game loop. We don't have to define the outer or game loop ourselves. This is implicit in the choice of the %canvas target. Other targets provided with wchnt put is in other contexts and provide other callbacks into our code. 
+
+Within the subsections titled %init and %step we put target native code. Here in the live environment that is JS. In other environments it might be another language. 
+
+You'll see that the %init phase declares the game variable. And an init() function which calls GameAssemblage.factory(). That factory() function constructs the entire assemblage of objects based on the `Construction` section of the program above. 
+
+In the %step phase we declare the step() which evolves the position of the ball (with `game = game.step();`) and clears that canvas and asks the game to draw itself again.
 
 ```
 %canvas
@@ -66,3 +100,4 @@ function step() {
     game.draw(wchntGraphics);
 }
 ```
+

@@ -21,6 +21,7 @@ few headings — `## Schema`, `## Construction`, `## Methods`, and `## Target`.
 - **[[pollution]]** — a little arcade game. Click the canvas after Run, then steer with the
   arrow keys.
 - **[[adventure]]** — a ten-room text world. Type `N` `E` `S` `W` and press Enter.
+- **[[ispy]]** — a text guessing game. "I spy with my little eye…" — type your guesses.
 - **[[writepaths]]** — a six-level world. Type `jets`, `ocean`, `resize`, or a fountain name.
 - **[[flyingA]]** — a shape box that publishes `Shape`, `make`, `addShape`, and `update!`.
 - **[[flyingB]]** — imports flyingA and adds a `Pentagon`. Run this page to see the membrane.

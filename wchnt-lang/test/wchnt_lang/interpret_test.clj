@@ -444,8 +444,8 @@
                 "[:Game\n"
                 "  [:WorldMap\n"
                 "    {LocationId:Location\n"
-                "      Village [:Location \"square\" {Direction:LocationId N:Market}]\n"
-                "      Market [:Location \"stalls\" {Direction:LocationId W:Village}]\n"
+                "      Village: [:Location \"square\" {Direction:LocationId N:Market}]\n"
+                "      Market: [:Location \"stalls\" {Direction:LocationId W:Village}]\n"
                 "    }]\n"
                 "  Village]\n"
                 "```\n"))
