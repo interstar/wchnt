@@ -1,0 +1,98 @@
+# Collection & host-type combinations
+
+Every Construction shape for **arrays** and **maps**, both **tagged**
+(`[:Array/T …]`, `{K:V …}`) and **bare** (types inferred from the Schema slot),
+plus ordinary Schema classes, **platform** values (via `%requires` CONSTRUCT),
+and **`@` externals**.
+
+Sigils attach to components, not to `[Array]` / `{Map}` elements. Platform
+dates appear as bare `Date` in Schema once Target declares `CONSTRUCT`; the
+external maths handle remains a root `@` factory argument.
+
+Bare `{name:value}` with two Names is parsed as an empty typed map
+(`Map<name,value>`), so Methods uses `{String:Int who:n}` for the rewrite.
+
+## Schema
+
+```
+Person = String/name
+Bundle =
+  [String]/taggedStrings
+  [String]/bareStrings
+  [Person]/taggedPeople
+  [Person]/barePeople
+  {String:Int}/taggedScores
+  {String:Int}/bareScores
+  [Date]/taggedDates
+  [Date]/bareDates
+  {String:Date}/taggedByName
+  {String:Date}/bareByName
+  Date/founded
+  @WCHNTMaths/maths
+```
+
+## Construction
+
+```
+ada = [:Person "Ada"].
+bob = [:Person "Bob"].
+d1815 = [:Date 1815 11 10 0 0 0].
+d1970 = [:Date 1970 0 1 0 0 0].
+
+[:Bundle
+  [:Array/String "red" "green"]
+  ["blue" "white"]
+  [:Array/Person ada bob]
+  [ada bob]
+  {String:Int "Ada":3 "Bob":0}
+  {"Cy":5 "Di":1}
+  [:Array/Date d1815 d1970]
+  [d1815 d1970]
+  {String:Date "ada":d1815 "bob":d1970}
+  {"cy":d1815 "di":d1970}
+  d1815
+  maths]
+```
+
+## Methods
+
+```
+Bundle::pi = { maths.sin(0) }
+
+Bundle::relabel = { String/who, Int/n |
+  [:Bundle
+    taggedStrings
+    bareStrings
+    taggedPeople
+    barePeople
+    taggedScores
+    {String:Int who:n}
+    taggedDates
+    bareDates
+    taggedByName
+    bareByName
+    founded
+    maths]
+}
+```
+
+## Target
+
+```
+%terminal
+
+%requires
+Date
+Date::CONSTRUCT(Int, Int, Int, Int, Int, Int) -> Date
+Date::getFullYear() -> Int
+WCHNTMaths::sin(Float) -> Float
+
+%main
+public static function main():Void {
+    var helper = new WCHNTHelper();
+    var b = BundleAssemblage.factory(wchntMaths);
+    wchntConsole.println(b.pi());
+    wchntConsole.println(b.toConstruction(0, helper));
+    wchntConsole.println(b.relabel("Eve", 9).toConstruction(0, helper));
+}
+```

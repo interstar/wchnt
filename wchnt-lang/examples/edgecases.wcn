@@ -1,0 +1,92 @@
+# Edge cases: reactive `$` and context `:`
+
+Positive cases that compile and run. Negative context / `$`-on-interface
+cases live in `test/wchnt_lang/edgecases_test.clj` (they must fail the cargo).
+
+Covers:
+
+1. ~~`Car = :Engine` + `Truck = :Engine`~~ — compile error (unit test)
+2. `A = $B $C` — parent updates when either observable updates
+3. `A = $B` and `C = $D` — independent; no crosstalk
+4. Two `A`s sharing one `B` — both subscribe to the same identity
+5. ~~`A = $I` with `I = B | C`~~ — compile error (unit test)
+6. ~~`:` plus ordinary on another parent~~ — compile error (unit test)
+7. `Holder = Clock` and `Watcher = $Clock` — Clock is observable; Holder does not subscribe
+
+## Schema
+
+```
+EdgeCases = MultiObs Independent FanOut HolderWatch
+
+MultiObs = $ClockA $Pulse
+ClockA = Int/t
+Pulse = Int/n
+
+Independent = Left Right
+Left = $Alpha
+Right = $Beta
+Alpha = Int/a
+Beta = Int/b
+
+FanOut = Sub/s1 Sub/s2
+Sub = $Shared
+Shared = Int/x
+
+HolderWatch = Holder Watcher
+Holder = Clock
+Watcher = $Clock
+Clock = Int/c
+```
+
+## Construction
+
+```
+shared = [:Shared 0].
+clock = [:Clock 0].
+[:EdgeCases
+  [:MultiObs [:ClockA 0] [:Pulse 0]]
+  [:Independent [:Left [:Alpha 0]] [:Right [:Beta 0]]]
+  [:FanOut [:Sub shared] [:Sub shared]]
+  [:HolderWatch [:Holder clock] [:Watcher clock]]]
+```
+
+## Methods
+
+```
+ClockA::update! = { [:ClockA (t + 1)] }
+Pulse::update! = { [:Pulse (n + 1)] }
+MultiObs::update! = { [:MultiObs clockA pulse] }
+
+Alpha::update! = { [:Alpha (a + 1)] }
+Beta::update! = { [:Beta (b + 1)] }
+Left::update! = { [:Left alpha] }
+Right::update! = { [:Right beta] }
+
+Shared::update! = { [:Shared (x + 1)] }
+Sub::update! = { [:Sub shared] }
+
+Clock::update! = { [:Clock (c + 1)] }
+Watcher::update! = { [:Watcher clock] }
+```
+
+## Target
+
+```
+%terminal
+
+%main
+public static function main():Void {
+    var root = EdgeCasesAssemblage.factory();
+    var helper = new WCHNTHelper();
+    // (2) either $ child notifies MultiObs
+    root.multiObs.clockA.update_mutates();
+    root.multiObs.pulse.update_mutates();
+    // (3) Alpha does not touch Right / Beta
+    root.independent.left.alpha.update_mutates();
+    // (4) one Shared notifies both Subs
+    root.fanOut.s1.shared.update_mutates();
+    // (7) Clock is observable; Watcher subscribed, Holder is not
+    root.holderWatch.watcher.clock.update_mutates();
+    trace(root.toConstruction(0, helper));
+}
+```

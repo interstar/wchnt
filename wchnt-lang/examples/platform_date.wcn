@@ -1,0 +1,60 @@
+# Platform Date
+
+Minimal example of a **platform-constructible** host type: Schema uses bare
+`Date` once Target declares `Date::CONSTRUCT` in `%requires`. Construction
+writes `[:Date …]`.
+
+Haxe’s `Date` constructor needs all six ints
+`(year, month, day, hour, min, sec)`; month is **0-based** (December = 11).
+Methods use real Haxe names (`getFullYear`).
+
+## Schema
+
+```
+Person = String/name Date/dob
+```
+
+## Construction
+
+```
+[:Person "Ada" [:Date 1815 11 10 0 0 0]]
+```
+
+## Methods
+
+```
+Person::bornYear = { dob.getFullYear() }
+
+Person::caption = {
+  y = this.bornYear().
+  name.concat(" born ").concat(y.str())
+}
+
+Person::withDob = { Int/y, Int/m, Int/d |
+  [:Person name [:Date y m d 0 0 0]]
+}
+```
+
+## Target
+
+```
+%terminal
+
+%requires
+Date
+Date::CONSTRUCT(Int, Int, Int, Int, Int, Int) -> Date
+Date::getFullYear() -> Int
+
+%main
+public static function main():Void {
+    var helper = new WCHNTHelper();
+    var p = PersonAssemblage.factory();
+    wchntConsole.println(p.caption());
+    wchntConsole.println(p.toConstruction(0, helper));
+}
+```
+
+Pretty-print shows `%instanceOfDate`, not a fake `[:Date …]` round-trip
+(ctor args cannot be recovered from a live host value).
+
+Live twin: `live-examples/platform_date.wcn` (`%cli-live`, JS `Date`).
