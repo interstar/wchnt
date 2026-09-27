@@ -23,24 +23,25 @@
   (or (:external-types schema-ir) #{}))
 
 (defn get-platform-constructible-types
-  "Host types marked % in Schema; constructible via Type::CONSTRUCT in %requires."
+  "Host types born via [:Type …] because Target declares Type::CONSTRUCT.
+   Populated from %requires at Target merge — not from a Schema sigil."
   [schema-ir]
   (or (:platform-constructible-types schema-ir) #{}))
 
 (defn platform-constructible-type?
-  "True for %-constructible host types."
+  "True when type-name may be constructed with [:Type …] (has CONSTRUCT)."
   [schema-ir type-name]
   (contains? (get-platform-constructible-types schema-ir) type-name))
 
 (defn borrowed-external-type?
-  "True for @-borrowed host types (not %). Types may also appear in
-  :external-types via Target merge; exclude % when both sets contain the name."
+  "True for @-borrowed host types (not CONSTRUCT-enabled). Types may also appear in
+  :external-types via Target merge; exclude constructibles when both sets contain the name."
   [schema-ir type-name]
   (and (contains? (get-external-types schema-ir) type-name)
        (not (platform-constructible-type? schema-ir type-name))))
 
 (defn external-type?
-  "True for any host type: @ borrowed or % platform-constructible.
+  "True for any host type: @ borrowed or platform-constructible (CONSTRUCT).
    Used by Methods typing / %requires method resolution. Prefer
    borrowed-external-type? or platform-constructible-type? when the
    Construction or pretty-print rule differs."

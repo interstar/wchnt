@@ -41,7 +41,10 @@
       (assoc :target-ir target-ir)
       (update :external-types
               #(into (or % #{})
-                     (target-requires/provided-types (:requires target-ir))))))
+                     (target-requires/provided-types (:requires target-ir))))
+      (update :platform-constructible-types
+              #(into (or % #{})
+                     (target-requires/constructible-types (:requires target-ir))))))
 
 (defn- parse-methods-text
   [text schema-ir target-ir]

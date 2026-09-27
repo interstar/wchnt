@@ -175,28 +175,31 @@ An unrecognised bare name is **not** silently treated as a host type.
 | **Builtin primitives** | `Int`, `Float`, `String`, `Bool` | Bare name; closed set; no Schema definition |
 | **Schema types** | `Ball`, `Shape`, `Action` | Defined on a Schema line (class, sum, or enum) |
 | **Borrowed externals `@`** | `WCHNTGraphics`, `WCHNTMaths`, OpenFL `Graphics` | Explicit `@Type` (Schema field or Methods param) plus Target `%requires` |
-| **Platform-constructible `%`** | `Date`, `Regex`, `UUID`, `Path` | Explicit `%Type` plus `Type::CONSTRUCT(...)` in `%requires` |
+| **Platform-constructible** | `Date`, `Regex`, `UUID`, `Path` | Bare Schema name + `Type::CONSTRUCT(...)` in `%requires` |
 
-**Primitives** are the only outsiders that omit `@` / `%`. They are language
-scalars supplied by every host and by the CLJC interpreter. They cannot carry
-relationship sigils, and they are not identity objects.
+**Primitives** are the only closed outsiders that need no Target declaration.
+They are language scalars supplied by every host and by the CLJC interpreter.
+They cannot carry relationship sigils, and they are not identity objects.
 
 **Schema types** are the assemblage. Ordinary / `:` / `$` / `+` components
-must name a Schema class (or, for ordinary fields, a primitive). `$` on a sum
-interface is rejected — observables are concrete classes.
+must name a Schema class (or, for ordinary fields, a primitive or a
+platform-constructible host type). `$` on a sum interface is rejected —
+observables are concrete classes.
 
 **`@` externals** are borrowed host values. Use `@` when the host owns
 lifecycle or the value is a capability injected once (graphics, console,
 maths, imported assemblage root). Free Construction names in `@` slots become
 factory parameters. You cannot write `[:Pen …]` into an `@` slot.
 
-**`%` platform-constructibles** are value-like host data born inside the
-assemblage. Schema `%Date/dob` requires `Date::CONSTRUCT(...)` in `%requires`.
-Construction and Methods write `[:Date "1815-12-10"]`; the compiler emits host
-construction (`new Date(...)` on Haxe, a registry ctor on the interpreter).
-Free names are **not** allowed in `%` slots. Both `@` and `%` stay opaque:
-only methods declared in `%requires` are callable. Prefer `@` for harness
-singletons; use `%` for dates, patterns, ids, paths. See
+**Platform-constructibles** are value-like host data born inside the
+assemblage. There is **no Schema `%` sigil** — if Target declares
+`Date::CONSTRUCT(...)`, Schema may write bare `Date/dob`, `[Date]/dates`,
+or `{String:Date}/byName`, and Construction/Methods write `[:Date …]`.
+The compiler emits host construction (`new Date(...)` on Haxe, a registry
+ctor on the interpreter). Free names are **not** allowed in those slots.
+Host values stay opaque: only methods declared in `%requires` are callable.
+Prefer `@` for harness singletons; use CONSTRUCT-enabled bare types for
+dates, patterns, ids, paths. See
 [`platform_constructable.md`](platform_constructable.md).
 
 Related forms that are also language-built, but not Schema primitives:
@@ -251,11 +254,10 @@ Sigils attach to a **single class component**, not to `[Array]` or `{Map}`.
 
 | Sigil | Name | Meaning |
 |-------|------|---------|
-| *(none)* | ordinary | owned by the parent; built alongside it |
+| *(none)* | ordinary | owned by the parent; built alongside it (Schema class, primitive, or CONSTRUCT-enabled host type) |
 | `:` | context-specific | child belongs only to this parent; gets a back-reference |
 | `+` | delegate | owned child whose fields and methods are promoted onto the parent |
 | `@` | external | borrowed / opaque; lifecycle elsewhere |
-| `%` | platform-constructible | host value born via `[:Type …]` + `Type::CONSTRUCT` |
 | `$` | reactive | observable; parent subscribes to `update!` |
 
 ```wchnt
@@ -264,7 +266,7 @@ Engine = Int/cylinders
 Game = PlayArea Ball $Time
 Student = String/id +BasePerson
 Chronicle = String/scribe @Quest
-Person = String/name %Date/dob
+Person = String/name Date/dob
 ```
 
 #### Ordinary (no sigil)
@@ -318,12 +320,14 @@ An `@` component is borrowed. Its lifecycle belongs elsewhere.
 - As a **Methods parameter** (`@WCHNTGraphics/g`), it is a host type. Declare
   the class and every method WCHNT calls in Target `%requires`.
 
-#### Platform-constructible (`%`)
+#### Platform-constructible (bare name + `CONSTRUCT`)
 
-A `%` component is a host value the assemblage constructs itself.
+A host type with `Type::CONSTRUCT(...)` in `%requires` may appear as an
+ordinary Schema field (or as an array/map element). No Schema sigil.
 
 ```wchnt
-Person = String/name %Date/dob
+Person = String/name Date/dob
+Bundle = [Date]/dates {String:Date}/byName
 ```
 
 ```wchnt
@@ -340,8 +344,10 @@ Date::year() -> Int
 - `CONSTRUCT` is **requires metadata only** — never call `dob.CONSTRUCT(...)`.
   WCHNT writes `[:Date …]`; the compiler looks up `CONSTRUCT` and emits host
   construction.
-- Free names are forbidden in `%` slots (unlike `@`).
-- Example: `examples/platform_date.wcn`.
+- Free names are forbidden in those slots (unlike `@`).
+- Sigils never go inside `[…]` / `{…}`; CONSTRUCT is what makes `Date` legal
+  there without a Stamp wrapper.
+- Example: `examples/platform_date.wcn`, `examples/collections_combos.wcn`.
 
 #### Reactive (`$`)
 
@@ -389,8 +395,11 @@ Rules:
 
 - Class labels may be omitted where the expected class is known from Schema.
   Bracket structure is never collapsed.
-- Arrays: `[:Array/Player [:Player "Ada"] [:Player "Bob"]]`.
-- Maps: `{String:Int "Ada": 42}` (empty: `{String:Int}`).
+- Arrays: `[:Array/Player [:Player "Ada"] [:Player "Bob"]]`, or a bare
+  `["Ada" "Bob"]` / `[[:Player "Ada"] …]` when the Schema slot is already
+  `[String]` / `[Player]`.
+- Maps: `{String:Int "Ada": 42}` (empty: `{String:Int}`), or a bare
+  `{"Ada": 42}` when the Schema slot is already `{String:Int}`.
 - Sum types must always be tagged: `[:Circle 5]` vs `[:Triangle 4 8]`.
 - Intermediate bindings with `=` are allowed; statements end with `.`:
 
@@ -413,10 +422,10 @@ Sketch = String/name @Pen
 Generated factory: `SketchAssemblage.factory(pen: Pen)`. Target passes
 `SketchAssemblage.factory(pen)`.
 
-Platform `%` slots take a host construction instead:
+Platform-constructible slots take a host construction instead:
 
 ```wchnt
-Person = String/name %Date/dob
+Person = String/name Date/dob
 [:Person "Ada" [:Date "1815-12-10"]]
 ```
 
@@ -663,8 +672,8 @@ separate Target Methods section.
 ### `%requires`
 
 Every host class and every host method signature that WCHNT (including
-imported assemblages) calls must be declared. For `%` types, also declare
-construction:
+imported assemblages) calls must be declared. For constructible host types,
+also declare construction:
 
 ```text
 %requires
@@ -705,8 +714,8 @@ clear():WCHNTConsole         (fluent)
 
 `format` pretty-prints objects via construction syntax; bare strings pass
 through. Host values print as opaque instance tokens — `@instanceOfPen` for
-borrowed `@` slots and `%instanceOfDate` for platform `%` slots — never a
-fake `[:Date …]` round-trip (ctor args are not recoverable). Prefer
+borrowed `@` slots and `%instanceOfDate` for platform-constructible values —
+never a fake `[:Date …]` round-trip (ctor args are not recoverable). Prefer
 `wchntConsole.println(...)` from Target — do not call `toConstruction` by hand.
 
 ### `WCHNTGraphics`

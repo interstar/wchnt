@@ -144,7 +144,7 @@
   [:map
    [:component-name string?]
    [:type-name string?]
-   [:relationship [:enum :ordinary :context-specific :external :reactive :delegate :platform-constructible]]
+   [:relationship [:enum :ordinary :context-specific :external :reactive :delegate]]
    [:optional-name [:maybe string?]]])
 
 (def AssemblageSchema

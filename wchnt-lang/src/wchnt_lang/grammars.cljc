@@ -29,7 +29,7 @@ KeyType = Name
 ValType = ArrayType / Name
 AltName = Name
 EnumValue =  #'[^\"]+'
-Sigil = ':' / '@' / '$' / '+' / '%'
+Sigil = ':' / '@' / '$' / '+'
 EmptyType = '_'
 ")
 
@@ -117,6 +117,7 @@ WithAssign = WithPath <'='> Expression
 <WithPath> = FieldPath / VariableRef
 ArrayConstruction = <'['> <':'> <'Array'> <'/'> Type ArgList <']'>
 MapConstruction = <'{'> KeyType <':'> ValType KeyValueList? <'}'>
+                / <'{'> KeyValueList <'}'>
 MethodCall = (StringLiteral / IntLiteral / VariableRef) (<#'\\.'> CallMethodName)+ <'('> MethodArgList <')'> (<#'\\.'> CallMethodName <'('> MethodArgList <')'>)*
 FieldPath = #'[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)+'
 VariableRef = Name
@@ -135,7 +136,7 @@ ArgList = ArgItem*
 MethodArgList = (MethodArgItem (<','> MethodArgItem)*)?
 MethodArgItem = Expression
 KeyValueList = KeyValuePair (<','>? WS* KeyValuePair)*
-KeyValuePair = Expression (<':'>)? Expression
+KeyValuePair = Expression <':'> Expression
 <Literal> = FloatLiteral / IntLiteral / StringLiteral / BoolLiteral
 IntLiteral = #'0[xX][0-9a-fA-F]+|(-)?[0-9]+'
 FloatLiteral = #'(-)?[0-9]+\\.[0-9]+'

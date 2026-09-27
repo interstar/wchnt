@@ -71,6 +71,31 @@
               (constructor-context-lines components schema-ir class-name)
               (constructor-subscribe-lines components)))))
 
+(defn- array-elem-type-name
+  [type-name]
+  (when (and (string? type-name) (str/starts-with? type-name "Array<")
+             (str/ends-with? type-name ">"))
+    (subs type-name 6 (dec (count type-name)))))
+
+(defn- map-val-type-name
+  [type-name]
+  (when (and (string? type-name) (str/starts-with? type-name "Map<")
+             (str/ends-with? type-name ">"))
+    (let [inner (subs type-name 4 (dec (count type-name)))
+          comma (str/index-of inner ",")]
+      (when comma
+        (str/trim (subs inner (inc comma)))))))
+
+(defn- host-instance-token
+  [schema-ir type-name]
+  (cond
+    (ir/platform-constructible-type? schema-ir type-name)
+    (str "%instanceOf" type-name)
+    (or (ir/borrowed-external-type? schema-ir type-name)
+        (ir/external-type? schema-ir type-name))
+    (str "@instanceOf" type-name)
+    :else nil))
+
 (defn generate-to-construction-parts
   "Generate the parts for a toConstruction method using the new helper pattern"
   [components schema-ir]
@@ -79,9 +104,13 @@
           type-name (:type-name component)]
       (cond
         (str/starts-with? type-name "Array<")
-        (str "helper.arrayToConstruction(this." component-name ", depth + 1)")
+        (if-let [token (host-instance-token schema-ir (array-elem-type-name type-name))]
+          (str "helper.opaqueArrayToConstruction(this." component-name ", depth + 1, '" token "')")
+          (str "helper.arrayToConstruction(this." component-name ", depth + 1)"))
         (str/starts-with? type-name "Map<")
-        (str "helper.mapToConstruction(this." component-name ", depth + 1)")
+        (if-let [token (host-instance-token schema-ir (map-val-type-name type-name))]
+          (str "helper.opaqueMapToConstruction(this." component-name ", depth + 1, '" token "')")
+          (str "helper.mapToConstruction(this." component-name ", depth + 1)"))
         ;; Handle primitive types (fix the string quoting issue)
         (= type-name "String")
         (str "'\"' + this." component-name " + '\"'")

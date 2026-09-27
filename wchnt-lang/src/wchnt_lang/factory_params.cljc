@@ -31,9 +31,10 @@
   [component]
   (= :external (:relationship component)))
 
-(defn- platform-constructible?
-  [component]
-  (= :platform-constructible (:relationship component)))
+(defn- platform-constructible-slot?
+  "Host types with CONSTRUCT (from %requires) may not take free names."
+  [schema-ir component]
+  (ir/platform-constructible-type? schema-ir (:type-name component)))
 
 (defn- add-param
   [params name type-name]
@@ -70,12 +71,13 @@
                 [])]
     (reduce (fn [ps item]
               (let [inner (unwrap item)
-                    class-name (if (and (ast-utils/node-type? inner
-                                                              :InnerObjectConstruction)
-                                        (ast-utils/node-type? (second inner) :ClassName))
-                                 (second (second inner))
-                                 el-type)]
-                (walk-node item class-name 0 schema-ir enums bound ps)))
+                    untagged-inner?
+                    (and (ast-utils/node-type? inner :InnerObjectConstruction)
+                         (not (ast-utils/node-type? (second inner) :ClassName)))]
+                ;; Element type is not a parent assemblage — do not slot-at(el-type, 0).
+                (if untagged-inner?
+                  (walk-object inner el-type schema-ir enums bound ps)
+                  (walk-node item nil nil schema-ir enums bound ps))))
             params
             items)))
 
@@ -93,8 +95,8 @@
         (external? slot)
         (add-param params name (:type-name slot))
 
-        (platform-constructible? slot)
-        (throw (ex-info (str "Free name '" name "' is not allowed in a %"
+        (platform-constructible-slot? schema-ir slot)
+        (throw (ex-info (str "Free name '" name "' is not allowed in a "
                              (:type-name slot)
                              " slot; construct with [:" (:type-name slot)
                              " ...] or bind a let to such a construction")

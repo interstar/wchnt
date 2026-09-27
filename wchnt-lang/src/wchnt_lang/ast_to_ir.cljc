@@ -26,7 +26,6 @@
                        "@" :external
                        "$" :reactive
                        "+" :delegate
-                       "%" :platform-constructible
                        nil :ordinary
                        :ordinary)
         component-name (if optional-name
@@ -78,42 +77,6 @@
               (map :type-name))
         assemblages))
 
-(defn- collect-platform-constructible-types-from-assemblages
-  [assemblages]
-  (into #{}
-        (comp (mapcat :components)
-              (filter #(= :platform-constructible (:relationship %)))
-              (map :type-name))
-        assemblages))
-
-(def ^:private reserved-platform-type-names
-  #{"Int" "Float" "String" "Bool"})
-
-(defn- validate-platform-constructible-components!
-  "Fail fast when % is applied to a primitive, collection, or Schema class."
-  [assemblages interfaces enums]
-  (let [schema-names (into (set (map :name assemblages))
-                           (concat (map :name interfaces)
-                                   (map :name enums)))]
-    (doseq [assemblage assemblages
-            component (:components assemblage)
-            :when (= :platform-constructible (:relationship component))
-            :let [type-name (:type-name component)]]
-      (when (contains? reserved-platform-type-names type-name)
-        (throw (ex-info (str "%" type-name " is invalid: builtins cannot be platform-constructible")
-                        {:type-name type-name
-                         :parent (:name assemblage)})))
-      (when (or (str/starts-with? type-name "Array<")
-                (str/starts-with? type-name "Map<"))
-        (throw (ex-info (str "%" type-name " is invalid: collection types cannot be platform-constructible")
-                        {:type-name type-name
-                         :parent (:name assemblage)})))
-      (when (contains? schema-names type-name)
-        (throw (ex-info (str "%" type-name " is invalid: Schema-defined classes cannot be platform-constructible")
-                        {:type-name type-name
-                         :parent (:name assemblage)})))))
-  assemblages)
-
 (defn build-context-relationships
   "Build context relationship mappings from schema AST"
   [schema-ast]
@@ -155,6 +118,24 @@
   [type-name]
   (or (str/starts-with? type-name "Array<")
       (str/starts-with? type-name "Map<")))
+
+(defn- array-element-type-name
+  "Extract T from Array<T>. Nil when type-name is not an Array<>."
+  [type-name]
+  (when (and (string? type-name) (str/starts-with? type-name "Array<")
+             (str/ends-with? type-name ">"))
+    (subs type-name 6 (dec (count type-name)))))
+
+(defn- map-key-val-type-names
+  "Extract [K V] from Map<K, V>. Nil when type-name is not a Map<>."
+  [type-name]
+  (when (and (string? type-name) (str/starts-with? type-name "Map<")
+             (str/ends-with? type-name ">"))
+    (let [inner (subs type-name 4 (dec (count type-name)))
+          comma (str/index-of inner ",")]
+      (when comma
+        [(str/trim (subs inner 0 comma))
+         (str/trim (subs inner (inc comma)))]))))
 
 (defn- reactive-pairs-from-composition-line
   [composition-line]
@@ -425,7 +406,6 @@
     (assert-inlet-only-on-classes! schema-ast)
     (let [interfaces (map transform-disjunction-line disjunction-lines)
           enums (map transform-enum-line enum-lines)
-          _ (validate-platform-constructible-components! assemblages interfaces enums)
           context-relationships (build-context-relationships schema-ast)
           interface-implementers (build-interface-implementers schema-ast)
           {:keys [observable-classes subscriber-classes]} (build-observable-and-subscriber-classes schema-ast)
@@ -439,8 +419,6 @@
                                    interface-implementers observable-classes subscriber-classes
                                    debug-methods
                                    (collect-external-types-from-assemblages assemblages))
-              :platform-constructible-types
-              (collect-platform-constructible-types-from-assemblages assemblages)
               :mailbox-classes mailbox-classes
               :mutable-classes mutable-classes)))))
 
@@ -708,7 +686,8 @@
                            " ...]; pass a factory parameter or call")
                       {:class-name class-name}))
 
-      (some #(= (:name %) class-name) (:assemblages schema-ir))
+      (or (collection-type-name? class-name)
+          (some #(= (:name %) class-name) (:assemblages schema-ir)))
       obj
 
       :else
@@ -816,6 +795,22 @@
         [obj-id updated-nested-objects] (record-nested-object! nested-objects object-counter obj-entry)]
     {:obj-id obj-id, :nested-objects updated-nested-objects, :object-counter (inc object-counter)}))
 
+(defn- inferred-slot-type
+  "Schema type for the current construction argument, when parent context is known."
+  [ctx schema-ir]
+  (when (and schema-ir (:parent-class ctx) (some? (:arg-index ctx)))
+    (type-from-class-and-position (:parent-class ctx) (:arg-index ctx) schema-ir)))
+
+(defn- flatten-inner-as-array
+  [elem-type arg-list nested-objects object-counter schema-ir]
+  (let [structured-args (map-indexed
+                         #(process-array-construction-element elem-type %2 %1 schema-ir)
+                         (rest arg-list))
+        result (create-and-record-object elem-type structured-args nested-objects object-counter :array)]
+    {:result [:VariableRef (:obj-id result)]
+     :nested-objects (:nested-objects result)
+     :object-counter (:object-counter result)}))
+
 (defn visit-node
   "Process a single AST node with context and transformed children"
   [node ctx nested-objects object-counter schema-ir]
@@ -826,10 +821,16 @@
       (let [class-name (determine-class-name-for-inner-construction node ctx schema-ir)]
         (when-not class-name
           (throw (ex-info "Could not determine class name for inner construction" {:ast node :ctx ctx})))
-        (let [arg-list (extract-arg-list-from-node node)
-              structured-args (process-structured-arguments class-name arg-list schema-ir)
-              result (create-and-record-object class-name structured-args nested-objects object-counter :object)]
-          {:result [:VariableRef (:obj-id result)], :nested-objects (:nested-objects result), :object-counter (:object-counter result)}))
+        (if-let [elem-type (array-element-type-name class-name)]
+          (flatten-inner-as-array elem-type
+                                  (extract-arg-list-from-node node)
+                                  nested-objects object-counter schema-ir)
+          (let [arg-list (extract-arg-list-from-node node)
+                structured-args (process-structured-arguments class-name arg-list schema-ir)
+                result (create-and-record-object class-name structured-args nested-objects object-counter :object)]
+            {:result [:VariableRef (:obj-id result)]
+             :nested-objects (:nested-objects result)
+             :object-counter (:object-counter result)})))
 
       (= tag :ArrayConstruction)
       (let [element-type (second (second node))  ; from [:Type "Person"]
@@ -841,7 +842,8 @@
           {:result [:VariableRef (:obj-id result)], :nested-objects (:nested-objects result), :object-counter (:object-counter result)}))
 
       (= tag :MapConstruction)
-      (let [map-ir (process-map-construction-expression node schema-ir)
+      (let [slot-type (inferred-slot-type ctx schema-ir)
+            map-ir (ast-args/process-map-construction-expression node schema-ir slot-type)
             [obj-id updated-nested-objects] (record-nested-object! nested-objects object-counter map-ir)]
         {:result [:VariableRef obj-id], :nested-objects updated-nested-objects, :object-counter (inc object-counter)})
 

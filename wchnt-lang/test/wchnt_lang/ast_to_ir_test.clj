@@ -611,3 +611,43 @@
       (let [objects (:objects result)
             inner-object (first (vals objects))]
         (is (= "Player" (:class-name inner-object)) "Inner object should use explicit Player class name")))))
+
+(deftest untagged-array-inferred-from-schema
+  (testing "bare [\"a\" \"b\"] in an Array<String> slot becomes :array IR"
+    (let [parsed (parser/parse-construction-unified
+                  "[:StringList [\"hello\" \"world\"]]")
+          schema-ir {:assemblages
+                     [{:name "StringList"
+                       :components [{:component-name "xs"
+                                     :type-name "Array<String>"
+                                     :relationship :ordinary
+                                     :optional-name "xs"}]}]}
+          result (ast-to-ir/construction-ast-to-ir (:value parsed) schema-ir)
+          array-obj (->> (:objects result) vals (filter #(= :array (:type %))) first)]
+      (is (schema/valid-construction-ir? result))
+      (is (= "StringList" (:root-class result)))
+      (is (some? array-obj) "untagged vector should flatten to an :array object")
+      (is (= "String" (:class-name array-obj)))
+      (is (= ["hello" "world"] (mapv :value (:args array-obj)))))))
+
+(deftest untagged-map-inferred-from-schema
+  (testing "bare {\"a\": 1} in a Map<String, Int> slot becomes :map IR"
+    (let [parsed (parser/parse-construction-unified
+                  "[:Config {\"a\": 1 \"b\": 2}]")
+          _ (is (:success parsed) (str (:errors parsed)))
+          schema-ir {:assemblages
+                     [{:name "Config"
+                       :components [{:component-name "settings"
+                                     :type-name "Map<String, Int>"
+                                     :relationship :ordinary
+                                     :optional-name "settings"}]}]}
+          result (ast-to-ir/construction-ast-to-ir (:value parsed) schema-ir)
+          map-obj (->> (:objects result) vals (filter #(= :map (:type %))) first)
+          args (:args map-obj)]
+      (is (schema/valid-construction-ir? result))
+      (is (= "Config" (:root-class result)))
+      (is (some? map-obj) "untagged map should flatten to a :map object")
+      (is (= "Map<String, Int>" (:class-name map-obj)))
+      (is (= ["a" "b"] (mapv :value (take-nth 2 args))))
+      (is (= ["String" "String"] (mapv :class-name (take-nth 2 args))))
+      (is (= ["Int" "Int"] (mapv :class-name (take-nth 2 (rest args))))))))

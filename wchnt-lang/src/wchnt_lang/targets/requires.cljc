@@ -127,6 +127,14 @@
   [requires]
   (set (keys (:classes requires))))
 
+(defn constructible-types
+  "Type names in %requires that declare at least one CONSTRUCT overload."
+  [requires]
+  (into #{}
+        (for [[type-name entry] (:classes requires)
+              :when (seq (:construct entry))]
+          type-name)))
+
 (defn construct-specs
   "Return CONSTRUCT overload specs for class-name, or nil."
   [requires class-name]
@@ -204,7 +212,8 @@
                         {:types missing}))))))
 
 (defn assert-platform-constructible!
-  "Every Schema %T must appear in %requires with at least one CONSTRUCT."
+  "Platform-constructible types come from %requires CONSTRUCT lines (merged into
+  schema-ir). Ensure every such type is provided and still has CONSTRUCT metadata."
   [schema-ir target-ir]
   (when (:host target-ir)
     (let [declared (ir/get-platform-constructible-types schema-ir)
@@ -216,7 +225,7 @@
                                type-name)
                           {:type-name type-name})))
         (when-not (seq (construct-specs requires type-name))
-          (throw (ex-info (str "%" type-name " requires "
+          (throw (ex-info (str type-name " is platform-constructible but missing "
                                type-name "::CONSTRUCT(...) -> " type-name
                                " in %requires")
                           {:type-name type-name})))))))

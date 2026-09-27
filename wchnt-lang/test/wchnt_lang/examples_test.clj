@@ -156,6 +156,26 @@
       (is (str/includes? f "[\"hello\", \"world\", \"test\"]"))
       (is (str/includes? f "new StringList(obj1)")))))
 
+(deftest collections-combos-all-shapes
+  (testing "collections_combos: tagged+bare arrays/maps with Schema, Date, @WCHNTMaths"
+    (let [cargo (assert-compiles "collections_combos.wcn")
+          f (factory cargo)
+          cls (classes cargo)]
+      (is (str/includes? cls "public var taggedStrings: Array<String>;"))
+      (is (str/includes? cls "public var bareScores: Map<String, Int>;"))
+      (is (str/includes? cls "public var taggedDates: Array<Date>;"))
+      (is (str/includes? cls "public var bareByName: Map<String, Date>;"))
+      (is (str/includes? cls "public var maths: WCHNTMaths;"))
+      (is (str/includes? f "[\"red\", \"green\"]"))
+      (is (str/includes? f "[\"blue\", \"white\"]"))
+      (is (str/includes? f "[\"Ada\" => 3, \"Bob\" => 0]"))
+      (is (str/includes? f "[\"Cy\" => 5, \"Di\" => 1]"))
+      (is (str/includes? f "new Date(1815, 11, 10, 0, 0, 0)"))
+      (is (str/includes? f "factory(maths: WCHNTMaths)"))
+      (is (str/includes? f "[who => n]")))))
+
+
+
 (deftest book-array-construction
   (testing "austen builds a DB of tagged Book literals"
     (let [f (factory (assert-compiles "austen.wcn"))]
@@ -462,7 +482,7 @@
       (is (re-find #"%cli-live" (or (first (:errors haxe)) ""))))))
 
 (deftest platform-date-cli-live-example
-  (testing "live-examples/platform_date.wcn: %Date via interpreter host ctor"
+  (testing "live-examples/platform_date.wcn: Date via interpreter host ctor"
     (let [text (slurp "live-examples/platform_date.wcn")
           ir (compiler/compile-to-ir text)
           haxe (compiler/compile text)
@@ -747,6 +767,6 @@
           f (factory cargo)
           main (main cargo)]
       (is (str/includes? f "public static function factory(pen: Pen)"))
-      (is (str/includes? f "new Sketch(\"star\", pen)"))
+      (is (str/includes? f "new Sketch(\"Blue Pen\", pen)"))
       (is (str/includes? main "SketchAssemblage.factory(pen)"))
       (is (not (str/includes? f "sketchFactory()"))))))

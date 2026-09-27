@@ -6,6 +6,8 @@
 interface IWCHNTHelper {
     public function arrayToConstruction<T>(arr: Array<T>, depth: Int): String;
     public function mapToConstruction<K,V>(map: Map<K,V>, depth: Int): String;
+    public function opaqueArrayToConstruction<T>(arr: Array<T>, depth: Int, token: String): String;
+    public function opaqueMapToConstruction<K,V>(map: Map<K,V>, depth: Int, valToken: String): String;
     public function enumToConstruction(enumValue: Dynamic, depth: Int): String;
 }")
 
@@ -27,6 +29,18 @@ class WCHNTHelper implements IWCHNTHelper {
             } else {
                 result += nl + ind + '  ' + Std.string(item);
             }
+        }
+        result += nl + ind + ']';
+        return result;
+    }
+
+    public function opaqueArrayToConstruction<T>(arr: Array<T>, depth: Int, token: String): String {
+        var ind = \"\";
+        for (i in 0...depth) ind += \"  \";
+        var nl = '\\n';
+        var result = ind + '[:Array';
+        for (item in arr) {
+            result += nl + ind + '  ' + token;
         }
         result += nl + ind + ']';
         return result;
@@ -53,6 +67,24 @@ class WCHNTHelper implements IWCHNTHelper {
             } else {
                 result += Std.string(value);
             }
+        }
+        result += nl + ind + '}';
+        return result;
+    }
+
+    public function opaqueMapToConstruction<K,V>(map: Map<K,V>, depth: Int, valToken: String): String {
+        var ind = \"\";
+        for (i in 0...depth) ind += \"  \";
+        var nl = '\\n';
+        var result = ind + '{';
+        for (key in map.keys()) {
+            result += nl + ind + '  ';
+            if (Std.isOfType(key, String)) {
+                result += '\"' + key + '\"';
+            } else {
+                result += Std.string(key);
+            }
+            result += ': ' + valToken;
         }
         result += nl + ind + '}';
         return result;

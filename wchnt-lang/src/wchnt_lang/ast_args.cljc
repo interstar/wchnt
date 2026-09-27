@@ -3,7 +3,8 @@
 
   This is intentionally not tied to a specific phase name (construction/reactive/imperative),
   since the same argument extraction logic is expected to be reused across phases."
-  (:require [wchnt-lang.ast-utils :as ast-utils]
+  (:require [clojure.string :as str]
+            [wchnt-lang.ast-utils :as ast-utils]
             [wchnt-lang.reaction :as reaction]))
 
 (declare extract-args-from-arg-list variable-ref->arg inner-object-construction->arg)
@@ -51,25 +52,40 @@
       (throw (ex-info "Unsupported value type in map construction" {:val-expr val-expr})))))
 
 (defn process-map-construction-expression
-  "Process a MapConstruction expression into structured ConstructionArg IR."
+  "Process a MapConstruction expression into structured ConstructionArg IR.
+
+  Typed form: `{String:Int \"a\": 1}`. Untyped form: `{\"a\": 1}` — then
+  inferred-map-type (e.g. Map<String, Int> from the Schema slot) is required."
   ([inner-expression]
-   (process-map-construction-expression inner-expression nil))
+   (process-map-construction-expression inner-expression nil nil))
   ([inner-expression schema-ir]
+   (process-map-construction-expression inner-expression schema-ir nil))
+  ([inner-expression schema-ir inferred-map-type]
    (let [ctx {:schema-ir schema-ir
               :root-class-name nil
               :enum-values (set (mapcat :values (:enums schema-ir)))}
-         key-type-node (second inner-expression)
-         key-type (if (ast-utils/node-type? key-type-node :KeyType)
-                    (second key-type-node)
-                    (throw (ex-info "Map construction missing key type node"
-                                    {:inner-expression inner-expression})))
-         val-type-node (nth inner-expression 2)
-         val-type (if (ast-utils/node-type? val-type-node :ValType)
-                    (second val-type-node)
-                    (throw (ex-info "Map construction missing value type node"
-                                    {:inner-expression inner-expression})))
-         ;; KeyValueList is optional in the grammar for an empty map literal.
-         key-value-list (nth inner-expression 3 nil)
+         typed? (ast-utils/node-type? (second inner-expression) :KeyType)
+         [key-type val-type key-value-list]
+         (if typed?
+           [(second (second inner-expression))
+            (second (nth inner-expression 2))
+            (nth inner-expression 3 nil)]
+           (let [kv (second inner-expression)
+                 inner (when (and (string? inferred-map-type)
+                                  (str/starts-with? inferred-map-type "Map<")
+                                  (str/ends-with? inferred-map-type ">"))
+                         (subs inferred-map-type 4 (dec (count inferred-map-type))))
+                 comma (when inner (str/index-of inner ","))
+                 parts (when comma
+                         [(str/trim (subs inner 0 comma))
+                          (str/trim (subs inner (inc comma)))])]
+             (when-not parts
+               (throw (ex-info
+                       (str "Map construction {…} needs key:value types, or a Schema "
+                            "Map<K,V> slot to infer them from")
+                       {:inferred-map-type inferred-map-type
+                        :inner-expression inner-expression})))
+             [(first parts) (second parts) kv]))
          ctx (assoc ctx :root-class-name val-type)
          structured-args (if (ast-utils/node-type? key-value-list :KeyValueList)
                            (map-indexed
@@ -85,7 +101,7 @@
                            [])]
      {:type :map
       :class-name (str "Map<" key-type ", " val-type ">")
-      :args (flatten structured-args)})))
+      :args (vec (flatten structured-args))})))
 
 (defn- build-extract-args-context
   [schema-ir root-class-name]
