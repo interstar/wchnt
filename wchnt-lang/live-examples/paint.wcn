@@ -6,20 +6,19 @@ the mouse and paints only while the button is held. This is the live canvas
 counterpart of `examples/paint_openfl.wcn`: the WCHNT schema and painting
 logic match; the Target section adapts input and drawing to the browser.
 
-The palette is a plain data map in Construction (hex ARGB literals); colour
-selection (a `switch` on the held digit), the brush update, and drawing all
-live in WCHNT. Target only reads input, injects it, steps, and asks WCHNT to
-paint.
+The brush holds a `Colour` enum; the palette maps colours to packed ARGB
+`Int`s. Conversion to Int happens only at draw time. Target only reads
+input, injects it, steps, and asks WCHNT to paint.
 
 ## Schema
 
 ```
-Paint = Canvas Brush Palette Inbox
+Paint = Canvas :Brush Palette Inbox
 Canvas = Int/width Int/height
-Brush = Int/x Int/y Int/rad Int/colour Bool/painting
->Inbox = Int/x Int/y Bool/down [String]/keys
+Brush = Int/x Int/y Int/rad Colour Bool/painting
 Colour = "Black" | "White" | "Red" | "Green" | "Blue" | "Yellow" | "Cyan" | "Magenta" | "Orange"
 Palette = {Colour:Int}
+>Inbox = Int/mouseX Int/mouseY Bool/down [String]/keys
 ```
 
 ## Construction
@@ -27,7 +26,7 @@ Palette = {Colour:Int}
 ```
 [:Paint
   [:Canvas 800 600]
-  [:Brush 0 0 5 0xFF000000 false]
+  [:Brush 0 0 5 Black false]
   [:Palette
     {Colour:Int
       Black:   0xFF000000
@@ -56,7 +55,7 @@ Paint::step = {
 
 Inbox::update! = { [:Inbox mouseX mouseY down keys] }
 
-Palette::colourForKey = { Colour/current, String/key  |
+Palette::colourForKey = { Colour/current, String/key |
   switch (key)
     "1" -> { Black }
     "2" -> { Red }
@@ -66,13 +65,15 @@ Palette::colourForKey = { Colour/current, String/key  |
     "6" -> { Magenta }
     "7" -> { Cyan }
     "8" -> { Orange }
+    "9" -> { White }
     else -> { current }
 }
 
 Brush::paint = { @WCHNTGraphics/g |
+  col = thePaint.palette.colourToInt.get(colour).
   if (painting) {
-    g.beginFill(colour).drawCircle(x, y, rad).endFill()
-  } else {g}
+    g.beginFill(col).drawCircle(x, y, rad).endFill()
+  } else { g }
 }
 
 Canvas::paint = { @WCHNTGraphics/g |
