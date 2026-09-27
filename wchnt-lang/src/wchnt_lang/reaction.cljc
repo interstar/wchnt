@@ -154,21 +154,34 @@
     []))
 
 (defn- validate-construct!
-  [class-name args schema-ir]
+  [class-name args schema-ir ctx]
   (when (contains? (or (:imported-handles schema-ir) #{}) class-name)
     (throw (ex-info (str "Cannot construct imported handle '" class-name
                          "'; call a public method that returns one")
                     {:class-name class-name})))
-  (when-not (contains? (assemblage-names schema-ir) class-name)
+  (cond
+    (ir/platform-constructible-type? schema-ir class-name)
+    (let [arg-types (mapv #(value-type % ctx) args)
+          requires (get-in schema-ir [:target-ir :requires])]
+      (target-requires/assert-construct-args! requires class-name arg-types))
+
+    (ir/borrowed-external-type? schema-ir class-name)
+    (throw (ex-info (str "Cannot construct borrowed external [:" class-name
+                         " ...]; pass a factory parameter or call")
+                    {:class-name class-name}))
+
+    (contains? (assemblage-names schema-ir) class-name)
+    (let [expected (count (ir/get-assemblage-components schema-ir class-name))]
+      (when (not= expected (count args))
+        (throw (ex-info (str "Construction of " class-name " expected "
+                             expected " arguments, got " (count args))
+                        {:class-name class-name
+                         :expected expected
+                         :got (count args)}))))
+
+    :else
     (throw (ex-info (str "Unknown class '" class-name "' in method construction")
-                    {:class-name class-name})))
-  (let [expected (count (ir/get-assemblage-components schema-ir class-name))]
-    (when (not= expected (count args))
-      (throw (ex-info (str "Construction of " class-name " expected "
-                           expected " arguments, got " (count args))
-                      {:class-name class-name
-                       :expected expected
-                       :got (count args)})))))
+                    {:class-name class-name}))))
 
 (defn- root-type
   [root {:keys [schema-ir class-name let-types param-types]}]
@@ -1057,6 +1070,10 @@
    method."
   [receiver class-name method arg-nodes ctx]
   (when (ir/external-type? (:schema-ir ctx) class-name)
+    (when (= "CONSTRUCT" method)
+      (throw (ex-info (str class-name "::CONSTRUCT is requires metadata only; "
+                           "write [:" class-name " ...] to construct")
+                      {:class-name class-name :method method})))
     (let [args (mapv #(convert-call-arg % ctx) arg-nodes)]
       (if-let [spec (external-method-spec ctx class-name method (count args))]
         (typed-external-call receiver class-name method args spec ctx)
@@ -1429,8 +1446,10 @@
                       {:node node})))
     (let [class-name (second class-node)
           args (arg-list-exprs (nth node 2) ctx)]
-      (validate-construct! class-name args (:schema-ir ctx))
-      {:expr :construct :class-name class-name :args args})))
+      (validate-construct! class-name args (:schema-ir ctx) ctx)
+      (if (ir/platform-constructible-type? (:schema-ir ctx) class-name)
+        {:expr :host-construct :class-name class-name :args args}
+        {:expr :construct :class-name class-name :args args}))))
 
 (defn- named-inner-construct
   [node class-name]
@@ -1678,6 +1697,10 @@
     (doseq [arg (:args expr)]
       (infer-param-types-from arg types-atom))
 
+    :host-construct
+    (doseq [arg (:args expr)]
+      (infer-param-types-from arg types-atom))
+
     :path
     (infer-param-types-from (:root expr) types-atom)
 
@@ -1798,6 +1821,7 @@
     :or "Bool"
     :not "Bool"
     :construct (:class-name expr)
+    :host-construct (:class-name expr)
     :array (:type expr)
     :map (:type expr)
     :field (binding-type schema-ir class-name (:name expr))
@@ -2046,6 +2070,7 @@
     :or "Bool"
     :not "Bool"
     :construct (:class-name expr)
+    :host-construct (:class-name expr)
     :array (:type expr)
     :map (:type expr)
     :enum (:type expr)

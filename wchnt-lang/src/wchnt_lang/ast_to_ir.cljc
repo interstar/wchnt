@@ -5,6 +5,7 @@
             [wchnt-lang.ast-utils :as ast-utils]
             [wchnt-lang.ast-args :as ast-args]
             [wchnt-lang.factory-params :as factory-params]
+            [wchnt-lang.targets.requires :as target-requires]
             [clojure.string :as str]))
 
 (declare flatten-nested-constructions)
@@ -25,6 +26,7 @@
                        "@" :external
                        "$" :reactive
                        "+" :delegate
+                       "%" :platform-constructible
                        nil :ordinary
                        :ordinary)
         component-name (if optional-name
@@ -75,6 +77,42 @@
               (filter #(= :external (:relationship %)))
               (map :type-name))
         assemblages))
+
+(defn- collect-platform-constructible-types-from-assemblages
+  [assemblages]
+  (into #{}
+        (comp (mapcat :components)
+              (filter #(= :platform-constructible (:relationship %)))
+              (map :type-name))
+        assemblages))
+
+(def ^:private reserved-platform-type-names
+  #{"Int" "Float" "String" "Bool"})
+
+(defn- validate-platform-constructible-components!
+  "Fail fast when % is applied to a primitive, collection, or Schema class."
+  [assemblages interfaces enums]
+  (let [schema-names (into (set (map :name assemblages))
+                           (concat (map :name interfaces)
+                                   (map :name enums)))]
+    (doseq [assemblage assemblages
+            component (:components assemblage)
+            :when (= :platform-constructible (:relationship component))
+            :let [type-name (:type-name component)]]
+      (when (contains? reserved-platform-type-names type-name)
+        (throw (ex-info (str "%" type-name " is invalid: builtins cannot be platform-constructible")
+                        {:type-name type-name
+                         :parent (:name assemblage)})))
+      (when (or (str/starts-with? type-name "Array<")
+                (str/starts-with? type-name "Map<"))
+        (throw (ex-info (str "%" type-name " is invalid: collection types cannot be platform-constructible")
+                        {:type-name type-name
+                         :parent (:name assemblage)})))
+      (when (contains? schema-names type-name)
+        (throw (ex-info (str "%" type-name " is invalid: Schema-defined classes cannot be platform-constructible")
+                        {:type-name type-name
+                         :parent (:name assemblage)})))))
+  assemblages)
 
 (defn build-context-relationships
   "Build context relationship mappings from schema AST"
@@ -387,6 +425,7 @@
     (assert-inlet-only-on-classes! schema-ast)
     (let [interfaces (map transform-disjunction-line disjunction-lines)
           enums (map transform-enum-line enum-lines)
+          _ (validate-platform-constructible-components! assemblages interfaces enums)
           context-relationships (build-context-relationships schema-ast)
           interface-implementers (build-interface-implementers schema-ast)
           {:keys [observable-classes subscriber-classes]} (build-observable-and-subscriber-classes schema-ast)
@@ -400,6 +439,8 @@
                                    interface-implementers observable-classes subscriber-classes
                                    debug-methods
                                    (collect-external-types-from-assemblages assemblages))
+              :platform-constructible-types
+              (collect-platform-constructible-types-from-assemblages assemblages)
               :mailbox-classes mailbox-classes
               :mutable-classes mutable-classes)))))
 
@@ -632,6 +673,56 @@
   ;; Nested objects don't have variable names, so just return the original mappings
   variable-mappings)
 
+(defn- construction-arg-type-name
+  [arg]
+  (case (:type arg)
+    :primitive (:class-name arg)
+    :object (:class-name arg)
+    :array (str "Array<" (:class-name arg) ">")
+    :map (:class-name arg)
+    :enum-value "String"
+    :variable nil
+    :call nil
+    nil))
+
+(defn- tag-and-validate-host-object
+  "Mark platform constructions and check CONSTRUCT overloads from %requires."
+  [schema-ir obj]
+  (let [class-name (:class-name obj)]
+    (cond
+      (not= :object (:type obj))
+      obj
+
+      (ir/platform-constructible-type? schema-ir class-name)
+      (let [requires (get-in schema-ir [:target-ir :requires])
+            arg-types (mapv construction-arg-type-name (:args obj))]
+        (when (some nil? arg-types)
+          (throw (ex-info (str "Cannot type-check [:" class-name
+                               " ...] constructor arguments yet; use literals")
+                          {:class-name class-name :args (:args obj)})))
+        (target-requires/assert-construct-args! requires class-name arg-types)
+        (assoc obj :host-construct? true))
+
+      (ir/borrowed-external-type? schema-ir class-name)
+      (throw (ex-info (str "Cannot construct borrowed external [:" class-name
+                           " ...]; pass a factory parameter or call")
+                      {:class-name class-name}))
+
+      (some #(= (:name %) class-name) (:assemblages schema-ir))
+      obj
+
+      :else
+      (throw (ex-info (str "Unknown class '" class-name
+                           "' in construction; Schema class or % host type required")
+                      {:class-name class-name})))))
+
+(defn- tag-host-constructs
+  [schema-ir objects]
+  (into {}
+        (map (fn [[id obj]]
+               [id (tag-and-validate-host-object schema-ir obj)]))
+        objects))
+
 (defn- assert-no-with-construction!
   [construction-ast]
   (when-let [node (first (ast-utils/find-nodes-by-type construction-ast :WithConstruction))]
@@ -651,7 +742,8 @@
         all-assignment-objects (merge assignment-objects nested-objects)
         final-construction (find-final-construction (rest flattened-ast))
         final-objects (process-final-construction final-construction all-assignment-objects all-variable-mappings schema-ir root-class)
-        all-objects (merge all-assignment-objects final-objects)
+        all-objects (tag-host-constructs schema-ir
+                                         (merge all-assignment-objects final-objects))
         return-obj-id (if (empty? final-objects)
                         "obj1"
                         (first (keys final-objects)))]

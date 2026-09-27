@@ -6,7 +6,9 @@
             [wchnt-lang.ast-utils :as ast-utils]
             [wchnt-lang.pipeline :as p]
             [wchnt-lang.template :as template]
-            [wchnt-lang.targets.interpreter-std :as host]))
+            [wchnt-lang.targets.interpreter-std :as host]
+            [wchnt-lang.targets.requires :as target-requires]
+            [wchnt-lang.targets.platform :as platform]))
 
 (declare eval-expr instantiate wire-subscriptions wire-context wire-new
          apply-mutating-method eval-map-construction eval-construction-arg)
@@ -42,6 +44,33 @@
          :wchnt/cell (atom fields-map)
          :wchnt/subscribers (atom [])}
         (into {:wchnt/class class-name} fields-map)))))
+
+(defn- host-constructors
+  [schema-ir]
+  (or (get-in schema-ir [:target-ir :host-constructors])
+      (get schema-ir :host-constructors)
+      {}))
+
+(defn- construct-host-value
+  "Build a %-constructible host value via the Target/test host-constructors registry."
+  [schema-ir class-name args]
+  (let [ctors (host-constructors schema-ir)
+        ctor (get ctors class-name)]
+    (when-not ctor
+      (throw (ex-info (str "No interpreter host constructor registered for "
+                           class-name "; provide :host-constructors on Target/options")
+                      {:class-name class-name
+                       :registered (sort (keys ctors))})))
+    (let [value (ctor args)]
+      (cond
+        (and (map? value) (:wchnt/host value))
+        (assoc value :wchnt/platform-constructible? true)
+
+        :else
+        {:wchnt/host class-name
+         :wchnt/platform-constructible? true
+         :wchnt/value value
+         :methods {}}))))
 
 (defn construct-object
   "Build one assemblage instance from schema field values in schema order.
@@ -105,10 +134,13 @@
     :array (mapv #(eval-construction-arg % env schema-ir methods-ir mappings)
                  (:args obj-data))
     :map (eval-map-construction (:args obj-data) env schema-ir methods-ir mappings)
-    (make-instance schema-ir
-                   (:class-name obj-data)
-                   (mapv #(eval-construction-arg % env schema-ir methods-ir mappings)
-                         (:args obj-data)))))
+    (let [args (mapv #(eval-construction-arg % env schema-ir methods-ir mappings)
+                     (:args obj-data))
+          class-name (:class-name obj-data)]
+      (if (or (:host-construct? obj-data)
+              (ir/platform-constructible-type? schema-ir class-name))
+        (construct-host-value schema-ir class-name args)
+        (make-instance schema-ir class-name args)))))
 
 (defn- seed-factory-env
   [construction-ir factory-args]
@@ -156,16 +188,18 @@
      (when (= :documentation (get-in cargo [:value :page-kind]))
        (throw (ex-info "Documentation page has nothing to construct"
                        {:page-kind :documentation})))
-     {:schema-ir (get-in cargo [:stash :schema-ir])
-      :methods-ir (or (get-in cargo [:stash :methods-ir]) [])
-      :construction-ir (get-in cargo [:stash :construction-ir])
-      :target-ir (get-in cargo [:stash :target-ir])
-      :page-kind (get-in cargo [:value :page-kind])
-      :root (when-let [construction-ir (get-in cargo [:stash :construction-ir])]
-              (when (empty? (or (:factory-params construction-ir) []))
-                (construct (get-in cargo [:stash :schema-ir])
-                           construction-ir
-                           (or (get-in cargo [:stash :methods-ir]) []))))})))
+     (let [schema-ir (platform/attach-constructors
+                      (get-in cargo [:stash :schema-ir]))
+           methods-ir (or (get-in cargo [:stash :methods-ir]) [])
+           construction-ir (get-in cargo [:stash :construction-ir])]
+       {:schema-ir schema-ir
+        :methods-ir methods-ir
+        :construction-ir construction-ir
+        :target-ir (get-in cargo [:stash :target-ir])
+        :page-kind (get-in cargo [:value :page-kind])
+        :root (when (and construction-ir
+                         (empty? (or (:factory-params construction-ir) [])))
+                (construct schema-ir construction-ir methods-ir))}))))
 
 (defn- find-method
   [methods-ir class-name method-name]
@@ -399,6 +433,12 @@
                            (:class-name expr)
                            (mapv #(eval-expr % ctx) (:args expr)))))
 
+(defn- eval-host-construct
+  [expr ctx]
+  (construct-host-value (:schema-ir ctx)
+                        (:class-name expr)
+                        (mapv #(eval-expr % ctx) (:args expr))))
+
 (defn- bind-params
   [method args]
   (let [names (mapv :name (:parameters method))]
@@ -548,12 +588,28 @@
      (throw (ex-info (str "External call on unsupported receiver for '" method "'")
                      {:method method :receiver recv}))))
 
+(defn- external-query-call?
+  "True when the external method returns a value (not fluent receiver)."
+  [schema-ir ext-type method arity]
+  (cond
+    (host/known-host? ext-type)
+    (host/query? ext-type method)
+
+    :else
+    (let [requires (get-in schema-ir [:target-ir :requires])
+          spec (when requires
+                 (try
+                   (target-requires/method-spec requires ext-type method arity)
+                   (catch #?(:clj Exception :cljs :default) _ nil)))]
+      (and spec (not= (:return spec) ext-type)))))
+
 (defn- eval-external-call
-  [recv method args ext-type]
+  [recv method args ext-type schema-ir]
   (let [result (if-let [f (get-in recv [:methods method])]
                  (apply f args)
                  (js-host-apply recv method args))]
-    (if (and ext-type (host/query? ext-type method))
+    (if (and ext-type
+             (external-query-call? schema-ir ext-type method (count args)))
       result
       recv)))
 
@@ -582,7 +638,8 @@
         (and ext-type (ir/external-type? (:schema-ir ctx) ext-type))
         (eval-external-call recv method
                             (mapv #(eval-expr % ctx) (:args expr))
-                            ext-type)
+                            ext-type
+                            (:schema-ir ctx))
 
         (vector? recv)
         (eval-array-call method recv (:args expr) ctx)
@@ -671,6 +728,7 @@
                           (eval-expr (:value pair) ctx)])
                        (:pairs expr)))
     :construct (eval-construct expr ctx)
+    :host-construct (eval-host-construct expr ctx)
     :call (eval-call expr ctx)
     :target-call
     (let [f (get-in (:schema-ir ctx) [:target-fns (:name expr)])]

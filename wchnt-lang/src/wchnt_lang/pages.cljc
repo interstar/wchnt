@@ -40,6 +40,8 @@
         (update :mailbox-classes into (:mailbox-classes overlay))
         (update :debug-methods into (:debug-methods overlay))
         (update :external-types #(into (or % #{}) (:external-types overlay)))
+        (update :platform-constructible-types
+                #(into (or % #{}) (:platform-constructible-types overlay)))
         (update :context-relationships #(merge-map-keys "context" % (:context-relationships overlay)))
         (update :interface-implementers #(merge-with (fn [a b]
                                                        (into (set (if (coll? a) a [a]))

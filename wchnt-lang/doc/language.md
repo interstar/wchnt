@@ -165,36 +165,39 @@ Rect = Int/x Int/y Int/width Int/height
 - `/name` overrides the field name and is **required** when two components
   share a type.
 
-### Types: builtins, schema classes, externals
+### Types: builtins, schema classes, host types
 
-Every type name in Schema or Methods falls into exactly one of three buckets.
+Every type name in Schema or Methods falls into exactly one of these buckets.
 An unrecognised bare name is **not** silently treated as a host type.
 
 | Kind | Examples | How you write it |
 |------|----------|------------------|
 | **Builtin primitives** | `Int`, `Float`, `String`, `Bool` | Bare name; closed set; no Schema definition |
 | **Schema types** | `Ball`, `Shape`, `Action` | Defined on a Schema line (class, sum, or enum) |
-| **Externals** | `WCHNTGraphics`, `WCHNTMaths`, OpenFL `Graphics` | Explicit `@Type` (Schema field or Methods param) plus Target `%requires` |
+| **Borrowed externals `@`** | `WCHNTGraphics`, `WCHNTMaths`, OpenFL `Graphics` | Explicit `@Type` (Schema field or Methods param) plus Target `%requires` |
+| **Platform-constructible `%`** | `Date`, `Regex`, `UUID`, `Path` | Explicit `%Type` plus `Type::CONSTRUCT(...)` in `%requires` |
 
-**Primitives** are the only outsiders that omit `@`. They are language scalars
-supplied by every host and by the CLJC interpreter. They cannot carry `$`,
-`:`, `+`, or `@` sigils, and they are not identity objects.
+**Primitives** are the only outsiders that omit `@` / `%`. They are language
+scalars supplied by every host and by the CLJC interpreter. They cannot carry
+relationship sigils, and they are not identity objects.
 
 **Schema types** are the assemblage. Ordinary / `:` / `$` / `+` components
 must name a Schema class (or, for ordinary fields, a primitive). `$` on a sum
 interface is rejected — observables are concrete classes.
 
-**Externals** are borrowed host values. Use `@` whenever the type is not a
-primitive and not defined in this Schema (including standard-library handles
-such as `@WCHNTMaths/maths`). In Methods, a bare unknown type fails
-(`Unknown type 'Graphics'`); write `@Graphics/g` and declare it in
-`%requires`. In Schema, prefer `@Graphics` over a bare `Graphics` field: only
-`@` slots get free Construction names as factory parameters and opaque
-external semantics.
+**`@` externals** are borrowed host values. Use `@` when the host owns
+lifecycle or the value is a capability injected once (graphics, console,
+maths, imported assemblage root). Free Construction names in `@` slots become
+factory parameters. You cannot write `[:Pen …]` into an `@` slot.
 
-*(Planned)* A related sigil **`%`** will mark *constructible* host values
-(`%Date/dob`, `[:Date "…"]`) declared via `Type::CONSTRUCT(...)` in
-`%requires`. See [`platform_constructable.md`](platform_constructable.md).
+**`%` platform-constructibles** are value-like host data born inside the
+assemblage. Schema `%Date/dob` requires `Date::CONSTRUCT(...)` in `%requires`.
+Construction and Methods write `[:Date "1815-12-10"]`; the compiler emits host
+construction (`new Date(...)` on Haxe, a registry ctor on the interpreter).
+Free names are **not** allowed in `%` slots. Both `@` and `%` stay opaque:
+only methods declared in `%requires` are callable. Prefer `@` for harness
+singletons; use `%` for dates, patterns, ids, paths. See
+[`platform_constructable.md`](platform_constructable.md).
 
 Related forms that are also language-built, but not Schema primitives:
 
@@ -252,6 +255,7 @@ Sigils attach to a **single class component**, not to `[Array]` or `{Map}`.
 | `:` | context-specific | child belongs only to this parent; gets a back-reference |
 | `+` | delegate | owned child whose fields and methods are promoted onto the parent |
 | `@` | external | borrowed / opaque; lifecycle elsewhere |
+| `%` | platform-constructible | host value born via `[:Type …]` + `Type::CONSTRUCT` |
 | `$` | reactive | observable; parent subscribes to `update!` |
 
 ```wchnt
@@ -260,6 +264,7 @@ Engine = Int/cylinders
 Game = PlayArea Ball $Time
 Student = String/id +BasePerson
 Chronicle = String/scribe @Quest
+Person = String/name %Date/dob
 ```
 
 #### Ordinary (no sigil)
@@ -312,6 +317,31 @@ An `@` component is borrowed. Its lifecycle belongs elsewhere.
   `[:Type …]` for that slot. See `examples/factory_args.wcn`.
 - As a **Methods parameter** (`@WCHNTGraphics/g`), it is a host type. Declare
   the class and every method WCHNT calls in Target `%requires`.
+
+#### Platform-constructible (`%`)
+
+A `%` component is a host value the assemblage constructs itself.
+
+```wchnt
+Person = String/name %Date/dob
+```
+
+```wchnt
+[:Person "Ada" [:Date "1815-12-10"]]
+```
+
+```text
+%requires
+Date
+Date::CONSTRUCT(String) -> Date
+Date::year() -> Int
+```
+
+- `CONSTRUCT` is **requires metadata only** — never call `dob.CONSTRUCT(...)`.
+  WCHNT writes `[:Date …]`; the compiler looks up `CONSTRUCT` and emits host
+  construction.
+- Free names are forbidden in `%` slots (unlike `@`).
+- Example: `examples/platform_date.wcn`.
 
 #### Reactive (`$`)
 
@@ -382,6 +412,13 @@ Sketch = String/name @Pen
 
 Generated factory: `SketchAssemblage.factory(pen: Pen)`. Target passes
 `SketchAssemblage.factory(pen)`.
+
+Platform `%` slots take a host construction instead:
+
+```wchnt
+Person = String/name %Date/dob
+[:Person "Ada" [:Date "1815-12-10"]]
+```
 
 ---
 
@@ -625,17 +662,22 @@ separate Target Methods section.
 
 ### `%requires`
 
-Every external class and every external method signature that WCHNT (including
-imported assemblages) calls must be declared:
+Every host class and every host method signature that WCHNT (including
+imported assemblages) calls must be declared. For `%` types, also declare
+construction:
 
 ```text
 %requires
 WCHNTGraphics
 WCHNTGraphics::drawCircle(Float,Float,Float) -> WCHNTGraphics
+Date
+Date::CONSTRUCT(String) -> Date
+Date::year() -> Int
 ```
 
-The compiler does not guess external methods. The importing Target must provide
-resources that imported Methods need.
+`Type::CONSTRUCT(Args…) -> Type` is metadata for `[:Type …]` in Construction
+or Methods. The return type must equal the class name. `NEW` / `new` are
+rejected as ctor names. The compiler does not guess external methods.
 
 ### `WCHNTMaths`
 
@@ -662,8 +704,10 @@ clear():WCHNTConsole         (fluent)
 ```
 
 `format` pretty-prints objects via construction syntax; bare strings pass
-through. Use `wchntConsole.println(...)` from Target — do not call
-`toConstruction` by hand.
+through. Host values print as opaque instance tokens — `@instanceOfPen` for
+borrowed `@` slots and `%instanceOfDate` for platform `%` slots — never a
+fake `[:Date …]` round-trip (ctor args are not recoverable). Prefer
+`wchntConsole.println(...)` from Target — do not call `toConstruction` by hand.
 
 ### `WCHNTGraphics`
 

@@ -90,8 +90,12 @@
         ;; Check if it's an enum type
         (some #(= (:name %) type-name) (:enums schema-ir))
         (str "helper.enumToConstruction(this." component-name ", depth + 1)")
-        (ir/external-type? schema-ir type-name)
-        (str "'@" type-name "'")
+        (ir/platform-constructible-type? schema-ir type-name)
+        (str "'%instanceOf" type-name "'")
+        (or (= :external (:relationship component))
+            (ir/borrowed-external-type? schema-ir type-name)
+            (ir/external-type? schema-ir type-name))
+        (str "'@instanceOf" type-name "'")
         ;; For other types (custom classes), call toConstruction with helper
         :else
         (str "this." component-name ".toConstruction(depth + 1, helper)")))))
@@ -463,6 +467,9 @@
     :construct (str "new " (:class-name expr) "("
                     (str/join ", " (map expr-ir-to-haxe (:args expr)))
                     ")")
+    :host-construct (str "new " (:class-name expr) "("
+                         (str/join ", " (map expr-ir-to-haxe (:args expr)))
+                         ")")
     :array (if (empty? (:items expr))
              (str "new Array<" (:elem-type expr) ">()")
              (str "[" (str/join ", " (map expr-ir-to-haxe (:items expr))) "]"))

@@ -31,6 +31,10 @@
   [component]
   (= :external (:relationship component)))
 
+(defn- platform-constructible?
+  [component]
+  (= :platform-constructible (:relationship component)))
+
 (defn- add-param
   [params name type-name]
   (if-let [existing (first (filter #(= name (:name %)) params))]
@@ -85,8 +89,21 @@
                     {:name name}))
     :else
     (let [slot (slot-at schema-ir class-name index)]
-      (if (external? slot)
+      (cond
+        (external? slot)
         (add-param params name (:type-name slot))
+
+        (platform-constructible? slot)
+        (throw (ex-info (str "Free name '" name "' is not allowed in a %"
+                             (:type-name slot)
+                             " slot; construct with [:" (:type-name slot)
+                             " ...] or bind a let to such a construction")
+                        {:name name
+                         :class-name class-name
+                         :slot (:component-name slot)
+                         :type-name (:type-name slot)}))
+
+        :else
         (throw (ex-info (str "Unknown construction name '" name
                              "'; a free name is only a factory parameter "
                              "in an @ slot")

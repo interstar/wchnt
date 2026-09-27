@@ -144,7 +144,7 @@
   [:map
    [:component-name string?]
    [:type-name string?]
-   [:relationship [:enum :ordinary :context-specific :external :reactive :delegate]]
+   [:relationship [:enum :ordinary :context-specific :external :reactive :delegate :platform-constructible]]
    [:optional-name [:maybe string?]]])
 
 (def AssemblageSchema
@@ -186,6 +186,7 @@
    [:mailbox-classes {:optional true} [:sequential string?]]
    [:debug-methods [:sequential DebugMethod]]
    [:external-types {:optional true} [:set string?]]
+   [:platform-constructible-types {:optional true} [:set string?]]
    [:imported-handles {:optional true} [:set string?]]
    [:public-methods {:optional true} any?]
    [:static-public-methods {:optional true} any?]

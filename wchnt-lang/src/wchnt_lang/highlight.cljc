@@ -25,7 +25,8 @@
   {":" :rel-context
    "@" :rel-external
    "$" :rel-reactive
-   "+" :rel-delegate})
+   "+" :rel-delegate
+   "%" :rel-platform})
 
 (def ^:private node-keywords
   {:IfExpr ["if" "else"]

@@ -17,13 +17,36 @@
    :external-types (or external-types #{})})
 
 (defn get-external-types
-  "Type names referenced with @ (schema field or Methods param) but not defined here."
+  "Type names referenced with @ (schema field or Methods param) but not defined here.
+   Borrowed externals only — see also get-platform-constructible-types."
   [schema-ir]
   (or (:external-types schema-ir) #{}))
 
-(defn external-type?
+(defn get-platform-constructible-types
+  "Host types marked % in Schema; constructible via Type::CONSTRUCT in %requires."
+  [schema-ir]
+  (or (:platform-constructible-types schema-ir) #{}))
+
+(defn platform-constructible-type?
+  "True for %-constructible host types."
   [schema-ir type-name]
-  (contains? (get-external-types schema-ir) type-name))
+  (contains? (get-platform-constructible-types schema-ir) type-name))
+
+(defn borrowed-external-type?
+  "True for @-borrowed host types (not %). Types may also appear in
+  :external-types via Target merge; exclude % when both sets contain the name."
+  [schema-ir type-name]
+  (and (contains? (get-external-types schema-ir) type-name)
+       (not (platform-constructible-type? schema-ir type-name))))
+
+(defn external-type?
+  "True for any host type: @ borrowed or % platform-constructible.
+   Used by Methods typing / %requires method resolution. Prefer
+   borrowed-external-type? or platform-constructible-type? when the
+   Construction or pretty-print rule differs."
+  [schema-ir type-name]
+  (or (contains? (get-external-types schema-ir) type-name)
+      (platform-constructible-type? schema-ir type-name)))
 
 (defn create-construction-ir
   "Create a construction IR structure"

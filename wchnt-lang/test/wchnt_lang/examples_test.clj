@@ -461,6 +461,30 @@
       (is (not (:success haxe)))
       (is (re-find #"%cli-live" (or (first (:errors haxe)) ""))))))
 
+(deftest platform-date-cli-live-example
+  (testing "live-examples/platform_date.wcn: %Date via interpreter host ctor"
+    (let [text (slurp "live-examples/platform_date.wcn")
+          ir (compiler/compile-to-ir text)
+          haxe (compiler/compile text)
+          prog (interpret/load-program text)
+          root (:root prog)
+          year (interpret/call (:schema-ir prog) (:methods-ir prog) root "bornYear" [])
+          caption (interpret/call (:schema-ir prog) (:methods-ir prog) root "caption" [])
+          dob (interpret/get-field (:schema-ir prog) root "dob")
+          rebuilt (interpret/call (:schema-ir prog) (:methods-ir prog) root
+                                  "withDob" [1970 0 1])]
+      (is (:success ir) (str (first (:errors ir))))
+      (is (= "cli-live" (get-in ir [:stash :target-ir :host])))
+      (is (not (:success haxe)))
+      (is (re-find #"%cli-live" (or (first (:errors haxe)) "")))
+      (is (contains? (:host-constructors (:schema-ir prog)) "Date"))
+      (is (= 1815 year))
+      (is (= "Ada born 1815" caption))
+      (is (:wchnt/platform-constructible? dob))
+      (is (= "Date" (:wchnt/host dob)))
+      (is (= 1970 (interpret/call (:schema-ir prog) (:methods-ir prog)
+                                  rebuilt "bornYear" []))))))
+
 (deftest combinators-cli-live-example
   (testing "live-examples/combinators_cli.wcn is IR-only; Haxe rejects %cli-live"
     (let [text (slurp "live-examples/combinators_cli.wcn")

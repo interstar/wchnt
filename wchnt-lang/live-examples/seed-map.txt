@@ -16,6 +16,7 @@ flyingB              flyingB
 factory_args         factory_args
 combinators_cli      combinators
 maths_cli            maths
+platform_date        platform_date
 transclusion_shared  transclusion_shared
 transclusion_cli     transclusion_cli
 bikes_canvas         bikes

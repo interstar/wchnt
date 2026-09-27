@@ -29,7 +29,7 @@ KeyType = Name
 ValType = ArrayType / Name
 AltName = Name
 EnumValue =  #'[^\"]+'
-Sigil = ':' / '@' / '$' / '+'
+Sigil = ':' / '@' / '$' / '+' / '%'
 EmptyType = '_'
 ")
 

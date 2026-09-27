@@ -45,20 +45,20 @@
 
 (defn- parse-methods-text
   [text schema-ir target-ir]
-  (if (str/blank? text)
-    {:methods [] :schema-ir schema-ir}
-    (let [schema-ir (schema-ir-with-target-types schema-ir target-ir)
-          parsed (parser/parse-reaction-unified text)]
-      (when (p/failed? parsed)
-        (throw (ex-info (or (first (:errors parsed)) "Methods parse failed")
-                        {})))
-      (let [reaction-ast (:value parsed)
-            schema-with-ext (reaction/merge-external-types
-                             schema-ir
-                             (reaction/collect-external-types-from-reaction-ast reaction-ast))
-            methods (reaction/reaction-ast-to-ir reaction-ast schema-with-ext target-ir
-                                                 {:skip-checks? true})]
-        {:methods methods :schema-ir schema-with-ext}))))
+  (let [schema-ir (schema-ir-with-target-types schema-ir target-ir)]
+    (if (str/blank? text)
+      {:methods [] :schema-ir schema-ir}
+      (let [parsed (parser/parse-reaction-unified text)]
+        (when (p/failed? parsed)
+          (throw (ex-info (or (first (:errors parsed)) "Methods parse failed")
+                          {})))
+        (let [reaction-ast (:value parsed)
+              schema-with-ext (reaction/merge-external-types
+                               schema-ir
+                               (reaction/collect-external-types-from-reaction-ast reaction-ast))
+              methods (reaction/reaction-ast-to-ir reaction-ast schema-with-ext target-ir
+                                                   {:skip-checks? true})]
+          {:methods methods :schema-ir schema-with-ext})))))
 
 (defn- parse-public-methods-text
   [text schema-ir target-ir construction-text]
@@ -132,6 +132,8 @@
             combined (into (:methods after-methods)
                            (:methods after-public-methods))]
         (target-requires/assert-external-types!
+         schema-ir target-ir)
+        (target-requires/assert-platform-constructible!
          schema-ir target-ir)
         (reaction/assert-methods-complete! combined schema-ir)
         (-> (p/success-cargo combined)
