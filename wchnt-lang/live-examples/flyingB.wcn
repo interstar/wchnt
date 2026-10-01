@@ -33,7 +33,7 @@ Pentagon::step = { Int/width |
 }
 
 Pentagon::draw = { @WCHNTGraphics/g |
-  g.beginFill(10183653).moveTo(x, y).lineTo(x + side, y).lineTo(x + side, y + side).lineTo(x + (side / 2), y + side + (side / 2)).lineTo(x, y).lineTo(x, y).endFill()
+  g.beginFill(10183653).moveTo(x, y).lineTo(x + side, y).lineTo(x + side, y + side).lineTo(x + (side / 2), y + side + (side / 2)).lineTo(x, y + side).lineTo(x, y).endFill()
 }
 ```
 
@@ -45,21 +45,21 @@ Pentagon::draw = { @WCHNTGraphics/g |
 
 
 %init
-var game;
+var sky;
 
 function init() {
-    game = GameAssemblage.factory();
+    sky = SkyAssemblage.factory();
 }
 
 %step
 function step() {
-    game.game.time["update!"]();
-    var r = game.game.playArea.rect;
+    sky.game.time["update!"]();
+    var r = sky.game.playArea.rect;
     wchntGraphics.clear();
     wchntGraphics.beginFill(0x1a1a2e);
     wchntGraphics.drawRect(r.x, r.y, r.width, r.height);
     wchntGraphics.endFill();
-    for (var s of game.game.shapes) {
+    for (var s of sky.game.shapes) {
         s.draw(wchntGraphics);
     }
 }

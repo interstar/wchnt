@@ -4,6 +4,7 @@
             [clojure.string :as str]
             [wchnt-lang.compiler :as compiler]
             [wchnt-lang.interpret :as interpret]
+            [wchnt-lang.js-view :as js-view]
             [wchnt-lang.mainfile :as mainfile]
             [wchnt-lang.pipeline :as p]))
 
@@ -291,6 +292,85 @@ Pentagon::step = { [:Pentagon (x + 1)] }
 %main
 var sky = SkyAssemblage.factory();
 ```")
+
+(def reactive-box
+  "## Schema
+
+```
+Game = $Time
+Time = Int/t
+```
+
+## Construction
+
+```
+[:Game [:Time 0]]
+```
+
+## Methods
+
+```
+Time::update! = { [:Time (t + 1)] }
+
+Time::next = { t + 1 }
+
+Game::update! = { [:Game time] }
+```
+
+## Public
+
+```
+make = { [:Game [:Time 0]] }
+```")
+
+(def sky-over-reactive
+  "## Import
+
+```
+[[box]] as flying
+```
+
+## Schema
+
+```
+Sky = @Game
+```
+
+## Construction
+
+```
+[:Sky flying.factory()]
+```
+
+## Target
+
+```
+%canvas
+
+%init
+var sky;
+
+function init() {
+  sky = SkyAssemblage.factory();
+}
+
+%step
+function step() {
+  sky.game.time[\"update!\"]();
+}
+```")
+
+(deftest imported-handle-methods-visible-through-js-view
+  (testing "Target JS can call imported-handle methods (update! on $Time)"
+    (let [opts {:resolve-page (fn [n] (when (= n "box") reactive-box))}
+          loaded (interpret/load-program sky-over-reactive opts)
+          sky (js-view/wrap loaded (:root loaded))
+          game (js-view/js-get sky "game")
+          time (js-view/js-get game "time")]
+      (is (fn? (js-view/js-get time "update!")))
+      (js-view/js-call time "update!" [])
+      (is (= 1 (js-view/js-get time "t")))
+      (is (= 2 (js-view/js-call time "next" []))))))
 
 (deftest import-published-interface-can-be-implemented
   (testing "B implements a published Shape and passes it to addShape"

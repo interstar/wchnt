@@ -4,6 +4,7 @@
   (:require [wchnt-lang.compiler :as compiler]
             [wchnt-lang.ir :as ir]
             [wchnt-lang.ast-utils :as ast-utils]
+            [wchnt-lang.pages :as pages]
             [wchnt-lang.pipeline :as p]
             [wchnt-lang.template :as template]
             [wchnt-lang.targets.interpreter-std :as host]
@@ -174,6 +175,24 @@
                                   {:return-object root-id})))]
      (wire-new schema-ir root))))
 
+(defn- merge-imported-ir
+  "Fold imported-page IR into the runtime schema/methods so the interpreter can
+   reconstruct imported objects with their identity semantics and dispatch
+   imported methods on handles. The Haxe backend emits each imported page
+   separately instead; the interpreter needs one merged IR."
+  [cargo]
+  (let [imported (vals (get-in cargo [:stash :imported-cargos]))]
+    {:schema-ir
+     (reduce (fn [acc imp]
+               (pages/merge-schema-irs acc (get-in imp [:stash :schema-ir])))
+             (get-in cargo [:stash :schema-ir])
+             imported)
+     :methods-ir
+     (reduce (fn [acc imp]
+               (pages/merge-methods-irs acc (or (get-in imp [:stash :methods-ir]) [])))
+             (or (get-in cargo [:stash :methods-ir]) [])
+             imported)}))
+
 (defn load-program
   "Parse markdown to IR and construct the initial heap."
   ([wchnt-markdown]
@@ -188,9 +207,8 @@
      (when (= :documentation (get-in cargo [:value :page-kind]))
        (throw (ex-info "Documentation page has nothing to construct"
                        {:page-kind :documentation})))
-     (let [schema-ir (platform/attach-constructors
-                      (get-in cargo [:stash :schema-ir]))
-           methods-ir (or (get-in cargo [:stash :methods-ir]) [])
+     (let [{:keys [schema-ir methods-ir]} (merge-imported-ir cargo)
+           schema-ir (platform/attach-constructors schema-ir)
            construction-ir (get-in cargo [:stash :construction-ir])]
        {:schema-ir schema-ir
         :methods-ir methods-ir

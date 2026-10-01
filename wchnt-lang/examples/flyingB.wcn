@@ -1,6 +1,6 @@
 # Flying shapes (the host)
 
-Imports the flying-shapes box and adds a `Pentagon` that implements the published
+Imports **[[flyingA]]** and adds a `Pentagon` that implements the published
 `Shape` interface. Construction asks the box for a `Game`, then `addShape`s the
 pentagon. Target ticks the imported game; field access there is the usual
 Target cheat.
