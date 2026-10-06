@@ -1,11 +1,20 @@
-# Write paths: a deep nested copy (live)
+# Write paths
 
-Same assemblage as `examples/writepaths.wcn`. Target is `%cli-live`. Type a
-command and press Enter: `jets`, `ocean`, `resize`, or a new fountain name.
+A *write path* gives us the ability to create a new deep copy of complex of objects, overwriting only selected slots. Some of which are a way down the object hierarchy.
 
-`[:Class | path = expr]` rebuilds only the objects on the path. The fountain
-sits six levels down; the ocean is a sibling so a deep write can prove it
-stays put.
+
+`[:Class | path = expr]` rebuilds only the objects explicitly on the path.
+
+
+In this example we build a World from a number of deeply nested objects and create methods that update some of the properties. For example, the Fountain sits six levels down but can still have its name or number of jets updated without disrupting the rest of the structure.
+
+
+Type a command and press Enter: 
+* `jets` updates the number of jets
+* `rain` makes the ocean deeper
+* `drought` evaporates water from the ocean and reduces the number of jets
+* or a new fountain name.
+
 
 ## Schema
 
@@ -45,25 +54,22 @@ World::renameFountain = { String/n |
   [:World | continent.country.capital.plaza.fountain.name = n]
 }
 
-World::deeperOcean = {
+World::rain = {
   [:World | ocean.depth = (ocean.depth + 100)]
 }
 
-World::resize = {
-  [:World | continent.country.capital.plaza.fountain.jets = 12, ocean.depth = 5000]
+World::drought = {
+  [:World | continent.country.capital.plaza.fountain.jets = 1, ocean.depth = 1000]
 }
 
 World::command = { String/line |
   switch (line)
     "jets" -> { this.moreJets() }
-    "ocean" -> { this.deeperOcean() }
-    "resize" -> { this.resize() }
+    "rain" -> { this.rain() }
+    "drought" -> { this.drought() }
     else -> { if (line == "") { this } else { this.renameFountain(line) } }
 }
 
-World::boostFountain = { Fountain/f |
-  [:Fountain f | jets = (f.jets + 1)]
-}
 
 World::label = {
   f = continent.country.capital.plaza.fountain.
@@ -79,17 +85,17 @@ World::label = {
 %cli-live
 
 %init
-var game;
+var world;
 
 function init() {
-    game = GameAssemblage.factory();
-    wchntConsole.println("jets | ocean | resize | or type a fountain name");
-    wchntConsole.println(game.label());
+    world = WorldAssemblage.factory();
+    wchntConsole.println("Improve the world. Type 'jets', 'rain', 'drought' or a new fountain name");
+    wchntConsole.println(world.label());
 }
 
 %step
 function step(line) {
-    game = game.command(line);
-    wchntConsole.println(game.label());
+    world = world.command(line);
+    wchntConsole.println(world.label());
 }
 ```

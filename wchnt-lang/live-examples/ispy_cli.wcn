@@ -1,0 +1,91 @@
+# I-Spy: a text guessing game (live)
+
+A tiny round-based "I spy with my little eye…" game that runs in the live
+editor's text transcript. It shows the `%cli-live` target and `wchntConsole`:
+`%init` prints the first clue once, and `%step(line)` answers each guess you
+type.
+
+The Game holds a list of `Thing`s, the index of the current secret, how many
+you have found, the last reply, and a shared `@WCHNTMaths` handle so rounds
+pick a new secret at random.
+
+## Schema
+
+```
+Game = [Thing]/things Int/secret Int/found String/msg @WCHNTMaths/maths
+Thing = String/name String/clue
+```
+
+## Construction
+
+```
+apple =    [:Thing "apple" "something red and round"].
+bicycle =  [:Thing "bicycle" "something with two wheels"].
+clock =    [:Thing "clock" "something that tells the time"].
+book =     [:Thing "book" "something with pages"].
+
+[:Game [:Array/Thing apple bicycle clock book] 0 0 "" maths]
+```
+
+## Methods
+
+```
+Thing::clueLine = {
+  "I spy with my little eye, {clue}.".tpl({String:String "clue": clue})
+}
+
+Game::secretThing = { things.get(secret) }
+
+Game::nextSecretId = { Int/oldId |
+  r = maths.randInt(things.length() - 1).
+  if (r >= oldId) { r + 1 } else { r }
+}
+
+Game::start = {
+  first = maths.randInt(things.length()).
+  t = things.get(first).
+  [:Game | secret = first, msg = t.clueLine()]
+}
+
+Game::onFound = { Thing/t |
+  next = this.nextSecretId(secret).
+  nt = things.get(next).
+  count = found + 1.
+  win = "Yes! You found the {name}! ({count} so far)".tpl({String:String "name": t.name, "count": count.str()}).
+  [:Game | secret = next, found = count, msg = win.concat(" ").concat(nt.clueLine())]
+}
+
+Game::onMiss = { String/line |
+  [:Game | msg = "No, not {guess}. Try again.".tpl({String:String "guess": line})]
+}
+
+Game::guess = { String/line |
+  t = this.secretThing().
+  if (line == t.name) { this.onFound(t) } else { this.onMiss(line) }
+}
+```
+
+## Target
+
+```
+%cli-live
+
+%requires
+WCHNTMaths::randInt(Int) -> Int
+
+%init
+var game;
+
+function init() {
+    game = GameAssemblage.factory(wchntMaths);
+    wchntConsole.println("I spy with my little eye… type a guess and press Enter.");
+    game = game.start();
+    wchntConsole.println(game.msg);
+}
+
+%step
+function step(line) {
+    game = game.guess(line);
+    wchntConsole.println(game.msg);
+}
+```

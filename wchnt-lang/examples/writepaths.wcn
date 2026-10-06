@@ -1,10 +1,20 @@
-# Write paths: a deep nested copy
+# Write paths
 
-`[:Class | path = expr]` rebuilds only the objects on the path. This world is
-six composition levels down to the fountain, with an ocean sitting beside the
-continent so a deep write can prove siblings stay put.
+A *write path* gives us the ability to create a new deep copy of complex of objects, overwriting only selected slots. Some of which are a way down the object hierarchy.
 
-Construction is still the full positional picture. Methods use write-paths.
+
+`[:Class | path = expr]` rebuilds only the objects explicitly on the path.
+
+
+In this example we build a World from a number of deeply nested objects and create methods that update some of the properties. For example, the Fountain sits six levels down but can still have its name or number of jets updated without disrupting the rest of the structure.
+
+
+Type a command and press Enter: 
+* `jets` updates the number of jets
+* `rain` makes the ocean deeper
+* `drought` evaporates water from the ocean and reduces the number of jets
+* or a new fountain name.
+
 
 ## Schema
 
@@ -44,17 +54,22 @@ World::renameFountain = { String/n |
   [:World | continent.country.capital.plaza.fountain.name = n]
 }
 
-World::deeperOcean = {
+World::rain = {
   [:World | ocean.depth = (ocean.depth + 100)]
 }
 
-World::resize = {
-  [:World | continent.country.capital.plaza.fountain.jets = 12, ocean.depth = 5000]
+World::drought = {
+  [:World | continent.country.capital.plaza.fountain.jets = 1, ocean.depth = 1000]
 }
 
-World::boostFountain = { Fountain/f |
-  [:Fountain f | jets = (f.jets + 1)]
+World::command = { String/line |
+  switch (line)
+    "jets" -> { this.moreJets() }
+    "rain" -> { this.rain() }
+    "drought" -> { this.drought() }
+    else -> { if (line == "") { this } else { this.renameFountain(line) } }
 }
+
 
 World::label = {
   f = continent.country.capital.plaza.fountain.
@@ -78,9 +93,9 @@ public static function main():Void {
     trace(world.moreJets().toConstruction(0, helper));
     trace("renameFountain");
     trace(world.renameFountain("Arethusa").toConstruction(0, helper));
-    trace("deeperOcean");
-    trace(world.deeperOcean().toConstruction(0, helper));
-    trace("resize");
-    trace(world.resize().toConstruction(0, helper));
+    trace("rain");
+    trace(world.rain().toConstruction(0, helper));
+    trace("drought");
+    trace(world.drought().toConstruction(0, helper));
 }
 ```
