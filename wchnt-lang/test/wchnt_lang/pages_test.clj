@@ -95,6 +95,6 @@ function step() {}
 (deftest library-compiles-without-main
   (let [cargo (compiler/compile shapes-lib)]
     (is (:success cargo))
-    (is (false? (:has-construction? (:value cargo))))
-    (is (= "" (:main-class (:value cargo))))
-    (is (not (empty? (:classes (:value cargo)))))))
+    (is (false? (:has-construction? (:payload (:value cargo)))))
+    (is (= "" (:main-class (:payload (:value cargo)))))
+    (is (not (empty? (:classes (:payload (:value cargo))))))))

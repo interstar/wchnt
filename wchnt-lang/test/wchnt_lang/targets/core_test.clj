@@ -77,9 +77,9 @@
       (is (nil? (:init ir)))
       (is (nil? (:step ir)))
       (is (= "wchnt_trace" (get-in ir [:bindings "trace" :fn-name])))
-      (is (re-find #"function wchnt_trace" (get-in ir [:bindings "trace" :haxe])))
-      (is (re-find #"function main" (get-in ir [:main :haxe])))
-      (is (re-find #"time\.update" (get-in ir [:main :haxe]))))))
+      (is (re-find #"function wchnt_trace" (get-in ir [:bindings "trace" :source])))
+      (is (re-find #"function main" (get-in ir [:main :source])))
+      (is (re-find #"time\.update" (get-in ir [:main :source]))))))
 
 (deftest parse-target-requires-percent
   (testing "non-empty Target without %name fails"
@@ -122,7 +122,7 @@
               "%terminal\n\n%main\npublic static function main():Void {}\n")]
       (is (= "terminal" (:host ir)))
       (is (nil? (get-in ir [:bindings "terminal"])))
-      (is (re-find #"function main" (get-in ir [:main :haxe]))))))
+      (is (re-find #"function main" (get-in ir [:main :source]))))))
 
 (deftest parse-target-host-openfl
   (testing "%openfl names the OpenFL host and takes %init and %step"
@@ -133,8 +133,8 @@
       (is (= "openfl" (:host ir)))
       (is (nil? (:main ir)))
       (is (nil? (get-in ir [:bindings "openfl"])))
-      (is (re-find #"function init" (get-in ir [:init :haxe])))
-      (is (re-find #"function step" (get-in ir [:step :haxe]))))))
+      (is (re-find #"function init" (get-in ir [:init :source])))
+      (is (re-find #"function step" (get-in ir [:step :source]))))))
 
 (deftest parse-target-openfl-requires-init-and-step
   (testing "%openfl without %init/%step fails"
@@ -170,8 +170,8 @@
                    "%init\nfunction held():Bool { return false; }\n"
                    "function init():Void {}\n\n"
                    "%step\nfunction step():Void {}\n"))]
-      (is (re-find #"function init" (get-in ir [:init :haxe])))
-      (is (re-find #"function held" (get-in ir [:init :haxe]))))))
+      (is (re-find #"function init" (get-in ir [:init :source])))
+      (is (re-find #"function held" (get-in ir [:init :source]))))))
 
 (deftest parse-target-host-must-be-empty
   (testing "host % names must not contain Haxe"
@@ -193,8 +193,8 @@
                    "%step\nfunction step() { assemblage = assemblage.step(); }\n"))]
       (is (= "canvas" (:host ir)))
       (is (nil? (:main ir)))
-      (is (re-find #"function init" (get-in ir [:init :haxe])))
-      (is (re-find #"function step" (get-in ir [:step :haxe]))))))
+      (is (re-find #"function init" (get-in ir [:init :source])))
+      (is (re-find #"function step" (get-in ir [:step :source]))))))
 
 (deftest parse-target-canvas-requires-init-and-step
   (testing "%canvas without %init/%step fails"
@@ -213,8 +213,8 @@
                    "%step\nfunction step(line:String):Void { assemblage = assemblage.move(line); }\n"))]
       (is (= "cli" (:host ir)))
       (is (nil? (:main ir)))
-      (is (re-find #"function init" (get-in ir [:init :haxe])))
-      (is (re-find #"function step" (get-in ir [:step :haxe]))))))
+      (is (re-find #"function init" (get-in ir [:init :source])))
+      (is (re-find #"function step" (get-in ir [:step :source]))))))
 
 (deftest parse-target-cli-requires-init-and-step
   (testing "%cli without %init/%step fails"
@@ -239,8 +239,8 @@
                    "%step\nfunction step(line) { assemblage = assemblage.move(line); }\n"))]
       (is (= "cli-live" (:host ir)))
       (is (nil? (:main ir)))
-      (is (re-find #"function init" (get-in ir [:init :haxe])))
-      (is (re-find #"function step" (get-in ir [:step :haxe]))))))
+      (is (re-find #"function init" (get-in ir [:init :source])))
+      (is (re-find #"function step" (get-in ir [:step :source]))))))
 
 (deftest parse-target-cli-live-requires-init-and-step
   (testing "%cli-live without %init/%step fails"
@@ -259,8 +259,8 @@
                    "%step\nfunction step() {}\n"))]
       (is (= "form" (:host ir)))
       (is (nil? (:main ir)))
-      (is (re-find #"function init" (get-in ir [:init :haxe])))
-      (is (re-find #"function step" (get-in ir [:step :haxe])))
+      (is (re-find #"function init" (get-in ir [:init :source])))
+      (is (re-find #"function step" (get-in ir [:step :source])))
       (is (contains? (:external-types ir) "WCHNTConsole"))
       (is (some #(= {:name "wchntConsole" :host-key :console} %)
                 (get-in ir [:plugin :standard :bindings]))))))

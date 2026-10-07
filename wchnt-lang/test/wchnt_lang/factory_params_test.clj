@@ -90,7 +90,7 @@ Board = @Pen Sketch")
                      "[:Board e [:Sketch \"x\" d]]"
                      "Board::ok = { sketch.name }"))]
     (is (:success cargo) (first (:errors cargo)))
-    (let [factory (get-in cargo [:stash :construction-haxe])]
+    (let [factory (get-in cargo [:value :payload :classes])]
       (is (str/includes? factory "factory(e: Pen, d: Pen)"))
       (is (not (str/includes? factory "factory()"))))))
 

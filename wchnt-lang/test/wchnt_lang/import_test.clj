@@ -218,8 +218,8 @@ make = { [:Paint 0] }
                app-using-shapes
                {:resolve-page (fn [n] (when (= n "shapes") shapes-lib))})]
     (is (:success cargo) (err cargo))
-    (let [classes (:classes (:value cargo))
-          factory (:classes (:value cargo))]
+    (let [classes (get-in cargo [:value :payload :classes])
+          factory (get-in cargo [:value :payload :classes])]
       (is (str/includes? classes "public static function make("))
       (is (not (str/includes? classes "\n    public function make(")))
     (is (str/includes? classes "GameAssemblage.make(800, 600)")))))
@@ -386,8 +386,8 @@ function step() {
                  sky-with-pentagon
                  {:resolve-page (fn [n] (when (= n "shapes") shape-box))})]
       (is (:success cargo) (err cargo))
-      (let [cls (:classes (:value cargo))
-            factory (:classes (:value cargo))]
+      (let [cls (get-in cargo [:value :payload :classes])
+            factory (get-in cargo [:value :payload :classes])]
         (is (str/includes? cls "class Pentagon implements Shape"))
         (is (str/includes? cls "public function addShape("))
         (is (str/includes? factory "GameAssemblage.make()"))

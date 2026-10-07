@@ -504,8 +504,14 @@ public static function main():Void {
       
       (is (p/is-cargo? cargo-result))
       (if (:success cargo-result)
-        (let [result (:value cargo-result)]
-          (is (schema/valid-full-program? result))
+        (let [artifact (:value cargo-result)
+              result (:payload artifact)]
+          (is (schema/valid-full-program? artifact))
+          (is (= :haxe (:backend artifact)))
+          (is (= :source (get-in artifact [:outputs 0 :kind])))
+          (is (= "Main.hx" (get-in artifact [:outputs 0 :name])))
+          (is (string? (get-in artifact [:outputs 0 :content])))
+          (is (not (schema/valid-backend-artifact? (assoc artifact :classes "legacy"))))
           (is (str/includes? (:classes result) "class App"))
           (is (str/includes? (:classes result) "class Config"))
           (is (str/includes? (:classes result) "enum Direction"))
@@ -522,9 +528,10 @@ public static function main():Void {
     (let [cargo-result (compiler/compile (slurp "examples/test_dict.wcn"))]
       (is (p/is-cargo? cargo-result))
       (if (:success cargo-result)
-        (let [result (:value cargo-result)
+        (let [artifact (:value cargo-result)
+              result (:payload artifact)
               factory (:classes result)]
-          (is (schema/valid-full-program? result))
+          (is (schema/valid-full-program? artifact))
           (is (str/includes? factory "new Config([\"0\" => 0, \"1\" => 1])"))
           (is (str/includes? factory "new Config2([Dev => \"dev\", Local => \"local\", Deploy => \"deploy\"])")))
         (do
@@ -538,7 +545,7 @@ public static function main():Void {
     (let [cargo-result (compiler/compile (slurp "examples/test_reactive.wcn"))]
       (is (p/is-cargo? cargo-result))
       (is (:success cargo-result))
-      (let [result (:value cargo-result)
+      (let [result (:payload (:value cargo-result))
             classes (:classes result)
             factory (:classes result)]
         (is (str/includes? classes "class Time"))
@@ -550,8 +557,8 @@ public static function main():Void {
   (testing "test.wcn maps ps to an object id and infers nested Player, not String"
     (let [cargo-result (compiler/compile (slurp "examples/test.wcn"))]
       (is (:success cargo-result))
-      (let [factory (get-in cargo-result [:value :classes])
-            classes (get-in cargo-result [:value :classes])]
+      (let [factory (get-in cargo-result [:value :payload :classes])
+            classes (get-in cargo-result [:value :payload :classes])]
         (is (not (re-find #"[^a-zA-Z]ps[^a-zA-Z]" factory)))
         (is (str/includes? factory "new Player(40, 90, \"Bob\")"))
         (is (not (str/includes? factory "new String(40, 90")))
@@ -561,7 +568,7 @@ public static function main():Void {
   (testing "shared Time is subscribed by both World and Scene, Time built first"
     (let [cargo-result (compiler/compile (slurp "examples/test_reactive_two_subscribers.wcn"))]
       (is (:success cargo-result))
-      (let [factory (get-in cargo-result [:value :classes])]
+      (let [factory (get-in cargo-result [:value :payload :classes])]
         (is (re-find #"\.time\.subscribe\(" factory))
         (is (= 4 (count (re-seq #"\.time\.subscribe\(" factory))))
         (is (re-find #"(?s)new Time\(0\).*new Scene\(" factory))))))
@@ -570,11 +577,11 @@ public static function main():Void {
   (testing "square_openfl >Keys gets a generated inject that calls update"
     (let [cargo (compiler/compile (slurp "examples/square_openfl.wcn"))]
       (is (:success cargo) (first (:errors cargo)))
-      (let [classes (get-in cargo [:value :classes])]
+      (let [classes (get-in cargo [:value :payload :classes])]
         (is (str/includes? classes "class Keys"))
         (is (str/includes? classes "public function inject(left:Bool, right:Bool, up:Bool, down:Bool): Keys"))
         (is (str/includes? classes "return this.update_mutates();"))
-        (is (str/includes? (get-in cargo [:value :main-class]) "game.keys.inject("))))))
+        (is (str/includes? (get-in cargo [:value :payload :main-class]) "game.keys.inject("))))))
 
 (deftest arbitrary-mutating-method-emits-visible-haxe-name
   (testing "a WCHNT ! method becomes an argument-taking _mutates Haxe method"
@@ -589,7 +596,7 @@ public static function main():Void {
                       "```\n")
           cargo (compiler/compile source)]
       (is (:success cargo) (first (:errors cargo)))
-      (let [classes (get-in cargo [:value :classes])]
+      (let [classes (get-in cargo [:value :payload :classes])]
         (is (str/includes? classes "public function advance_mutates(delta:Int): Clock"))
         (is (str/includes? classes "return this;"))))))
 
@@ -597,7 +604,7 @@ public static function main():Void {
   (testing "construction false is Haxe false, not an empty constructor argument"
     (let [cargo (compiler/compile (slurp "examples/square_openfl.wcn"))]
       (is (:success cargo) (first (:errors cargo)))
-      (let [factory (get-in cargo [:value :classes])]
+      (let [factory (get-in cargo [:value :payload :classes])]
         (is (str/includes? factory "new Keys(false, false, false, false)"))
         (is (not (str/includes? factory "new Keys(,")))))))
 
@@ -612,7 +619,7 @@ public static function main():Void {
                       "```\n\n## Target\n\n```\n%openfl\n\n%init\nfunction init() {}\n\n%step\nfunction step() {}\n```\n")
           cargo (compiler/compile source)]
       (is (:success cargo) (first (:errors cargo)))
-      (let [classes (get-in cargo [:value :classes])]
+      (let [classes (get-in cargo [:value :payload :classes])]
         (is (str/includes? classes "public function draw(g:WCHNTGraphics): WCHNTGraphics"))
         (is (str/includes? classes "return g.beginFill(1).drawCircle(5, 6, 7).endFill();"))))))
 
@@ -635,7 +642,7 @@ public static function main():Void {
                            "## Target\n\n```\n%terminal\n\n%main\nfunction main() {}\n```\n")
           cargo (compiler/compile context-src)]
       (is (:success cargo) (first (:errors cargo)))
-      (let [classes (get-in cargo [:value :classes])]
+      (let [classes (get-in cargo [:value :payload :classes])]
         (is (str/includes? classes "this.ball.setContext(this);")
             "every new Game(...) must setContext, not just the factory")
         (is (str/includes? classes "this.time.subscribe(this);")
@@ -645,7 +652,7 @@ public static function main():Void {
   (testing "Student Haxe exposes promoted name and greet"
     (let [cargo (compiler/compile (slurp "examples/test_delegate.wcn"))]
       (is (:success cargo) (first (:errors cargo)))
-      (let [classes (get-in cargo [:value :classes])]
+      (let [classes (get-in cargo [:value :payload :classes])]
         (is (str/includes? classes "public var name(get, never): String;"))
         (is (str/includes? classes "return this.basePerson.name;"))
         (is (str/includes? classes "return this.basePerson.greet();"))))))

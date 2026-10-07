@@ -54,7 +54,7 @@ public static function main():Void {
 (deftest haxe-can-use-either-root-update-style
   (let [cargo (compiler/compile root-mutability-program)]
     (is (:success cargo) (pr-str (:errors cargo)))
-    (is (clojure.string/includes? (:main-class (:value cargo))
+    (is (clojure.string/includes? (:main-class (:payload (:value cargo)))
                                   "assemblage.update_mutates();"))
-    (is (clojure.string/includes? (:main-class (:value cargo))
+    (is (clojure.string/includes? (:main-class (:payload (:value cargo)))
                                   "assemblage = assemblage.step();"))))

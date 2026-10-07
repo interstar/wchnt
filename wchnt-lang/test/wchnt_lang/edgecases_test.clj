@@ -94,7 +94,7 @@
     (let [cargo (compiler/compile (slurp "examples/edgecases.wcn"))]
       (is (p/is-cargo? cargo))
       (is (:success cargo) (first (:errors cargo)))
-      (let [factory (get-in cargo [:value :classes] "")]
+      (let [factory (get-in cargo [:value :payload :classes] "")]
         (is (re-find #"\.clockA\.subscribe\(" factory))
         (is (re-find #"\.pulse\.subscribe\(" factory))
         (is (re-find #"\.shared\.subscribe\(" factory))

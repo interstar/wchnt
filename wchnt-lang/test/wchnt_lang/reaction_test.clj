@@ -136,7 +136,7 @@ Move = \"Up\" | \"Down\"")
   (testing "test_reaction_lets.wcn compiles lets into Haxe"
     (let [cargo (compiler/compile (slurp "examples/test_reaction_lets.wcn"))]
       (is (:success cargo) (str (first (:errors cargo))))
-      (let [classes (get-in cargo [:value :classes])]
+      (let [classes (get-in cargo [:value :payload :classes])]
         (is (str/includes? classes "var nx = this.x + this.dx;"))
         (is (str/includes? classes "var ny = this.y + this.dy;"))
         (is (str/includes? classes "return new Ball(nx, ny, this.dx, this.dy, this.rad);"))
@@ -188,7 +188,7 @@ Move = \"Up\" | \"Down\"")
   (testing "test_reaction_arithmetic.wcn puts area, doubleWidth, move on generated classes"
     (let [cargo (compiler/compile (slurp "examples/test_reaction_arithmetic.wcn"))]
       (is (:success cargo) (str (first (:errors cargo))))
-      (let [classes (get-in cargo [:value :classes])]
+      (let [classes (get-in cargo [:value :payload :classes])]
         (is (str/includes? classes "public function area(): Int"))
         (is (str/includes? classes "return this.width * this.height;"))
         (is (str/includes? classes "public function doubleWidth(): Rect"))
@@ -202,7 +202,7 @@ Move = \"Up\" | \"Down\"")
   (testing "test_reaction_logic.wcn puts movingRight and contains on generated classes"
     (let [cargo (compiler/compile (slurp "examples/test_reaction_logic.wcn"))]
       (is (:success cargo) (str (first (:errors cargo))))
-      (let [classes (get-in cargo [:value :classes])]
+      (let [classes (get-in cargo [:value :payload :classes])]
         (is (str/includes? classes "public function movingRight(): Bool"))
         (is (str/includes? classes "return this.dx > 0;"))
         (is (str/includes? classes "public function contains(px:Int, py:Int): Bool"))
@@ -287,14 +287,14 @@ Ball = Int/x Int/y Int/dx Int/dy Int/rad")
   (testing "test_reaction_paths.wcn compiles field paths"
     (let [cargo (compiler/compile (slurp "examples/test_reaction_paths.wcn"))]
       (is (:success cargo) (str (first (:errors cargo))))
-      (let [classes (get-in cargo [:value :classes])]
+      (let [classes (get-in cargo [:value :payload :classes])]
         (is (str/includes? classes "this.ball.x"))
         (is (str/includes? classes "this.playArea.rect.width")))))
 
   (testing "test_reaction_context_path.wcn compiles theCar.model"
     (let [cargo (compiler/compile (slurp "examples/test_reaction_context_path.wcn"))]
       (is (:success cargo) (str (first (:errors cargo))))
-      (is (str/includes? (get-in cargo [:value :classes])
+      (is (str/includes? (get-in cargo [:value :payload :classes])
                         "return this.theCar.model;")))))
 
 (def call-schema
@@ -385,7 +385,7 @@ Game::bad = { playArea.area() }")))))
   (testing "test_reaction_calls.wcn compiles method calls"
     (let [cargo (compiler/compile (slurp "examples/test_reaction_calls.wcn"))]
       (is (:success cargo) (str (first (:errors cargo))))
-      (let [classes (get-in cargo [:value :classes])]
+      (let [classes (get-in cargo [:value :payload :classes])]
         (is (str/includes? classes "return this.move();"))
         (is (str/includes? classes "this.playArea.rect.area()"))
         (is (str/includes? classes
@@ -540,7 +540,7 @@ Game::bad = { playArea.area() }")))))
   (testing "test_reaction_if.wcn compiles if/else"
     (let [cargo (compiler/compile (slurp "examples/test_reaction_if.wcn"))]
       (is (:success cargo) (str (first (:errors cargo))))
-      (let [classes (get-in cargo [:value :classes])]
+      (let [classes (get-in cargo [:value :payload :classes])]
         (is (str/includes? classes "if (this.dx < 0)"))
         (is (str/includes? classes "-this.dx"))))))
 
@@ -697,7 +697,7 @@ Team::sum = { scores.fold(0, { acc, k, v | acc + v }) }")
   (testing "test_reaction_collections.wcn compiles map filter fold"
     (let [cargo (compiler/compile (slurp "examples/test_reaction_collections.wcn"))]
       (is (:success cargo) (str (first (:errors cargo))))
-      (let [classes (get-in cargo [:value :classes])]
+      (let [classes (get-in cargo [:value :payload :classes])]
         (is (str/includes? classes "this.players.map"))
         (is (str/includes? classes "this.players.filter"))
         (is (str/includes? classes "Lambda.fold(this.players"))))))
@@ -1213,8 +1213,8 @@ Game::update! = { [:Game playArea ball time] }")))))
                  (str "# x\n\n## Schema\n\n```\nRect = Int/x Int/y Int/width Int/height\n```\n\n"
                       "## Construction\n\n```\n[:Rect 0 0 1 1]\n```\n"))]
       (is (:success cargo) (first (:errors cargo)))
-      (is (str/includes? (get-in cargo [:value :classes]) "RectAssemblage"))
-      (is (str/blank? (get-in cargo [:value :main-class] ""))))))
+      (is (str/includes? (get-in cargo [:value :payload :classes]) "RectAssemblage"))
+      (is (str/blank? (get-in cargo [:value :payload :main-class] ""))))))
 
 (deftest schema-class-named-main-fails
   (testing "a schema class called Main fails rather than colliding with the generated entry"
@@ -1234,9 +1234,9 @@ Game::update! = { [:Game playArea ball time] }")))))
                       "%init\nvar assemblage:Rect;\nfunction init():Void { assemblage = RectAssemblage.factory(); }\n\n"
                       "%step\nfunction step():Void { graphics.clear(); }\n```\n"))]
       (is (:success cargo) (first (:errors cargo)))
-      (let [main-class (get-in cargo [:value :main-class])
-            preamble (get-in cargo [:value :preamble])]
-        (is (= "openfl" (get-in cargo [:value :host])))
+      (let [main-class (get-in cargo [:value :payload :main-class])
+            preamble (get-in cargo [:value :payload :preamble])]
+        (is (= "openfl" (get-in cargo [:value :target])))
         (is (str/includes? preamble "openfl.display.Sprite"))
         (is (str/includes? main-class "class Main extends Sprite"))
         (is (str/includes? main-class "function init"))
@@ -1253,8 +1253,8 @@ Game::update! = { [:Game playArea ball time] }")))))
       (is (re-find #"update!" (or (first (:errors cargo)) ""))))))
 
 (def trace-target
-  {:bindings {"trace" {:fn-name "wchnt_trace" :haxe ""}}
-   :main {:haxe ""}})
+  {:bindings {"trace" {:fn-name "wchnt_trace" :source ""}}
+   :main {:source ""}})
 
 (deftest target-trace-passes-the-value-through
   (testing "%trace(expr) keeps expr's type and compiles to Main.wchnt_trace"

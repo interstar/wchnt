@@ -136,10 +136,10 @@ Roll = @WCHNTMaths/maths")
 (deftest haxe-emits-maths-host-and-factory
   (let [cargo (compiler/compile (page roll-schema "[:Roll maths]" roll-methods))]
     (is (:success cargo) (first (:errors cargo)))
-    (let [preamble (get-in cargo [:value :preamble] "")
-          factory (get-in cargo [:value :classes] "")
-          main-class (get-in cargo [:value :main-class] "")
-          classes (get-in cargo [:value :classes] "")]
+    (let [preamble (get-in cargo [:value :payload :preamble] "")
+          factory (get-in cargo [:value :payload :classes] "")
+          main-class (get-in cargo [:value :payload :main-class] "")
+          classes (get-in cargo [:value :payload :classes] "")]
       (is (str/includes? preamble "class WCHNTMaths"))
       (is (str/includes? preamble "function randInt(n:Int):Int"))
       (is (str/includes? preamble "function sin(x:Float):Float"))

@@ -33,13 +33,14 @@ Config = String/settings
 ```
 ```"
           cargo-result (compiler/compile wchnt-content) ;; compile now returns a cargo
-          result (:value cargo-result)]
+          artifact (:value cargo-result)
+          result (:payload artifact)]
 
-      (is (schema/valid-full-program? result))
+      (is (schema/valid-full-program? artifact))
       (let [classes (:classes result)]
 
-        (is (str/includes? result "class Config"))
-        (is (str/includes? result "public var settings: String"))
+        (is (str/includes? classes "class Config"))
+        (is (str/includes? classes "public var settings: String"))
         ))
 
     (deftest test-compile-wchnt-file-with-construction
@@ -72,15 +73,16 @@ public static function main():Void {
 }
 ```"
               cargo-result (compiler/compile wchnt-content)
-              result (:value cargo-result)]
-          (is (schema/valid-full-program? result))
+              artifact (:value cargo-result)
+              result (:payload artifact)]
+          (is (schema/valid-full-program? artifact))
           (let [classes (:classes result)
                 factory (:classes result)
                 main (:main result)]
-            (is (str/includes? result "class Game"))
-            (is (str/includes? result "class PlayArea"))
-            (is (str/includes? result "class Rect"))
-            (is (str/includes? result "class Ball"))
+            (is (str/includes? classes "class Game"))
+            (is (str/includes? classes "class PlayArea"))
+            (is (str/includes? classes "class Rect"))
+            (is (str/includes? classes "class Ball"))
             (is (str/includes? factory "public static function factory("))
             (is (str/includes? main "var assemblage = GameAssemblage.factory()"))))))))
 
@@ -117,9 +119,10 @@ public static function main():Void {
 }
 ```"
           cargo-result (compiler/compile wchnt-content)
-          result  (:value cargo-result)]
+          artifact (:value cargo-result)
+          result (:payload artifact)]
       (is (:success cargo-result))
-      (is (schema/valid-full-program? result))
+      (is (schema/valid-full-program? artifact))
       (let [classes (:classes result)
             factory (:classes result)
             main (:main result)]
@@ -225,7 +228,8 @@ public static function main():Void {
 }
 ```"
           cargo-result (compiler/compile wchnt-content)
-          result (:value cargo-result)]
+          artifact (:value cargo-result)
+          result (:payload artifact)]
       
       ;; First, let's check if the cargo failed and why
       (if (P/failed? cargo-result)
@@ -238,7 +242,7 @@ public static function main():Void {
           (is (P/failed? cargo-result)))
         ;; If it succeeded, test the result
         (do
-          (is (schema/valid-full-program? result))
+          (is (schema/valid-full-program? artifact))
           (let [classes (:classes result)
                 factory (:classes result)]
             (is (str/includes? classes "class DB"))

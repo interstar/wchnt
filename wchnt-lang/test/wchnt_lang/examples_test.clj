@@ -33,23 +33,23 @@
 
 (defn- factory
   [cargo]
-  (get-in cargo [:value :classes] ""))
+  (get-in cargo [:value :payload :classes] ""))
 
 (defn- classes
   [cargo]
-  (get-in cargo [:value :classes] ""))
+  (get-in cargo [:value :payload :classes] ""))
 
 (defn- host
   [cargo]
-  (get-in cargo [:value :host]))
+  (get-in cargo [:value :target]))
 
 (defn- main
   [cargo]
-  (get-in cargo [:value :main] ""))
+  (get-in cargo [:value :payload :main] ""))
 
 (defn- main-class
   [cargo]
-  (get-in cargo [:value :main-class] ""))
+  (get-in cargo [:value :payload :main-class] ""))
 
 (deftest every-example-file-compiles
   (testing "each examples/*.wcn compiles to Haxe strings"
@@ -67,13 +67,13 @@
             (let [cargo (compiler/compile text example-opts)]
               (is (:success cargo)
                   (str name " should compile: " (first (:errors cargo))))
-              (when (get-in cargo [:value :has-construction?])
+              (when (get-in cargo [:value :payload :has-construction?])
                 (is (str/includes? text "## Target")
                     (str name " with construction should have a Target section"))
                 (cond
                   (= "testharness" (host cargo))
                   (do
-                    (is (str/includes? (get-in cargo [:value :preamble] "") "class WCHNTUnitTests")
+                    (is (str/includes? (get-in cargo [:value :payload :preamble] "") "class WCHNTUnitTests")
                         (str name " %testharness should emit WCHNTUnitTests"))
                     (is (str/includes? (main-class cargo) "function main")
                         (str name " %testharness should emit Main.main"))
@@ -84,9 +84,9 @@
                   (do
                     (is (str/includes? (factory cargo) "Assemblage")
                         (str name " with construction should emit a factory"))
-                    (is (str/includes? (get-in cargo [:value :preamble] "") "class WCHNTConsole")
+                    (is (str/includes? (get-in cargo [:value :payload :preamble] "") "class WCHNTConsole")
                         (str name " Haxe host should emit WCHNTConsole"))
-                    (is (str/includes? (get-in cargo [:value :preamble] "") "class WCHNTMaths")
+                    (is (str/includes? (get-in cargo [:value :payload :preamble] "") "class WCHNTMaths")
                         (str name " Haxe host should emit WCHNTMaths"))
                     (is (str/includes? (main-class cargo) "wchntConsole")
                         (str name " Haxe host should bind wchntConsole"))
@@ -329,7 +329,7 @@
     (let [cargo (assert-compiles "bounce_openfl.wcn")
           classes (classes cargo)
           main-class (main-class cargo)
-          preamble (get-in cargo [:value :preamble] "")]
+          preamble (get-in cargo [:value :payload :preamble] "")]
       (is (= "openfl" (host cargo)))
       (is (str/includes? classes "public function bounced(r:PlayArea): Ball"))
       (is (str/includes? preamble "openfl.display.Sprite"))
@@ -360,14 +360,14 @@
       (is (str/includes? main-class "Event.ENTER_FRAME")))))
 
 (deftest bounce-openfl-compiles-to-ir
-  (testing "compile-to-ir yields schema, methods, and construction without Haxe"
+  (testing "compile-to-ir yields portable IR without backend artifacts"
     (let [cargo (compiler/compile-to-ir (slurp "examples/bounce_openfl.wcn"))]
       (is (:success cargo) (str (first (:errors cargo))))
       (is (get-in cargo [:stash :schema-ir]))
       (is (get-in cargo [:stash :construction-ir]))
       (is (seq (get-in cargo [:stash :methods-ir])))
       (is (= "openfl" (get-in cargo [:stash :target-ir :host])))
-      (is (nil? (get-in cargo [:stash :schema-haxe]))))))
+      (is (not (contains? (:value cargo) :classes))))))
 
 (deftest bounce-canvas-example
   (testing "bounce_canvas.wcn is IR-only; Haxe backend rejects %canvas"
@@ -421,7 +421,7 @@
     (let [cargo (assert-compiles "square_openfl.wcn")
           classes (classes cargo)
           main-class (main-class cargo)
-          preamble (get-in cargo [:value :preamble] "")]
+          preamble (get-in cargo [:value :payload :preamble] "")]
       (is (= "openfl" (host cargo)))
       (is (str/includes? classes "public function inject(left:Bool, right:Bool, up:Bool, down:Bool): Keys"))
       (is (str/includes? classes "return this.update_mutates();"))
@@ -438,7 +438,7 @@
       (is (:success ir) (str (first (:errors ir))))
       (is (= "canvas" (get-in ir [:stash :target-ir :host])))
       (is (= ["Keys"] (get-in ir [:stash :schema-ir :mailbox-classes])))
-      (is (str/includes? (get-in ir [:stash :target-ir :step :haxe])
+      (is (str/includes? (get-in ir [:stash :target-ir :step :source])
                         "wchntInput.keyDown(\"ArrowLeft\")"))
       (is (not (:success haxe)))
       (is (re-find #"%canvas" (or (first (:errors haxe)) ""))))))
@@ -446,7 +446,7 @@
 (deftest combinators-cli-example
   (testing "combinators_cli.wcn println's WCHNT values; console owns toConstruction"
     (let [cargo (assert-compiles "combinators_cli.wcn")
-          preamble (get-in cargo [:value :preamble] "")
+          preamble (get-in cargo [:value :payload :preamble] "")
           main-class (main-class cargo)]
       (is (= "cli" (host cargo)))
       (is (str/includes? preamble "public function format(value:Dynamic):String"))
@@ -461,7 +461,7 @@
 (deftest maths-example
   (testing "maths.wcn injects wchntMaths; Target does not call randInt itself"
     (let [cargo (assert-compiles "maths.wcn")
-          preamble (get-in cargo [:value :preamble] "")
+          preamble (get-in cargo [:value :payload :preamble] "")
           main-class (main-class cargo)
           factory (factory cargo)]
       (is (= "terminal" (host cargo)))
@@ -520,7 +520,7 @@
     (let [cargo (assert-compiles "adventure.wcn")
           classes (classes cargo)
           main-class (main-class cargo)
-          preamble (get-in cargo [:value :preamble] "")]
+          preamble (get-in cargo [:value :payload :preamble] "")]
       (is (= "cli" (host cargo)))
       (is (str/includes? classes "class WorldMap"))
       (is (str/includes? classes "class Location"))
@@ -561,7 +561,7 @@
     (let [cargo (assert-compiles "test_target_trace.wcn")
           classes (classes cargo)
           main (main cargo)
-          main-class (get-in cargo [:value :main-class])]
+          main-class (get-in cargo [:value :payload :main-class])]
       (is (str/includes? classes "Main.wchnt_trace("))
       (is (str/includes? main-class "function wchnt_trace"))
       (is (str/includes? main "rect.area()"))
@@ -573,7 +573,7 @@
           classes (classes cargo)
           main (main cargo)
           main-class (main-class cargo)
-          preamble (get-in cargo [:value :preamble] "")]
+          preamble (get-in cargo [:value :payload :preamble] "")]
       (is (= "terminal" (host cargo)))
       (is (str/includes? preamble "class WCHNTConsole"))
       (is (str/includes? preamble "#if sys"))
@@ -660,10 +660,9 @@
                  (reduce interpret/get-field obj fields))
           more (interpret/call schema-ir methods-ir root "moreJets" [])
           renamed (interpret/call schema-ir methods-ir root "renameFountain" ["Arethusa"])
-          deep (interpret/call schema-ir methods-ir root "deeperOcean" [])
-          resized (interpret/call schema-ir methods-ir root "resize" [])
-          boosted (interpret/call schema-ir methods-ir root "boostFountain"
-                                  [(walk root fountain-path)])]
+          rainy (interpret/call schema-ir methods-ir root "rain" [])
+          drought (interpret/call schema-ir methods-ir root "drought" [])
+          commanded (interpret/call schema-ir methods-ir root "command" ["jets"])]
       (is (str/includes? cls "new Continent(new Country(new Capital(new Plaza(new Fountain("))
       (is (str/includes? cls "this.ocean"))
       (is (str/includes? main "world.moreJets()"))
@@ -672,12 +671,11 @@
       (is (= 4000 (interpret/get-field (interpret/get-field more "ocean") "depth")))
       (is (= "Arethusa" (interpret/get-field (walk renamed fountain-path) "name")))
       (is (= 7 (interpret/get-field (walk renamed fountain-path) "jets")))
-      (is (= 4100 (interpret/get-field (interpret/get-field deep "ocean") "depth")))
-      (is (= 7 (interpret/get-field (walk deep fountain-path) "jets")))
-      (is (= 12 (interpret/get-field (walk resized fountain-path) "jets")))
-      (is (= 5000 (interpret/get-field (interpret/get-field resized "ocean") "depth")))
-      (is (= 8 (interpret/get-field boosted "jets")))
-      (is (= "Triton" (interpret/get-field boosted "name")))
+      (is (= 4100 (interpret/get-field (interpret/get-field rainy "ocean") "depth")))
+      (is (= 7 (interpret/get-field (walk rainy fountain-path) "jets")))
+      (is (= 1 (interpret/get-field (walk drought fountain-path) "jets")))
+      (is (= 1000 (interpret/get-field (interpret/get-field drought "ocean") "depth")))
+      (is (= 8 (interpret/get-field (walk commanded fountain-path) "jets")))
       (is (= "Fountain Triton has 7 jets; ocean 4000 deep."
              (interpret/call schema-ir methods-ir root "label" []))))))
 
