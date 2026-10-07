@@ -5,3 +5,4 @@ neo4j/
 .lsp/
 .cursorrules
 .clj-kondo/
+wchnt-lang/smalltalk-examples/*.st

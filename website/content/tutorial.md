@@ -1,8 +1,7 @@
 # Tutorial: build a bouncing ball
 
 This tutorial walks through a complete, runnable WCHNT program — a ball bouncing inside a box.
-You can follow along in the **[Play](play/)** page: paste each piece, press **Run**, and watch it
-move. **This first draft is written by AI. But will shortly be rewritten by a human**
+You can follow along in the **[Play](https://wchnt.com/play/?page=bounce)** page: paste each piece, press **Run**, and watch it move. **This first draft is written by AI. But will shortly be rewritten by a human**
 
 By the end you'll have seen the layers that make up every WCHNT program: **Schema**,
 **Construction**, **Methods**, and **Target**. Optional **Import** /
@@ -40,30 +39,24 @@ The Schema is the heart of assemblage programming: one flat map of the object ne
 ## Schema
 
 ```
-Game = PlayArea :Ball
-PlayArea = Int/x Int/y Int/width Int/height
+Game = PlayArea Ball
+PlayArea = Int/width Int/height
 Ball = Int/x Int/y Int/dx Int/dy Int/rad
 ```
 ````
 
 Read it like this:
 
-- `PlayArea = Int/x Int/y Int/width Int/height` — a play area is four integers, named `x`, `y`,
-  `width`, `height`.
-- `Game = PlayArea :Ball` — a game owns a play area and a ball.
+- `Game = PlayArea Ball` — a game owns a play area and a ball.
+- `PlayArea = Int/width Int/height` — a play area has two integers, `width` and `height`.
 - `Ball` has a position (`x`, `y`), a velocity (`dx`, `dy`), and a radius `rad`.
-
-The `:` in front of `Ball` is a **relationship sigil**. It makes the ball a
-*context-dependent component*: the ball belongs to this particular game, and it gets an automatic
-back-reference called `theGame` so its methods can reach the rest of the assemblage. We use that
-below when the ball bounces off the play area.
 
 `Int` is a **primitive** supplied by the host platform. Anything that isn't defined in your
 Schema is assumed to come from the platform.
 
 > **Field names.** By default a component's field name is its type name with a lower-cased first
-> letter: `PlayArea` → `playArea`, `Ball` → `ball`. You can override it with `/`: write
-> `Paddle/paddle1` to call the field `paddle1`.
+> letter: `PlayArea` → `playArea`, `Ball` → `ball`.
+> You can override it with `/`. For example, write `Paddle/player` to call the field `paddle1`.
 
 ## 3. Construction — the initial heap
 
@@ -75,14 +68,14 @@ a nested list with the class name first:
 
 ```
 [:Game
-  [:PlayArea 0 0 800 600]
-  [:Ball 200 150 6 5 16]]
+  [:PlayArea 800 400]
+  [:Ball 200 150 6 5 16]
+]
 ```
 ````
 
 - The outer `[:Game …]` builds a `Game`.
-- Its first argument `[:PlayArea 0 0 800 600]` builds a `PlayArea` — the four numbers are its
-  `x`, `y`, `width`, `height`.
+- Its first argument `[:PlayArea 0 0 800 600]` builds a `PlayArea` — the two numbers are its `width` and `height`.
 - The second argument `[:Ball 200 150 6 5 16]` positions the ball at (200, 150), moving right
   and down at (6, 5), with radius 16.
 
@@ -92,79 +85,67 @@ them from the schema.
 ## 4. Methods — behaviour as expressions
 
 Methods are attached to classes with `ClassName::methodName`. The body is an expression in curly
-braces. Let's make the ball bounce off the walls:
+braces.
+
+We make the ball bounce off the walls in the `Ball::bounced` method which takes a PlayArea (the dimensions if can move in) as an argument. It calculates the `newDx` and `newDy` and then constructs a new Ball with the new position and momentum. In wchnt mutability is constrained to specific situations. In this simple example we show the immutable way to "move" a ball. By creating a new Ball in the new coordinates.
+
+Similarly, the `Game::step` method which advances the state of the `Game` object is also creating a new instance.
+
+> In our early wchnt experiments we are not *too* concerned with performance. But be assured that we do have mutabile classes when we need them. The thinking is that "pure functions" are a good idea by default.
+
+The rest of the methods are to do with drawing the PlayArea and Ball. These take a Graphics object given to us by the platform we are running on. 
+
 
 ````markdown
 ## Methods
 
 ```
-Ball::bounceDX = {
-  r = theGame.playArea.
-  if ((x < r.x) or (x > (r.x + r.width))) { -dx } else { dx }
-}
-
-Ball::bounceDY = {
-  r = theGame.playArea.
-  if ((y < r.y) or (y > (r.y + r.height))) { -dy } else { dy }
+Ball::bounced = { PlayArea/pa |
+  newDx = if ((x < 0) or (x > pa.width)) { -dx  } else { dx }.
+  newDy = if ((y < 0) or (y > pa.height)) { -dy } else { dy }.
+  [:Ball (x+newDx) (y+newDy) newDx newDy rad]
 }
 
 Game::step = {
-  ndx = ball.bounceDX().
-  ndy = ball.bounceDY().
-  [:Game playArea [:Ball (ball.x + ndx) (ball.y + ndy) ndx ndy ball.rad]]
+  [:Game playArea ball.bounced(playArea)]
+}
+
+Ball::draw = { @WCHNTGraphics/g |
+  g.beginFill(0xffffff).drawCircle(x, y, rad).endFill()
+}
+
+PlayArea::draw = { @WCHNTGraphics/g |
+  g.beginFill(0x003300).drawRect(0, 0, width, height).endFill()
+}
+
+Game::draw = { @WCHNTGraphics/g |
+  drawnPA = playArea.draw(g).
+  drawnBal = ball.draw(g).
+  g
 }
 ```
 ````
 
 Things to unpack:
 
-- **Lets.** `r = theGame.playArea.` binds an intermediate value. The full stop `.` ends a
-  statement; the value of the *last* statement is the method's return value.
-- **Context.** `theGame` is the back-reference `:Ball` gave us — the ball can reach its own game.
-- **Paths.** `theGame.playArea.x` walks into other objects. No spaces around the dots.
-- **Field methods.** `ball.bounceDX()` calls a method on a field; inside `Ball::bounceDX` the
-  ball's own fields are bare names (`x`, `dx`).
+- **Lets.** `newDx = if ((x < 0) or (x > pa.width)) { -dx  } else { dx }.` binds an intermediate value. The full stop `.` ends a statement; the value of the *last* statement is the method's return value.
 - **`if` is an expression**, so it returns a value directly. `or` and `and` combine conditions.
-- **Constructor arguments are spaced, not comma-separated**, so `(ball.x + ndx)` needs parentheses.
+- **Construction arguments are spaced, not comma-separated**, so `(ball.x + ndx)` needs parentheses.
+- **Typed arguments.** A method parameter is just a name, but you can annotate it with a type when the compiler needs it for field access. More on this in the Guide.
+- **Standard Library.** `WCHNTGraphics` is part of the standard library that will be available for wchnt programs targeting a suitable platform. Note that it presents its drawing functions in a *fluent* style meaning we can chain them together with the `.` operator. All methods return something. There is no `Void` return type in wchnt, nor null values.
+- **Colours** are packed RGB integers (`2769450` is `0x2a2a2a`, `15921906` is `0xf2f2f2`).
 
-`Game::step` returns a **new** `Game` — same `playArea`, new `ball`. Ordinary methods are pure:
-they return new data rather than mutating. In-place mutation is reserved for **mutable**
-classes (the Construction root, `$` observables and their subscribers, and `>` mailboxes)
-and is written with a method name ending in `!` — most often `update!`. See the Guide.
+## 5. Target — where it runs
 
-> **Typed arguments.** A method parameter is just a name (`px`), but you can annotate it with a
-> type when the compiler needs it for field access: `Rect/bounds`. More on this in the Guide.
+The last layer names the *outer environment* we call the **Target Platform**.
 
-## 5. Methods — drawing with the host surface
+The Target Platform is an explicit thing that the wchnt compiler or environment has to know about and provide access to. And the Target section of the code is where we write the code that interfaces between it and our assemblage. In most languages, such information is often considered an after-thought to be relegated to obscure configuration files. In wchnt, despite recognising that it is
 
-Drawing needs a host graphics object, so the draw methods accept an
-`@WCHNTGraphics/g` parameter in the ordinary **Methods** section. Declare the
-graphics calls used in the Target's `%requires` subsection. This lets `%canvas`
-and `%openfl` share the same draw code.
+The target platform is selected with an initial `%` selector. In this case we are choosing `%canvas` which is a web-canvas based environment running in the live environment in the browser. 
 
-````markdown
-```
-Ball::draw = { @WCHNTGraphics/g |
-  g.beginFill(15921906).drawCircle(x, y, rad).endFill()
-}
+That's what changes when you move from a terminal to a window to a browser. Keep it thin: build the assemblage, advance it, hand it the graphics surface.
 
-Game::draw = { @WCHNTGraphics/g |
-  r = playArea.
-  bg = g.beginFill(2769450).drawRect(r.x, r.y, r.width, r.height).endFill().
-  ball.draw(g)
-}
-```
-````
 
-Colours are packed RGB integers (`2769450` is `0x2a2a2a`, `15921906` is `0xf2f2f2`).
-`Ball::draw` and `Game::draw` return the graphics handle (the value of the last
-expression) so callers can chain. There is no `Void` return type in WCHNT.
-
-## 6. Target — where it runs
-
-The last layer names the *outer environment*. That's what changes when you move from a terminal
-to a window to a browser. Keep it thin: build the assemblage, advance it, hand it the
-graphics surface. The **[Play](play/)** page uses the `%canvas` host:
 
 ````markdown
 ## Target
@@ -173,17 +154,17 @@ graphics surface. The **[Play](play/)** page uses the `%canvas` host:
 %canvas
 
 %init
-var assemblage;
+var game;
 
 function init() {
-    assemblage = GameAssemblage.factory();
+    game = GameAssemblage.factory();
 }
 
 %step
 function step() {
-    assemblage = assemblage.step();
+    game = game.step();
     wchntGraphics.clear();
-    assemblage.draw(wchntGraphics);
+    game.draw(wchntGraphics);
 }
 ```
 ````
