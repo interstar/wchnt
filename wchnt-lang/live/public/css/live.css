@@ -355,6 +355,71 @@ main {
   font-size: 13px;
 }
 
+/* --- Diagram view ------------------------------------------------------- */
+/* Edge and text colours come from the .cm-wchnt-* syntax rules below: the
+   view carries the CodeMirror theme class, and the SVG paints with
+   currentColor. Only structure is styled here. */
+#diagram-view {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px 12px 32px;
+  background: var(--bg);
+  color: var(--text);
+  -webkit-overflow-scrolling: touch;
+}
+
+#diagram-view[hidden] { display: none; }
+
+.diagram-toolbar {
+  position: sticky;
+  left: 0;
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 8px;
+}
+
+#diagram-message {
+  margin: 0 0 8px;
+  padding: 8px 14px;
+  border-radius: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  white-space: pre-wrap;
+}
+
+#diagram-message.error { background: var(--error-bg); color: var(--error); }
+#diagram-message.info { background: var(--info-bg); color: var(--accent); }
+#diagram-message[hidden] { display: none; }
+
+#diagram-canvas { width: 100%; }
+#diagram-canvas svg { display: block; }
+#diagram-canvas.fit svg { width: 100%; height: auto; }
+
+.wchnt-diagram .wd-box { fill: var(--panel); stroke: var(--muted); }
+.wchnt-diagram .wd-external .wd-box,
+.wchnt-diagram .wd-imported-interface .wd-box { fill: var(--bg); }
+.wchnt-diagram .wd-rule { stroke: var(--border); }
+.wchnt-diagram .wd-is-a { color: var(--muted); }
+.wchnt-diagram .wd-line { stroke-width: 1.5px; }
+.wchnt-diagram .wd-label {
+  font-size: 11px;
+  paint-order: stroke;
+  stroke: var(--bg);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+.wchnt-diagram .wd-stereotype { color: var(--muted); font-size: 11px; }
+.wchnt-diagram .wd-punct { color: var(--text); }
+.wchnt-diagram .wd-failed { color: var(--error); font-style: italic; }
+
+/* Four bottom-bar buttons on a phone: tighten so "Diagram" fits. */
+@media (max-width: 420px) {
+  #bottom-bar { gap: 6px; padding-left: 8px; padding-right: 8px; }
+  #bottom-bar button { padding: 12px 4px; font-size: 14px; }
+}
+
 /* --- Read view ---------------------------------------------------------- */
 #reader {
   flex: 1;

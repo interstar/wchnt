@@ -1,0 +1,218 @@
+# A Garden
+
+A tiny top-down garden simulator. Every plant is an inverted cone — its tip
+touches the ground, widening to its full radius at the top of its height.
+Because the cones are solid, **no two cones may intersect**: a short flower may
+sit beneath a tall tree's canopy, but only if it stays clear of the trunk.
+
+Drag the two sliders to scrub through time. The **Month** slider runs 1–12; the
+**Year** slider runs 0–400.
+
+- **Flowers** are annuals. They are planted, reach maturity, and die within a
+  single year, described by three months — so they come back every year.
+- **Shrubs** and **Trees** are perennials. They are planted in a birth year,
+  take a number of years to reach maturity, then live out a mature span.
+
+When a plant dies it simply disappears.
+
+## Schema
+
+```
+Garden  = [Plant]/plants Palette Form @WCHNTForm/ui
+Plant   = Flower | Shrub | Tree
+Flower  = +InnerPlant Int/plantedMonth Int/matureMonth Int/deathMonth
+Shrub   = +InnerPlant Int/birthYear Int/maturityYears Int/matureYears
+Tree    = +InnerPlant Int/birthYear Int/maturityYears Int/matureYears
+InnerPlant = Int/x Int/y Colour/colour Int/maxHeight Int/maxRadius
+
+Colour  = "Red" | "Orange" | "Yellow" | "Pink" | "Purple" | "Green" | "LightGreen"
+Palette = {Colour:Int}
+Cone    = Int/x Int/y Int/maxHeight Int/maxRadius
+
+Form    = Panel/root
+Panel   = String/id [Node]/children
+Node    = Label | Slider | Canvas
+Label   = String/id String/text
+Slider  = String/id Float/min Float/max Float/step Float/value
+Canvas  = String/id Int/width Int/height
+```
+
+## Construction
+
+```
+[:Garden
+  [:Array/Plant
+    [:Tree   [:InnerPlant 400 300 LightGreen 300 120] 0 40 300]
+    [:Tree   [:InnerPlant 680 140 LightGreen 150 60] 20 30 200]
+    [:Shrub  [:InnerPlant 150 150 Green 30 25] 2 5 20]
+    [:Shrub  [:InnerPlant 650 480 Green 40 30] 5 8 30]
+    [:Flower [:InnerPlant 520 200 Red 6 8] 3 5 9]
+    [:Flower [:InnerPlant 300 420 Yellow 4 6] 4 6 10]
+    [:Flower [:InnerPlant 580 420 Purple 5 7] 4 6 9]
+    [:Flower [:InnerPlant 220 260 Pink 7 9] 3 6 10]
+    [:Flower [:InnerPlant 480 480 Orange 5 7] 4 6 9]
+  ]
+  [:Palette
+    {Colour:Int
+      Red:    0xFFFF5A5A
+      Orange: 0xFFFFA050
+      Yellow: 0xFFFFFF60
+      Pink:   0xFFFF90C8
+      Purple: 0xFFB080FF
+      LightGreen:0xFF99FF99
+      Green:  0xFF4CAF50
+    }
+  ]
+  [:Form
+    [:Panel "root"
+      [:Array/Node
+        [:Label "title" "WCHNT Garden — scrub time to watch plants grow and die"]
+        [:Label "year-label" "Year"]
+        [:Slider "year" 0.0 400.0 1.0 20.0]
+        [:Label "month-label" "Month"]
+        [:Slider "month" 1.0 12.0 1.0 6.0]
+        [:Canvas "garden" 800 600]
+      ]
+    ]
+  ]
+  ui
+]
+```
+
+## Methods
+
+```
+Plant::radius = { Int/year, Int/month | } -> Float
+Plant::cone = { | } -> Cone
+Plant::draw = { @WCHNTGraphics/g, Palette/palette, Int/year, Int/month | } -> WCHNTGraphics
+
+Flower::radius = { Int/year, Int/month |
+  if (month < plantedMonth) { 0.0 }
+  (month < matureMonth) { maxRadius * 1.0 * (month - plantedMonth) / (matureMonth - plantedMonth) }
+  (month < deathMonth) { maxRadius * 1.0 }
+  else { 0.0 }
+}
+
+Shrub::radius = { Int/year, Int/month |
+  matureYear = birthYear + maturityYears.
+  endYear = birthYear + maturityYears + matureYears.
+  if (year < birthYear) { 0.0 }
+  (year < matureYear) { maxRadius * 1.0 * (year - birthYear) / maturityYears }
+  (year < endYear) { maxRadius * 1.0 }
+  else { 0.0 }
+}
+
+Tree::radius = { Int/year, Int/month |
+  matureYear = birthYear + maturityYears.
+  endYear = birthYear + maturityYears + matureYears.
+  if (year < birthYear) { 0.0 }
+  (year < matureYear) { maxRadius * 1.0 * (year - birthYear) / maturityYears }
+  (year < endYear) { maxRadius * 1.0 }
+  else { 0.0 }
+}
+
+Flower::cone = { [:Cone x y maxHeight maxRadius] }
+
+Shrub::cone = { [:Cone x y maxHeight maxRadius] }
+
+Tree::cone = { [:Cone x y maxHeight maxRadius] }
+
+Flower::draw = { @WCHNTGraphics/g, Palette/palette, Int/year, Int/month |
+  r = this.radius(year, month).
+  if (r > 0.0) {
+    g.beginFill(palette.colourToInt.get(colour)).drawCircle(x, y, r).endFill()
+  } else { g }
+}
+
+Shrub::draw = { @WCHNTGraphics/g, Palette/palette, Int/year, Int/month |
+  r = this.radius(year, month).
+  if (r > 0.0) {
+    g.beginFill(palette.colourToInt.get(colour)).drawCircle(x, y, r).endFill()
+  } else { g }
+}
+
+Tree::draw = { @WCHNTGraphics/g, Palette/palette, Int/year, Int/month |
+  r = this.radius(year, month).
+  if (r > 0.0) {
+    g.beginFill(palette.colourToInt.get(colour)).drawCircle(x, y, r).endFill()
+  } else { g }
+}
+
+Cone::collidesWith = { Cone/other |
+  dx = x - other.x.
+  dy = y - other.y.
+  shortH = if (maxHeight < other.maxHeight) { maxHeight } else { other.maxHeight }.
+  shortR = if (maxHeight < other.maxHeight) { maxRadius } else { other.maxRadius }.
+  tallH = if (maxHeight < other.maxHeight) { other.maxHeight } else { maxHeight }.
+  tallR = if (maxHeight < other.maxHeight) { other.maxRadius } else { maxRadius }.
+  lhs = (dx * dx + dy * dy) * tallH * tallH.
+  rhs = shortR * tallH + tallR * shortH.
+  (lhs < rhs * rhs)
+}
+
+Cone::collisionMessage = { Cone/other |
+  "Plants at ({x}, {y}) and ({ox}, {oy}) intersect"
+    .tpl({String:String "x": x.str(), "y": y.str(), "ox": other.x.str(), "oy": other.y.str()})
+}
+
+Garden::collisionReport = {
+  n = plants.length().
+  n.times({ Int/i |
+    p = plants.get(i).
+    count = (n - i - 1).
+    count.times({ Int/k |
+      j = i + 1 + k.
+      q = plants.get(j).
+      c1 = p.cone().
+      c2 = q.cone().
+      if (c1.collidesWith(c2)) { c1.collisionMessage(c2) } else { "" }
+    }).fold("", { a, b | a.concat(b) })
+  }).fold("", { a, b | a.concat(b) })
+}
+
+Garden::draw = { @WCHNTGraphics/g, Int/year, Int/month |
+  cleared = g.background(0xFF2F4A2F).clear().
+  drawn = plants.fold(cleared, { acc, p | p.draw(acc, palette, year, month) }).
+  label = "Year {y} · month {m}".tpl({String:String "y": year.str(), "m": month.str()}).
+  drawn.beginFill(0xFFFFFFFF).fillText(label, 12.0, 12.0)
+}
+
+Garden::redraw = {
+  year = ui.number("year").toInt().
+  month = ui.number("month").toInt().
+  drawn = this.draw(ui.graphics("garden"), year, month).
+  this
+}
+```
+
+## Target
+
+```
+%form
+
+%requires
+WCHNTForm
+WCHNTForm::number(String) -> Float
+WCHNTForm::graphics(String) -> WCHNTGraphics
+WCHNTGraphics
+WCHNTGraphics::background(Int) -> WCHNTGraphics
+WCHNTGraphics::clear() -> WCHNTGraphics
+WCHNTGraphics::beginFill(Int) -> WCHNTGraphics
+WCHNTGraphics::drawCircle(Float,Float,Float) -> WCHNTGraphics
+WCHNTGraphics::endFill() -> WCHNTGraphics
+WCHNTGraphics::fillText(String,Float,Float) -> WCHNTGraphics
+
+%init
+function init() {
+    garden = GardenAssemblage.factory(wchntForm);
+    var problem = garden.collisionReport();
+    if (problem !== "") { throw new Error(problem); }
+    wchntForm.mount(garden.form);
+    garden.redraw();
+}
+
+%step
+function step() {
+    garden = garden.redraw();
+}
+```

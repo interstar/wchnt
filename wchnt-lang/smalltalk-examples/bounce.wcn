@@ -1,0 +1,58 @@
+# Bounce for Pharo 14
+
+## Schema
+
+```
+Game = PlayArea Ball
+PlayArea = Int/width Int/height
+Ball = Int/x Int/y Int/dx Int/dy Int/rad
+```
+
+## Construction
+
+```
+[:Game
+  [:PlayArea 800 400]
+  [:Ball 200 150 6 5 16]
+]
+```
+
+## Methods
+
+```
+Ball::bounced = { PlayArea/r |
+  newDx = if ((x < 0) or (x > r.width)) { -dx } else { dx }.
+  newDy = if ((y < 0) or (y > r.height)) { -dy } else { dy }.
+  [:Ball (x + newDx) (y + newDy) newDx newDy rad]
+}
+
+Game::step = {
+  [:Game playArea ball.bounced(playArea)]
+}
+
+Ball::draw = { @WCHNTGraphics/g |
+  g.beginFill(0xffffff).drawCircle(x, y, rad).endFill()
+}
+
+PlayArea::draw = { @WCHNTGraphics/g |
+  g.beginFill(0x003300).drawRect(0, 0, width, height).endFill()
+}
+
+Game::draw = { @WCHNTGraphics/g |
+  drawnPA = playArea.draw(g).
+  drawnBall = ball.draw(g).
+  g
+}
+```
+
+## Target
+
+```
+%smalltalk
+
+%main
+| graphics |
+graphics := WCHNTGraphics new.
+graphics openInWindow.
+graphics game: (GameAssemblage new factory).
+```

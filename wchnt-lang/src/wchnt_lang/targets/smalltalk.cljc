@@ -234,6 +234,7 @@
   [(str "initialize\n"
         "    super initialize.\n"
         "    game := nil.\n"
+        "    input := nil. stepBlock := nil.\n"
         "    fillColor := Color black.\n"
         "    shapes := OrderedCollection new.\n"
         "    self extent: 800@400.\n"
@@ -246,9 +247,38 @@
         "    ^ self")
    "stepTime\n    ^ 16"
    (str "step\n"
-        "    game := game step.\n"
-        "    self clear.\n"
-        "    game draw: self")])
+        "    stepBlock ifNotNil: [ stepBlock value ].\n"
+        "    self changed")
+   (str "stepBlock: aBlock\n"
+        "    stepBlock := aBlock.\n"
+        "    self startStepping.\n"
+        "    ^ self")
+   (str "input: anInput\n"
+        "    input := anInput.\n"
+        "    ^ self")
+   (str "handlesMouseDown\n    ^ true")
+   (str "handlesMouseUp\n    ^ true")
+   (str "handlesMouseOver\n    ^ true")
+   (str "handlesKeyboard\n    ^ true")
+   (str "mouseMove: anEvent\n"
+        "    input mouseAt: (anEvent position - self bounds origin)")
+   (str "mouseDown: anEvent\n"
+        "    self takeKeyboardFocus.\n"
+        "    input pointerDown")
+   (str "mouseUp: anEvent\n"
+        "    input pointerUp")
+   (str "keyDown: anEvent\n"
+        "    input pressKey: (self keyNameFor: anEvent)")
+   (str "keyUp: anEvent\n"
+        "    input keyUp: (self keyNameFor: anEvent)")
+   (str "keyNameFor: anEvent\n"
+        "    | value |\n"
+        "    value := anEvent keyValue.\n"
+        "    value = 28 ifTrue: [ ^ 'ArrowLeft' ].\n"
+        "    value = 29 ifTrue: [ ^ 'ArrowRight' ].\n"
+        "    value = 30 ifTrue: [ ^ 'ArrowUp' ].\n"
+        "    value = 31 ifTrue: [ ^ 'ArrowDown' ].\n"
+        "    ^ value asString")])
 
 (defn- graphics-drawing-methods
   []
@@ -273,10 +303,13 @@
         "    ^ self")
    (str "drawOn: aCanvas\n"
         "    super drawOn: aCanvas.\n"
-        "    shapes do: [ :shape |\n"
-        "        (shape first = #rectangle)\n"
-        "            ifTrue: [ aCanvas fillRectangle: (shape at: 2) color: (shape at: 3) ]\n"
-        "            ifFalse: [ aCanvas fillOval: (shape at: 2) color: (shape at: 3) ] ]")])
+        "    aCanvas translateBy: self bounds origin\n"
+        "        clippingTo: self bounds\n"
+        "        during: [ :canvas |\n"
+        "            shapes do: [ :shape |\n"
+        "                (shape first = #rectangle)\n"
+        "                    ifTrue: [ canvas fillRectangle: (shape at: 2) color: (shape at: 3) ]\n"
+        "                    ifFalse: [ canvas fillOval: (shape at: 2) color: (shape at: 3) ] ] ]")])
 
 (defn- graphics-color-methods
   []
@@ -303,7 +336,25 @@
    "WCHNTGraphics"
    (concat (graphics-state-methods)
            (graphics-drawing-methods)
-           (graphics-color-methods))})
+           (graphics-color-methods))
+   "WCHNTInput"
+   [(str "initialize\n"
+         "    mouseX := 0. mouseY := 0. mouseIsDown := false.\n"
+         "    keys := Set new. pressedKeys := OrderedCollection new")
+    "mouseX\n    ^ mouseX"
+    "mouseY\n    ^ mouseY"
+    "mouseDown\n    ^ mouseIsDown"
+    "mouseAt: aPoint\n    mouseX := aPoint x rounded. mouseY := aPoint y rounded"
+    "pointerDown\n    mouseIsDown := true"
+    "pointerUp\n    mouseIsDown := false"
+    "pressKey: aKey\n    keys add: aKey. pressedKeys add: aKey"
+    "keyUp: aKey\n    keys remove: aKey ifAbsent: [ ]"
+    "keyDown: aKey\n    ^ keys includes: aKey"
+    (str "keyPresses\n"
+         "    | result |\n"
+         "    result := pressedKeys asArray.\n"
+         "    pressedKeys removeAll.\n"
+         "    ^ result") ]})
 
 (defn- runtime-classes
   []
@@ -313,7 +364,10 @@
    {:name "WCHNTGraphics"
     :superclass "Morph"
     :components (mapv (fn [name] {:component-name name})
-                      ["game" "fillColor" "shapes"])}])
+                      ["game" "fillColor" "shapes" "input" "stepBlock"])}
+   {:name "WCHNTInput"
+    :components (mapv (fn [name] {:component-name name})
+                      ["mouseX" "mouseY" "mouseIsDown" "keys" "pressedKeys"])}])
 
 (defn- factory-selector
   [construction-ir]
@@ -404,6 +458,6 @@
   {:name "smalltalk"
    :backend :smalltalk
    :std :smalltalk
-   :standard {:types #{"WCHNTMaths" "WCHNTGraphics"}}
+   :standard {:types #{"WCHNTMaths" "WCHNTGraphics" "WCHNTInput"}}
    :parse-target parse-target
    :emit emit-program})
