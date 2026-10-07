@@ -56,6 +56,7 @@ The current availability is:
 | `%cli-live` | `WCHNTMaths`, `WCHNTConsole` |
 | `%testharness` | `WCHNTUnitTests` |
 | `%testharness-live` | `WCHNTUnitTests` |
+| `%smalltalk` | none in the initial Pharo 14 backend slice |
 
 These names are conventions supplied by the target. They are not WCHNT
 assemblages and do not participate in `Import`.
@@ -74,6 +75,16 @@ the target text to that descriptor and attaches the structured Target IR to
 the compilation. Shared parsing, `%requires` handling, Haxe standard code,
 and live standard code are reusable libraries in this directory; lifecycle
 and framework-specific behavior remains in the individual target plugin.
+
+Backend emission is selected only after the shared Source → IR pipeline has
+completed. Emitters return a Malli-validated `BackendArtifact` envelope with
+backend identity, target name, page kind, generic outputs, opaque backend
+payload, metadata, and warnings. Each output has a kind, name, and content;
+for example, a Haxe emitter returns a `:source` output named `Main.hx`. Host
+language source fields belong inside the backend-owned payload, never at the
+common artifact's top level. The envelope schema is closed so a backend cannot
+silently add Haxe-shaped top-level fields. Backend-specific preparation is
+owned by the emitter and never runs during `compile-to-ir`.
 
 The initial implementation uses a built-in registry. A later version may load
 plugins dynamically, but that is deliberately outside the language contract.
@@ -94,6 +105,9 @@ plugins dynamically, but that is deliberately outside the language contract.
   (`testharness_live_run.cljc` + `testharness_live_expr.cljc`). No
   `## Construction` section is required.
 * `haxe_backend.cljc` and `haxe_std.cljc` implement shared Haxe support.
+* `smalltalk.cljc` emits a Pharo 14 file-out for the initial I-Spy slice:
+  schema classes, accessors, supported Methods expressions, Construction, and
+  a native `%main` entry point. Broader IR support is still in progress.
 * `live_js.cljc`, `live_canvas.cljc`, `live_std.cljc`, and
   `interpreter_std.cljc` implement the live runtime support. The latter is
   shared host behavior; `live_std.cljc` is the live target-facing facade.

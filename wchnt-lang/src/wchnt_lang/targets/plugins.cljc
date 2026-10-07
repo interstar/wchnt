@@ -1,6 +1,8 @@
 (ns wchnt-lang.targets.plugins
   "Dispatch Target sections to platform plugins."
   (:require [clojure.string :as str]
+            [malli.core :as m]
+            [wchnt-lang.schema :as schema]
             [wchnt-lang.targets.terminal :as terminal]
             [wchnt-lang.targets.cli :as cli]
             [wchnt-lang.targets.openfl :as openfl]
@@ -9,6 +11,7 @@
             [wchnt-lang.targets.cli-live :as cli-live]
             [wchnt-lang.targets.testharness :as testharness]
             [wchnt-lang.targets.testharness-live :as testharness-live]
+            [wchnt-lang.targets.smalltalk :as smalltalk]
             [wchnt-lang.targets.core :as core]
             [wchnt-lang.targets.haxe :as haxe]
             [wchnt-lang.targets.stdlib-signatures :as stdlib]))
@@ -21,7 +24,8 @@
    "form" form/plugin
    "cli-live" cli-live/plugin
    "testharness" testharness/plugin
-   "testharness-live" testharness-live/plugin})
+   "testharness-live" testharness-live/plugin
+   "smalltalk" smalltalk/plugin})
 
 (defn- first-target-name
   [text]
@@ -87,12 +91,17 @@
   (let [target-ir (get-in cargo [:stash :target-ir])
         plugin (:plugin target-ir)]
     (if-let [emit-fn (:emit plugin)]
-      (emit-fn cargo)
+      (let [artifact (emit-fn cargo)]
+        (when-not (schema/valid-backend-artifact? artifact)
+          (throw (ex-info "Target backend returned an invalid artifact"
+                          {:backend (:backend plugin)
+                           :platform (:name plugin)
+                           :explanation (m/explain schema/BackendArtifact artifact)})))
+        artifact)
       (if (nil? plugin)
         (haxe/emit-program cargo)
-        (throw (ex-info (str "Target '" (:host target-ir)
-                             "' has no Haxe emitter (Haxe cannot emit %"
-                             (:host target-ir) ")")
+        (throw (ex-info (str "Target %" (:host target-ir)
+                             " has no emitter")
                         {:host (:host target-ir)
                          :backend (:backend plugin)}))))))
 

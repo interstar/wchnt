@@ -37,17 +37,7 @@
 (defn -compileToHaxe [this ^String input]
   (let [result (compiler/compile input)]
     (if (:success result)
-      (let [value (:value result)
-            classes (:classes value)
-            factory (:factory value)
-            main (:main value)
-            main-class (:main-class value)
-            ;; Combine into a single Haxe program
-            haxe-program (str (:preamble value) "\n\n"
-                              classes "\n\n"
-                              factory "\n\n"
-                              main-class "\n\n"
-                              main)]
+      (let [haxe-program (get-in result [:value :outputs 0 :content])]
         (ArrayList. [haxe-program]))
       (ArrayList. [(pr-str result)]))))
 

@@ -8,6 +8,16 @@
   [& parts]
   (str/join "\n" (remove str/blank? parts)))
 
+(defn source-output
+  "Build the standard source output for a Haxe artifact payload."
+  [payload]
+  (str/join "\n\n"
+            (remove str/blank?
+                    [(:preamble payload)
+                     (:classes payload)
+                     (:factory payload)
+                     (:main-class payload)])))
+
 (defn- emit-terminal-main
   [helpers main]
   (when (str/blank? (or main ""))
@@ -50,11 +60,11 @@
     ""
     (let [host (:host target-ir)
           helpers (str/join "\n"
-                            (map :haxe
+                            (map :source
                                  (vals (:bindings (or target-ir {:bindings {}})))))
-          main (get-in target-ir [:main :haxe])
-          init (get-in target-ir [:init :haxe])
-          step (get-in target-ir [:step :haxe])]
+          main (get-in target-ir [:main :source])
+          init (get-in target-ir [:init :source])
+          step (get-in target-ir [:step :source])]
       (case host
         "terminal" (emit-terminal-main helpers main)
         "openfl" (emit-openfl-main helpers init step)
@@ -99,25 +109,28 @@
                                    (:wrapper local-artifacts)]
                                   (map :classes imported-artifacts)
                                   (map :wrapper imported-artifacts)))]
-    {:classes classes
-     :factory ""
-     :main (or (get-in target-ir [:main :haxe]) "")
-     :init (or (get-in target-ir [:init :haxe]) "")
-     :step (or (get-in target-ir [:step :haxe]) "")
-     :preamble (case host
-                 "openfl" (str haxe-std/openfl-imports "\n\n"
-                               haxe-std/openfl-graphics-wrapper "\n\n"
-                               haxe-std/wchnt-input-class "\n\n"
-                               haxe-std/wchnt-console-class "\n\n"
-                               haxe-std/wchnt-maths-class)
-                 "cli" (str haxe-std/wchnt-console-class "\n\n"
-                            haxe-std/wchnt-maths-class)
-                 "terminal" (str haxe-std/wchnt-console-class "\n\n"
-                                 haxe-std/wchnt-maths-class)
-                 "")
-     :main-class (if has-construction? (emit-main-class target-ir) "")
-     :has-construction? has-construction?
-     :page-kind page-kind
-     :host host
-     :codeblocks codeblocks
-     :warnings []}))
+    (let [payload {:classes classes
+                   :factory ""
+                   :main (or (get-in target-ir [:main :source]) "")
+                   :init (or (get-in target-ir [:init :source]) "")
+                   :step (or (get-in target-ir [:step :source]) "")
+                   :preamble (case host
+                               "openfl" (str haxe-std/openfl-imports "\n\n"
+                                             haxe-std/openfl-graphics-wrapper "\n\n"
+                                             haxe-std/wchnt-input-class "\n\n"
+                                             haxe-std/wchnt-console-class "\n\n"
+                                             haxe-std/wchnt-maths-class)
+                               "cli" (str haxe-std/wchnt-console-class "\n\n"
+                                          haxe-std/wchnt-maths-class)
+                               "terminal" (str haxe-std/wchnt-console-class "\n\n"
+                                              haxe-std/wchnt-maths-class)
+                               "")
+                   :main-class (if has-construction? (emit-main-class target-ir) "")
+                   :has-construction? has-construction?}]
+      {:backend :haxe
+       :target host
+       :page-kind page-kind
+       :outputs [{:kind :source :name "Main.hx" :content (source-output payload)}]
+       :payload payload
+       :metadata {:codeblocks codeblocks}
+       :warnings []})))

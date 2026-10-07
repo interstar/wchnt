@@ -1,6 +1,5 @@
 (ns wchnt-lang.compiler
-  "Markdown → IR (shared) then optional Haxe emission.
-   compile-to-ir is the live/interpreter entry. compile adds the Haxe backend."
+  "Markdown → backend-neutral IR, followed by selected target emission."
   (:require [wchnt-lang.parser :as parser]
             [wchnt-lang.schema :as schema]
             [wchnt-lang.mainfile :as mainfile]
@@ -8,7 +7,6 @@
             [wchnt-lang.pipeline :as p]
             [wchnt-lang.ast-to-ir :as ast-to-ir]
             [wchnt-lang.reaction :as reaction]
-            [wchnt-lang.targets.haxe-backend :as ir-to-haxe]
             [wchnt-lang.targets.plugins :as target]
             [wchnt-lang.targets.requires :as target-requires]
             [wchnt-lang.importing :as importing]
@@ -202,31 +200,6 @@
   []
   [(p/cargo-processor target/validate "target-specific construction validation")])
 
-(defn- schema-haxe-stages
-  []
-  [(p/retrieve :schema-ir)
-   (p/cargo-processor
-    (fn [cargo]
-      (ir-to-haxe/schema-ir-to-haxe (get-in cargo [:stash :schema-ir])
-                                    (or (get-in cargo [:stash :methods-ir]) [])))
-    "schema-ir -> haxe")
-   (p/stash :schema-haxe)])
-
-(defn- construction-haxe-stages
-  []
-  [(p/retrieve :codeblocks)
-   (p/processor #(:construction %) "Extract construction from codeblocks")
-   (p/when-do
-    #(not= % "")
-    (p/retrieve :construction-ir)
-    (p/cargo-processor
-     (fn [cargo]
-       (let [construction-ir (:value cargo)
-             schema-ir (get-in cargo [:stash :schema-ir])]
-         (ir-to-haxe/generate-construction-factory construction-ir schema-ir)))
-     "construction-ir -> haxe")
-    (p/stash :construction-haxe))])
-
 (defn- ir-stages-from-codeblocks
   []
   (concat (schema-stages)
@@ -307,7 +280,7 @@
 
 (defn compile-to-ir
   "Parse a .wcn markdown file to schema, methods, construction, and target IR.
-   Does not emit Haxe. Used by the interpreter / live page.
+   Does not invoke a backend emitter. Used by the interpreter / live page.
 
    Optional :resolve-page (fn [name] markdown-or-nil) loads ## Import siblings."
   ([wchnt-markdown]
@@ -345,12 +318,8 @@
      (catch #?(:clj Exception :cljs :default) e
        (p/fail-cargo (or (ex-message e) (str e)))))))
 
-(defn- haxe-stages
-  []
-  (concat (schema-haxe-stages) (construction-haxe-stages)))
-
 (defn compile
-  "Haxe backend: IR pipeline plus class/factory/Main emission."
+  "Compile source through the shared IR pipeline and selected backend."
   ([wchnt-markdown]
    (compile wchnt-markdown {}))
   ([wchnt-markdown opts]
@@ -361,25 +330,17 @@
 
        (= :documentation (:page-kind (:value ir-cargo)))
        (assoc ir-cargo
-              :value {:page-kind :documentation
-                      :classes ""
-                      :factory ""
-                      :main ""
-                      :init ""
-                      :step ""
-                      :preamble ""
-                      :main-class ""
-                      :has-construction? false
-                      :host nil
-                      :codeblocks (:codeblocks (:value ir-cargo))
+              :value {:backend :none
+                      :target nil
+                      :page-kind :documentation
+                      :outputs []
+                      :payload nil
+                      :metadata {:codeblocks (:codeblocks (:value ir-cargo))}
                       :warnings []})
 
        :else
        (try
-         (let [haxe-cargo (apply p/continue ir-cargo (haxe-stages))]
-           (if (p/failed? haxe-cargo)
-             haxe-cargo
-             (assoc haxe-cargo :value (target/emit haxe-cargo))))
+         (assoc ir-cargo :value (target/emit ir-cargo))
          (catch #?(:clj Exception :cljs :default) e
            (-> ir-cargo
                (assoc :success false :value nil)

@@ -1522,7 +1522,7 @@
                       {:name name})))
     {:expr :target-call
      :name name
-     :haxe-name fn-name
+     :target-name fn-name
      :args args
      :type (value-type (first args) ctx)}))
 

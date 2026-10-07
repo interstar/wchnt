@@ -92,8 +92,8 @@
   [wchnt-markdown graphics]
   (let [program (assert-canvas-host (interpret/load-program wchnt-markdown))
         env (make-env program graphics)]
-    (target-js/eval-script (get-in program [:target-ir :init :haxe]) env)
-    (target-js/eval-script (get-in program [:target-ir :step :haxe]) env)
+    (target-js/eval-script (get-in program [:target-ir :init :source]) env)
+    (target-js/eval-script (get-in program [:target-ir :step :source]) env)
     env))
 
 (defn run-markdown

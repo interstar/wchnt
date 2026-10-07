@@ -33,14 +33,13 @@
         result (compiler/compile (slurp file) opts)
         stash (:stash result)
         codeblocks (or (:codeblocks stash) {})
-        value (:value result)]
+        value (:payload (:value result))]
     {:file (.getPath file)
      :success (:success result)
      :schema (status (:schema-ir stash))
      :construction (construction-status codeblocks stash)
-     :haxe (status (and (:schema-haxe stash)
-                        (or (str/blank? (:construction codeblocks ""))
-                            (:construction-haxe stash))))
+     :haxe (status (and (= :haxe (get-in result [:value :backend]))
+                        (present? (:classes value))))
      :factory (if (str/blank? (:construction codeblocks ""))
                 "n/a"
                 (status (present? (:factory value))))

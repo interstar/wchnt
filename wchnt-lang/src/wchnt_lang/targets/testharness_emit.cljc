@@ -5,6 +5,7 @@
             [wchnt-lang.pipeline :as p]
             [wchnt-lang.ast-to-ir :as ast-to-ir]
             [wchnt-lang.targets.haxe-backend :as ir-to-haxe]
+            [wchnt-lang.targets.haxe :as haxe]
             [wchnt-lang.targets.testharness-std :as std]))
 
 (defn- rewrite-assert-expr
@@ -130,15 +131,18 @@
                                   (map :wrapper imported-artifacts)))]
     (when (empty? suite)
       (throw (ex-info "%testharness suite is empty" {})))
-    {:classes classes
-     :factory ""
-     :main ""
-     :init ""
-     :step ""
-     :preamble std/wchnt-unit-tests-class
-     :main-class (emit-main-class suite schema-ir)
-     :has-construction? true
-     :page-kind page-kind
-     :host "testharness"
-     :codeblocks codeblocks
-     :warnings []}))
+    (let [payload {:classes classes
+                   :factory ""
+                   :main ""
+                   :init ""
+                   :step ""
+                   :preamble std/wchnt-unit-tests-class
+                   :main-class (emit-main-class suite schema-ir)
+                   :has-construction? true}]
+      {:backend :haxe
+       :target "testharness"
+       :page-kind page-kind
+       :outputs [{:kind :source :name "Main.hx" :content (haxe/source-output payload)}]
+       :payload payload
+       :metadata {:codeblocks codeblocks}
+       :warnings []})))

@@ -4,10 +4,10 @@
             [wchnt-lang.targets.requires :as requires]))
 
 (def known-hosts
-  #{"terminal" "cli" "cli-live" "openfl" "canvas" "form"})
+  #{"terminal" "cli" "cli-live" "openfl" "canvas" "form" "smalltalk"})
 
 (def host-help
-  "%terminal, %cli, %cli-live, %openfl, %canvas, or %form")
+  "%terminal, %cli, %cli-live, %openfl, %canvas, %form, or %smalltalk")
 
 (def frame-hosts
   "Hosts that use %init / %step instead of %main (frame loop or line loop)."
@@ -35,14 +35,14 @@
             []
             start)))
 
-(defn- haxe-fn-name
-  [haxe]
-  (when-let [match (re-find #"function\s+(\w+)" haxe)]
+(defn- source-fn-name
+  [source]
+  (when-let [match (re-find #"function\s+(\w+)" source)]
     (second match)))
 
-(defn- haxe-has-fn?
-  [haxe name]
-  (boolean (re-find (re-pattern (str "function\\s+" name "\\b")) haxe)))
+(defn- source-has-fn?
+  [source name]
+  (boolean (re-find (re-pattern (str "function\\s+" name "\\b")) source)))
 
 (defn- assert-unique-names
   [blocks]
@@ -63,7 +63,7 @@
                       {:names (mapv :name hosts)})))
     (if-let [host (first hosts)]
       (do
-        (when-not (str/blank? (:haxe host))
+        (when-not (str/blank? (:source host))
           (throw (ex-info (str "%" (:name host) " names the host and must be empty")
                           {:name (:name host)})))
         (:name host))
@@ -109,20 +109,20 @@
 (defn- assert-function-named
   [block expected]
   (when block
-    (when-not (haxe-has-fn? (:haxe block) expected)
+    (when-not (source-has-fn? (:source block) expected)
       (throw (ex-info (str "%" expected " must contain a function " expected)
                       {:expected expected
-                       :found (haxe-fn-name (:haxe block))})))))
+                       :found (source-fn-name (:source block))})))))
 
 (defn- binding-from-block
-  [{:keys [name haxe]}]
-  (let [fn-name (if (haxe-has-fn? haxe name)
+  [{:keys [name source]}]
+  (let [fn-name (if (source-has-fn? source name)
                   name
-                  (haxe-fn-name haxe))]
+                  (source-fn-name source))]
     (when-not fn-name
       (throw (ex-info (str "%" name " must contain a function")
-                      {:name name :haxe haxe})))
-    [name {:haxe haxe :fn-name fn-name}]))
+                      {:name name :source source})))
+    [name {:source source :fn-name fn-name}]))
 
 (defn- assert-supported-bindings
   [blocks]
@@ -132,10 +132,10 @@
                            (:name (first unsupported)))
                       {:bindings (sort (map :name unsupported))})))))
 
-(defn- haxe-block
+(defn- source-block
   [block]
   (when block
-    {:haxe (:haxe block)}))
+    {:source (:source block)}))
 
 (defn- requires-block
   [blocks]
@@ -153,7 +153,7 @@
                       collect-blocks
                       (mapv (fn [b]
                               {:name (:name b)
-                               :haxe (str/trim (str/join "\n" (:lines b)))})))]
+                               :source (str/trim (str/join "\n" (:lines b)))})))]
       (when (empty? blocks)
         (throw (ex-info "Target must start with %name (e.g. %main or %trace)"
                         {:text text})))
@@ -168,13 +168,13 @@
         (assert-function-named (block-named blocks "init") "init")
         (assert-function-named (block-named blocks "step") "step")
         (assert-supported-bindings other)
-        (let [requires-ir (requires/parse (or (:haxe requires) ""))]
+        (let [requires-ir (requires/parse (or (:source requires) ""))]
           (requires/assert-no-duplicate-method-signatures! requires-ir)
           {:host host
            :requires requires-ir
            :external-types (requires/provided-types requires-ir)
-           :requires-text (some :haxe [requires])
+           :requires-text (some :source [requires])
          :bindings (into {} (map binding-from-block other))
-         :main (haxe-block (block-named blocks "main"))
-         :init (haxe-block (block-named blocks "init"))
-           :step (haxe-block (block-named blocks "step"))})))))
+         :main (source-block (block-named blocks "main"))
+         :init (source-block (block-named blocks "init"))
+           :step (source-block (block-named blocks "step"))})))))

@@ -92,18 +92,37 @@
     [:success [:= false]]
     [:error string?]]])
 
-(def FullProgramStructure
-  [:map
-   [:classes string?]
-   [:factory string?]
-   [:main string?]
-   [:codeblocks [:map]]
-   [:warnings [:sequential string?]]
-   ])
+(def BackendArtifact
+  "Backend-neutral envelope returned by a target backend.
+
+   The :payload map is owned by the selected backend. No host-language source
+   layout belongs in this common contract."
+  [:map {:closed true}
+   [:backend keyword?]
+   [:target [:maybe string?]]
+   [:page-kind keyword?]
+   [:outputs [:sequential
+              [:map
+               [:kind keyword?]
+               [:name string?]
+               [:content any?]]]]
+   [:payload any?]
+   [:metadata [:map]]
+   [:warnings [:sequential string?]]])
+
+(def FullProgramStructure BackendArtifact)
 
 
 (defn valid-full-program? [result]
   (m/validate FullProgramStructure result))
+
+(defn valid-backend-artifact? [result]
+  "Validate the common artifact contract returned by a backend emitter."
+  (m/validate BackendArtifact result))
+
+(defn explain-backend-artifact [result]
+  (when-not (valid-backend-artifact? result)
+    (m/explain BackendArtifact result)))
 
  
 
@@ -339,7 +358,7 @@
             objects)))
 
 (defn validate-ir-structure [ir]
-  "Validate that IR has the proper structured format for Haxe generation"
+  "Validate that construction IR has structured arguments for backend emission."
   (let [construction-ir (:construction ir)]
     (if (has-structured-args? construction-ir)
       {:valid true :message "IR has proper structured arguments"}

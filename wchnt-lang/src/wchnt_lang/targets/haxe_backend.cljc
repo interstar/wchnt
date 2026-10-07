@@ -473,7 +473,7 @@
     :path (str (expr-ir-to-haxe (:root expr)) "."
                (str/join "." (:fields expr)))
     :call (haxe-call expr)
-    :target-call (str "Main." (:haxe-name expr) "("
+    :target-call (str "Main." (:target-name expr) "("
                       (str/join ", " (map expr-ir-to-haxe (:args expr)))
                       ")")
     :lambda (haxe-lambda expr)

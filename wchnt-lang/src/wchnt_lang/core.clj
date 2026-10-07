@@ -80,18 +80,11 @@
             (System/exit 1))
           (let [result (compile-file filename)]
             (if (and (p/is-cargo? result) (:success result))
-              (let [full-program (:value result)
-                    has-construction? (:has-construction? full-program)
-                    host (or (:host full-program) "none")
-                    preamble (:preamble full-program)]
+              (let [artifact (:value result)
+                    host (or (:target artifact) "none")
+                    source (some-> artifact :outputs first :content)]
                 (println (str "// WCHNT host: " host))
-                (if has-construction?
-                  (println "// WCHNT Program - Contains construction section")
-                  (println "// WCHNT Library - No construction section, no Main class generated"))
-                (when-not (str/blank? preamble)
-                  (println preamble))
-                (println (:classes full-program))
-                (println (:main-class full-program))
+                (println source)
                 (when verbose?
                   (pp/pprint result)))
               (do
