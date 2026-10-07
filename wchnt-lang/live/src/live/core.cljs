@@ -2,6 +2,7 @@
   "Live page: wiki storage, CodeMirror, canvas/CLI harness, Run."
   (:require-macros [live.embed :refer [blank-source example-source]])
   (:require [clojure.string :as str]
+            [live.diagram :as diagram]
             [live.editor :as editor]
             [live.nav :as nav]
             [live.render :as render]
@@ -203,15 +204,19 @@
   (when-let [b (el "edit-toggle")]
     (gobj/set b "textContent" (if (= @!mode :edit) "Done" "Edit"))))
 
+(defn- show-view!
+  "Show exactly one of the main views: \"reader\", \"editor\" or \"diagram-view\"."
+  [id]
+  (doseq [v ["reader" "editor" "diagram-view"]]
+    (gobj/set (el v) "hidden" (not= v id))))
+
 (defn- show-reader!
   []
-  (gobj/set (reader-el) "hidden" false)
-  (gobj/set (el "editor") "hidden" true))
+  (show-view! "reader"))
 
 (defn- show-editor!
   []
-  (gobj/set (reader-el) "hidden" true)
-  (gobj/set (el "editor") "hidden" false)
+  (show-view! "editor")
   (when-let [cm @!editor]
     (js/setTimeout #(.refresh cm) 0)))
 
@@ -240,6 +245,17 @@
   (update-edit-button!)
   (when-let [cm @!editor]
     (js/setTimeout #(.focus cm) 0)))
+
+(defn- set-diagram-mode!
+  "Save, then draw a static class diagram of the current page. Edit returns
+   to the editor; nothing redraws until Diagram is pressed again."
+  []
+  (flush-save!)
+  (remember-scroll! @!current-page)
+  (reset! !mode :diagram)
+  (show-view! "diagram-view")
+  (update-edit-button!)
+  (diagram/render! (editor/text @!editor)))
 
 (defn- open-page-with-content!
   "Switch pages after saving the current one; store explicit content."
@@ -636,8 +652,9 @@
   (.setAttribute (.-documentElement js/document) "data-theme" theme)
   (when-let [cm @!editor]
     (editor/set-theme! cm (cm-theme theme)))
-  (when-let [r (el "reader")]
-    (set! (.-className r) (str "cm-s-" (cm-theme theme))))
+  (doseq [id ["reader" "diagram-view"]]
+    (when-let [node (el id)]
+      (set! (.-className node) (str "cm-s-" (cm-theme theme)))))
   (when-let [btn (el "theme-toggle")]
     (gobj/set btn "textContent" (if (= theme "light") "Dark" "Light"))))
 
@@ -680,6 +697,8 @@
   (.addEventListener js/window "keydown" on-reset-shortcut! true)
   (on! "run" "click" start-run!)
   (on! "edit-toggle" "click" toggle-mode!)
+  (on! "diagram" "click" (fn [_] (set-diagram-mode!)))
+  (on! "diagram-fit" "click" (fn [_] (diagram/toggle-fit!)))
   (on! "close-run" "click" stop!)
   (on! "nav-back" "click" (fn [_] (go-back!)))
   (on! "nav-pages" "click" (fn [_] (open-pages-sheet!)))
