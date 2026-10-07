@@ -15,11 +15,11 @@
   [program]
   (let [bindings (get-in program [:target-ir :bindings])
         trace-name (get-in bindings ["trace" :fn-name])]
-    (str (str/join "\n" (map :haxe (vals bindings)))
+    (str (str/join "\n" (map :source (vals bindings)))
        "\n"
-       (get-in program [:target-ir :init :haxe])
+       (get-in program [:target-ir :init :source])
        "\n"
-       (get-in program [:target-ir :step :haxe])
+       (get-in program [:target-ir :step :source])
        "\nreturn {init: init, step: step, trace: "
        (or trace-name "null")
        "};")))
