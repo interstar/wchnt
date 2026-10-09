@@ -19,11 +19,25 @@
     (cond
       (contains? primitive-type-map t) (get primitive-type-map t)
       (str/ends-with? t "[]") (str "[" (simple-type (subs t 0 (- (count t) 2))) "]")
-      (re-matches #"(?:List|Collection|Set|Iterable)<(.+)>" t) (str "[" (simple-type (second (re-matches #"(?:List|Collection|Set|Iterable)<(.+)>" t))) "]")
-      (re-matches #"Map<([^,]+),(.+)>" t) (let [[_ k v] (re-matches #"Map<([^,]+),(.+)>" t)]
-                                             (str "{" (simple-type k) ":" (simple-type v) "}"))
-      (str/includes? t "<") (first (str/split t #"<"))
-      :else (last (str/split t #"\.")))))
+      :else
+      (let [lt (str/index-of t "<")]
+        (cond
+          (nil? lt) (last (str/split t #"\."))
+          :else
+          (let [base (subs t 0 lt)
+                base-simple (last (str/split base #"\."))
+                rest (subs t lt)
+                unqualified (str base-simple rest)]
+            (cond
+              ;; Fully-qualified generics (java.util.List<Note>) re-run once
+              ;; with the package qualifier removed so the collection regexes match.
+              (not= unqualified t) (simple-type unqualified)
+              (re-matches #"(?:List|Collection|Set|Iterable|Iterator)<(.+)>" t)
+              (str "[" (simple-type (second (re-matches #"(?:List|Collection|Set|Iterable|Iterator)<(.+)>" t))) "]")
+              (re-matches #"Map<([^,]+),(.+)>" t)
+              (let [[_ k v] (re-matches #"Map<([^,]+),(.+)>" t)]
+                (str "{" (simple-type k) ":" (simple-type v) "}"))
+              :else base-simple)))))))
 
 (defn relationship [field-type known-types]
   (let [t (simple-type field-type)]
@@ -51,8 +65,10 @@
 
 (defn inheritance-view
   "Derive the WCHNT composition/sum-type view of Java class inheritance.
-   The parsed Java model is left untouched; this returns report-oriented data."
-  [classes]
+   The parsed Java model is left untouched; this returns report-oriented data.
+   known-types is the set of class, interface, and enum names visible in the
+   source tree; any of these counts as an owned (ordinary) component."
+  [classes known-types]
   (let [by-name (into {} (map (juxt :name identity) classes))
         parent-of (into {} (keep (fn [c]
                                    (when-let [parent (first (:extends c))]
@@ -74,7 +90,7 @@
                                                  :inferred? true
                                                  :location (:location class)})]
                                  (assoc class :schema-fields
-                                        (vec (concat (map #(schema-field % (set (keys by-name)))
+                                        (vec (concat (map #(schema-field % known-types)
                                                           (remove :static (:fields class)))
                                                      (when inferred [inferred]))))))
                         classes)]
@@ -103,6 +119,9 @@
     (str "interface " (:name interface)
          (when parents (str " extends " (str/join ", " parents))))))
 
+(defn enum-line [enum]
+  (str (:name enum) " = " (str/join " | " (map #(str "\"" % "\"") (:constants enum)))))
+
 (defn review-notes [analysis]
   (vec (concat
         (when (some #(str/ends-with? (str/lower-case %) ".pde") (:files analysis))
@@ -116,4 +135,10 @@
           (str (:name c) " implements " (str/join ", " (:implements c)) "; consider a WCHNT sum type/interface."))
         (for [s (:generated-sum-types analysis)]
           (str (:generated-from s) " inheritance became " (:name s)
-               "; inherited behavior will need delegation through the inferred composition field.")))))
+               "; inherited behavior will need delegation through the inferred composition field."))
+        (when (some #(re-find #"Iterator<" (or (:type %) ""))
+                    (mapcat :fields (:classes analysis)))
+          ["Iterator<T> fields were treated as [T] (lists). Revisit: Java Iterator is a stateful cursor, not a persistent list."])
+        (for [e (:enums analysis)
+              :when (or (seq (:methods e)) (seq (:fields e)) (seq (:constructors e)))]
+          (str (:name e) " is a Java enum with methods, fields, or constructors; WCHNT enums are simple string constants, so its behaviour must move into methods or an ordinary class.")))))

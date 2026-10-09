@@ -3,7 +3,7 @@
             [clojure.string :as str]
             [wchnt-java-analysis.model :as model])
   (:import [com.github.javaparser StaticJavaParser]
-           [com.github.javaparser.ast.body ClassOrInterfaceDeclaration FieldDeclaration MethodDeclaration ConstructorDeclaration Parameter]
+           [com.github.javaparser.ast.body ClassOrInterfaceDeclaration EnumDeclaration FieldDeclaration MethodDeclaration ConstructorDeclaration Parameter]
            [com.github.javaparser.ast.type Type]
            [java.nio.file Files Path]))
 
@@ -39,6 +39,15 @@
    :constructors (mapv #(method-data file % "constructor" line-offset) (.getConstructors node))
    :methods (mapv #(method-data file % "method" line-offset) (.getMethods node))
    :location (model/source-location (location file node line-offset))})
+(defn enum-declaration [file ^EnumDeclaration node line-offset]
+  {:name (.getNameAsString node)
+   :constants (mapv #(.getNameAsString %) (.getEntries node))
+   :implements (mapv #(.getNameAsString %) (.getImplementedTypes node))
+   :fields (vec (mapcat #(field-data file % line-offset) (.getFields node)))
+   :constructors (mapv #(method-data file % "constructor" line-offset) (.getConstructors node))
+   :methods (mapv #(method-data file % "method" line-offset) (.getMethods node))
+   :location (model/source-location (location file node line-offset))})
+
 (defn parse-file [file]
   (let [processing? (str/ends-with? (.getName file) ".pde")
         source (when processing? (slurp file))
@@ -51,8 +60,11 @@
         cu (if processing?
              (StaticJavaParser/parse (str imports "\nclass " synthetic-name " {\n" body "\n}"))
              (StaticJavaParser/parse file))
-        line-offset (if processing? -1 0)]
-    (mapv #(declaration file % line-offset) (.findAll cu ClassOrInterfaceDeclaration))))
+        line-offset (if processing? -1 0)
+        decls (.findAll cu ClassOrInterfaceDeclaration)]
+    {:classes (mapv #(declaration file % line-offset) (remove #(.isInterface %) decls))
+     :interfaces (mapv #(declaration file % line-offset) (filter #(.isInterface %) decls))
+     :enums (mapv #(enum-declaration file % line-offset) (.findAll cu EnumDeclaration))}))
 (defn java-files [root]
   (->> (file-seq (io/file root))
        (filter #(.isFile %))
@@ -61,8 +73,12 @@
 (defn parse-tree [root]
   (reduce (fn [analysis file]
             (try
-              (let [decls (parse-file file)]
-                (-> analysis (update :files conj (.getPath file)) (update :classes into (remove :interface? decls)) (update :interfaces into (filter :interface? decls))))
+              (let [{:keys [classes interfaces enums]} (parse-file file)]
+                (-> analysis
+                    (update :files conj (.getPath file))
+                    (update :classes into classes)
+                    (update :interfaces into interfaces)
+                    (update :enums into enums)))
               (catch Exception e
                 (-> analysis (update :files conj (.getPath file)) (update :errors conj {:file (.getPath file) :message (.getMessage e)})))))
           (model/empty-analysis)

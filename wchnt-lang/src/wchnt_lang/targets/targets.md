@@ -11,6 +11,15 @@ different lifecycle callbacks and different host-language conventions. A
 target is selected by the first target directive, such as `%canvas`, `%openfl`,
 or `%cli`.
 
+An optional `%prefix NAME` Target directive can prefix every WCHNT-generated
+class, interface, enum, and assemblage wrapper in emitted source. For example,
+`%prefix WCHNT` maps a WCHNT class named `Time` to `WCHNTTime`; generated type
+references and constructions use the same mapping. Without the directive,
+generated names are unchanged. Native Target code is emitted as source too, so
+when it refers to a generated class, write its prefixed name explicitly. The
+prefix does not rename built-in or target runtime classes, nor the Haxe `Main`
+entry point. The live interpreter continues to use the original WCHNT names.
+
 ## External classes and `%requires`
 
 Classes supplied by a target platform are declared in a `%requires` subsection
@@ -56,7 +65,7 @@ The current availability is:
 | `%cli-live` | `WCHNTMaths`, `WCHNTConsole` |
 | `%testharness` | `WCHNTUnitTests` |
 | `%testharness-live` | `WCHNTUnitTests` |
-| `%smalltalk` | none in the initial Pharo 14 backend slice |
+| `%smalltalk` | `WCHNTMaths`, `WCHNTGraphics`, `WCHNTInput` |
 
 These names are conventions supplied by the target. They are not WCHNT
 assemblages and do not participate in `Import`.
@@ -105,9 +114,10 @@ plugins dynamically, but that is deliberately outside the language contract.
   (`testharness_live_run.cljc` + `testharness_live_expr.cljc`). No
   `## Construction` section is required.
 * `haxe_backend.cljc` and `haxe_std.cljc` implement shared Haxe support.
-* `smalltalk.cljc` emits a Pharo 14 file-out for the initial I-Spy slice:
-  schema classes, accessors, supported Methods expressions, Construction, and
-  a native `%main` entry point. Broader IR support is still in progress.
+* `smalltalk.cljc` emits a Pharo 14 file-out with schema classes, accessors,
+  supported Methods expressions, Construction, Morphic graphics/input adapters,
+  and native Smalltalk `%init` / `%step` callbacks (or `%main` for non-frame
+  programs). Broader IR and graphics support is still in progress.
 * `live_js.cljc`, `live_canvas.cljc`, `live_std.cljc`, and
   `interpreter_std.cljc` implement the live runtime support. The latter is
   shared host behavior; `live_std.cljc` is the live target-facing facade.

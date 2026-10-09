@@ -31,6 +31,100 @@
       (is (:success cargo) (first (:errors cargo)))
       (is (= "Int" (get-in method [:body :type]))))))
 
+(deftest class-prefix-applies-to-haxe-generated-types-but-not-source-strings
+  (let [source "## Schema
+
+```
+Time = Int/t
+Game = Time/time Int/Time
+```
+
+## Construction
+
+```
+[:Game [:Time 7] 11]
+```
+
+## Methods
+
+```
+Game::label = { \"Time\" }
+```
+
+## Target
+
+```
+%terminal
+%prefix WCHNT
+%main
+public static function main():Void { var game = WCHNTGameAssemblage.factory(); }
+```
+"
+        result (compiler/compile source)]
+    (is (:success result) (pr-str (:errors result)))
+    (let [artifact (:value result)
+          generated (get-in artifact [:outputs 0 :content])]
+      (is (str/includes? generated "class WCHNTTime"))
+      (is (str/includes? generated "class WCHNTGame"))
+      (is (str/includes? generated "time: WCHNTTime"))
+      (is (str/includes? generated "Time: Int"))
+      (is (str/includes? generated "new WCHNTTime"))
+      (is (str/includes? generated "class WCHNTGameAssemblage"))
+      (is (str/includes? generated "WCHNTGameAssemblage.factory()"))
+      (is (str/includes? generated "return \"Time\""))
+      (is (str/includes? generated "class Main")))))
+
+(deftest class-prefix-is-supported-by-the-custom-testharness-target-parser
+  (let [source "## Schema
+
+```
+Time = Int/t
+Game = Time/time
+```
+
+## Target
+
+```
+%testharness
+%prefix WCHNT
+%with
+[:Game [:Time 7]]
+%assert
+\"fixture exists\"
+true
+```
+"
+        result (compiler/compile source)]
+    (is (:success result) (pr-str (:errors result)))
+    (is (str/includes? (get-in result [:value :outputs 0 :content])
+                       "class WCHNTTime"))))
+
+(deftest class-prefix-reports-runtime-name-collisions
+  (let [source "## Schema
+
+```
+Maths = Int/value
+```
+
+## Construction
+
+```
+[:Maths 7]
+```
+
+## Target
+
+```
+%smalltalk
+%prefix WCHNT
+%main
+WCHNTMathsAssemblage new main.
+```
+"
+        result (compiler/compile source)]
+    (is (false? (:success result)))
+    (is (re-find #"prefix collides" (first (:errors result))))))
+
 (deftest parse-requires-declarations
   (testing "class-only and typed method declarations produce external IR"
     (let [ir (requires/parse
@@ -103,6 +197,21 @@
     (is (thrown-with-msg? Exception #"Duplicate"
                           (target/parse-target
                            "%terminal\n\n%main\nfunction main():Void {}\n%main\nfunction main():Void {}\n")))))
+
+(deftest parse-target-class-prefix
+  (testing "%prefix is optional Target configuration, not a host block"
+    (let [ir (target/parse-target
+              "%terminal\n%prefix WCHNT\n%main\nfunction main():Void {}")]
+      (is (= "terminal" (:host ir)))
+      (is (= "WCHNT" (:class-prefix ir)))
+      (is (= "function main():Void {}" (get-in ir [:main :source])))))
+  (testing "prefixes must be valid and unique"
+    (is (thrown-with-msg? Exception #"class-name prefix"
+                          (target/parse-target
+                           "%terminal\n%prefix bad\n%main\nfunction main():Void {}")))
+    (is (thrown-with-msg? Exception #"only once"
+                          (target/parse-target
+                           "%terminal\n%prefix W\n%prefix X\n%main\nfunction main():Void {}")))))
 
 (deftest parse-target-trace-needs-a-function
   (testing "%trace Haxe must declare a function to call from Methods"

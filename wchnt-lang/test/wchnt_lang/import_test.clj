@@ -154,6 +154,66 @@ make = { [:Paint 0] }
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"as"
                           (mainfile/parse-import-specs "shapes-lib\n")))))
 
+(deftest target-class-prefix-is-inherited-by-imported-haxe-assemblages
+  (let [library "## Schema
+
+```
+Box = Int/value
+```
+
+## Construction
+
+```
+[:Box 5]
+```
+
+## Methods
+
+```
+Box::valueCopy = { [:Box value] }
+```
+
+## Public
+
+```
+make = { [:Box 9] }
+```
+"
+        app "## Import
+
+```
+[[box]] as box
+```
+
+## Schema
+
+```
+App = @Box
+```
+
+## Construction
+
+```
+[:App box.make()]
+```
+
+## Target
+
+```
+%terminal
+%prefix WCHNT
+%main
+public static function main():Void { var app = WCHNTAppAssemblage.factory(); }
+```
+"
+        result (compiler/compile app {:resolve-page (fn [name]
+                                                       (when (= name "box") library))})]
+    (is (:success result) (pr-str (:errors result)))
+    (let [generated (get-in result [:value :outputs 0 :content])]
+      (is (str/includes? generated "class WCHNTBox"))
+      (is (str/includes? generated "class WCHNTApp"))
+      (is (str/includes? generated "WCHNTAppAssemblage.factory()")))))
+
 (deftest import-without-public-fails
   (let [cargo (compiler/compile-to-ir
                "## Import\n\n```\nshapes\n```\n\n## Schema\n\n```\nApp = Int/x\n```"

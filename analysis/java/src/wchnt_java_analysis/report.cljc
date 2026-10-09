@@ -14,16 +14,17 @@
   [(:name class) (:kind method) (:name method) (:return-type method) (str/join ", " (map #(str (:type %) " " (:name %)) (:parameters method))) (:location method)])
 
 (defn render [analysis]
-  (let [known-types (set (map :name (concat (:classes analysis) (:interfaces analysis))))
-        inheritance (analyze/inheritance-view (:classes analysis))
+  (let [known-types (set (map :name (concat (:classes analysis) (:interfaces analysis) (:enums analysis))))
+        inheritance (analyze/inheritance-view (:classes analysis) known-types)
         classes (map #(assoc % :schema-line (analyze/schema-line % known-types)) (:classes inheritance))
         analysis (assoc analysis :classes classes :generated-sum-types (:generated-sum-types inheritance))
         schema-lines (concat (map #(str (:name %) " = " (str/join " | " (:values %))) (:generated-sum-types analysis))
+                             (map analyze/enum-line (:enums analysis))
                              (keep :schema-line classes))]
     (str "# Java assemblage analysis\n\n"
          "Generated reference material; this is not an automatic Java → WCHNT conversion.\n\n"
          "## Summary\n\n"
-         (str (count (:files analysis)) " source files, " (count classes) " classes, " (count (:interfaces analysis)) " interfaces.\n\n"
+         (str (count (:files analysis)) " source files, " (count classes) " classes, " (count (:interfaces analysis)) " interfaces, " (count (:enums analysis)) " enums.\n\n"
               "## Source files\n\n"
               (str/join "\n" (map #(str "- `" % "`") (:files analysis)))
               "\n\n"
@@ -39,6 +40,12 @@
               "## Interfaces\n\n"
               (if (seq (:interfaces analysis))
                 (str/join "\n" (map #(str "- `" (analyze/interface-line %) "`\n  Methods: " (or (some->> (:methods %) (map :signature) (str/join "; ")) "none")) (:interfaces analysis)))
+                "None discovered.")
+              "\n\n## Enums\n\n"
+              (if (seq (:enums analysis))
+                (str/join "\n" (map #(str "- `" (:name %) "`: " (str/join ", " (:constants %))
+                                          (when (seq (:implements %)) (str " (implements " (str/join ", " (:implements %)) ")")))
+                                      (:enums analysis)))
                 "None discovered.")
               "\n\n## Class relationships\n\n"
               (table ["Class" "Extends" "Implements" "Source"]

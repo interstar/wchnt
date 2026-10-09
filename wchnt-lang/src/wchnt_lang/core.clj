@@ -7,6 +7,7 @@
             [wchnt-lang.pages :as pages]
             [clojure.string :as str]
             [clojure.pprint :as pp]
+            [clojure.data.json :as json]
             [clojure.java.io :as io]
             [wchnt-lang.pipeline :as p]))
 
@@ -66,28 +67,68 @@
 
 ;; Command-line interface
 
+(defn compiler-info
+  "Return stable, backend-neutral metadata for a successfully compiled artifact."
+  [artifact]
+  {:format "wchnt-compiler-info"
+   :version 1
+   :success true
+   :target (:target artifact)
+   :backend (some-> (:backend artifact) name)
+   :pageKind (some-> (:page-kind artifact) name)
+   :outputs (mapv (fn [output]
+                    {:kind (name (:kind output))
+                     :name (:name output)})
+                  (:outputs artifact))
+   :warnings (vec (:warnings artifact))})
+
 (defn -main [& args]
   (let [args (vec args)]
-    (if (empty? args)
-      (do
-        (println "Usage: lein run [--verbose] <wchnt-source-file>")
-        (System/exit 1))
-      (let [verbose? (some #{"--verbose"} args)
-            filename (if verbose? (second args) (first args))]
-        (if-not (.exists (io/file filename))
+    (let [info? (= "--info" (first args))
+          verbose? (some #{"--verbose"} args)
+          filename (first (remove #{"--info" "--verbose"} args))]
+      (cond
+        (nil? filename)
+        (do
+          (binding [*out* *err*]
+            (println "Usage: lein run [--info|--verbose] <wchnt-source-file>"))
+          (System/exit 1))
+
+        (not (.exists (io/file filename)))
+        (if info?
           (do
-            (println (str "File not found: " filename))
+            (println (json/write-str {:format "wchnt-compiler-info"
+                                      :version 1
+                                      :success false
+                                      :errors [(str "File not found: " filename)]}))
+            (flush)
             (System/exit 1))
-          (let [result (compile-file filename)]
-            (if (and (p/is-cargo? result) (:success result))
-              (let [artifact (:value result)
-                    host (or (:target artifact) "none")
-                    source (some-> artifact :outputs first :content)]
-                (println (str "// WCHNT host: " host))
-                (println source)
-                (when verbose?
-                  (pp/pprint result)))
+          (do
+            (binding [*out* *err*]
+              (println (str "File not found: " filename)))
+            (System/exit 1)))
+
+        :else
+        (let [result (compile-file filename)
+              success? (and (p/is-cargo? result) (:success result))]
+          (if success?
+            (let [artifact (:value result)]
+              (if info?
+                (println (json/write-str (compiler-info artifact)))
+                (do
+                  (println (some-> artifact :outputs first :content))
+                  (when verbose?
+                    (pp/pprint result)))))
+            (if info?
               (do
-                (println (first (:errors result)) "file parsing" filename)
+                (println (json/write-str {:format "wchnt-compiler-info"
+                                          :version 1
+                                          :success false
+                                          :errors (vec (:errors result))}))
+                (flush)
+                (System/exit 1))
+              (do
+                (binding [*out* *err*]
+                  (println (first (:errors result)) "file parsing" filename))
                 (println result)
                 (System/exit 1)))))))))

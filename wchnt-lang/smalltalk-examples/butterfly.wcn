@@ -1,0 +1,95 @@
+# Butterfly Painting for Pharo 14
+
+The brush paints under the pointer and mirrors each mark across the vertical
+centre line. Keys 1–9 select the colour; hold the mouse button to paint.
+
+## Schema
+
+```
+Paint = Canvas :Brush Palette Inbox
+Canvas = Int/width Int/height
+Brush = Int/x Int/y Int/rad Colour Bool/painting
+Colour = "Black" | "White" | "Red" | "Green" | "Blue" | "Yellow" | "Cyan" | "Magenta" | "Orange"
+Palette = {Colour:Int}
+>Inbox = Int/mouseX Int/mouseY Bool/down [String]/keys
+```
+
+## Construction
+
+```
+[:Paint
+  [:Canvas 800 600]
+  [:Brush 0 0 5 Black false]
+  [:Palette
+    {Colour:Int
+      Black:   0xFF000000
+      White:   0xFFFFFFFF
+      Red:     0xFFFF0000
+      Green:   0xFF00FF00
+      Blue:    0xFF0000FF
+      Yellow:  0xFFFFFF00
+      Magenta: 0xFFFF00FF
+      Cyan:    0xFF00FFFF
+      Orange:  0xFFFF8000
+    }
+  ]
+  [:Inbox 0 0 false [:Array/String]]
+]
+```
+
+## Methods
+
+```
+Paint::step = {
+  nextColour = inbox.keys.fold(brush.colour, { current, key | palette.colourForKey(current, key)}).
+  nextBrush = [:Brush inbox.mouseX inbox.mouseY brush.rad nextColour inbox.down].
+  [:Paint canvas nextBrush palette inbox]
+}
+
+Inbox::update! = { [:Inbox mouseX mouseY down keys] }
+
+Palette::colourForKey = { Colour/current, String/key |
+  switch (key)
+    "1" -> { Black }
+    "2" -> { Red }
+    "3" -> { Green }
+    "4" -> { Blue }
+    "5" -> { Yellow }
+    "6" -> { Magenta }
+    "7" -> { Cyan }
+    "8" -> { Orange }
+    "9" -> { White }
+    else -> { current }
+}
+
+Brush::paint = { @WCHNTGraphics/g |
+  col = thePaint.palette.colourToInt.get(colour).
+  if (painting) {
+    g.beginFill(col)
+      .drawCircle(x, y, rad)
+      .drawCircle((thePaint.canvas.width-x), y, rad)
+      .endFill()
+   } else { g }
+}
+
+Canvas::paint = { @WCHNTGraphics/g |
+  g.beginFill(0xFFFFFFFF).drawRect(0, 0, width, height).endFill()
+}
+```
+
+## Target
+
+```
+%smalltalk
+
+%init
+| paint |
+paint := PaintAssemblage new factory.
+wchntGraphics extent: 800@600.
+paint canvas paint: wchntGraphics.
+
+%step
+paint inbox inject: wchntInput mouseX with: wchntInput mouseY with: wchntInput mouseDown with: wchntInput keyPresses.
+    paint := paint step.
+paint brush paint: wchntGraphics.
+```

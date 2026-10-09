@@ -1,24 +1,14 @@
-# Lander
+# Lander for Pharo 14
 
-*(Thanks to Berkan)*
+Fly the ship down to the green pad. **Left / right** rotate, **up** burns
+fuel, and **down** starts a fresh flight after landing or crashing. Click the
+play area first so it receives the arrow keys.
 
-Bring the ship down on the green pad. Arrow keys: **left / right** rotate,
-**up** burns fuel. Touch down slowly, level, and on the pad, or you'll leave a
-new crater. **Down** after a landing or a crash starts a fresh game on freshly
-rolled terrain.
-
-Click the play area after Run so the arrow keys reach the program.
-
-What this page shows about WCHNT:
-
-- The phase machine is an enum: `Phase = "Flying" | "Landed" | "Crashed"`.
-- `Game = ... :Ship ...` makes the ship context-specific: it reads gravity through `theGame` instead of being handed it.
-- `>Keys` is the mailbox Target fills each frame; `$Time` then drives `Game::update!`.
-- Construction holds a hand-drawn moon. Restarts roll a new one in Methods with `maths.rand`, folding over `times` into a `Build` accumulator, because a method cannot loop or mutate.
-- The height of the ground under the ship is a `fold` over the segments.
-- Everything on screen is drawn by WCHNT Methods through `@WCHNTGraphics/g`, including the terrain, via a fold whose accumulator is the graphics handle.
-- The HUD text is a `tpl` template filled from a `{String:String}` map.
-- `Game::update!` builds the new Game exactly once. Building a Game inside a helper leaks a `$Time` subscription per frame and the program slows to a crawl.
+This is the WCHNT Lander example adapted to Pharo's Morphic frame lifecycle.
+Morphic calls `%step`; the target ticks the time object and explicitly updates
+the game because this Smalltalk experiment does not yet implement reactive
+subscriptions. The game logic, terrain generation, collision checks, HUD, and
+drawing remain WCHNT Methods.
 
 ## Schema
 
@@ -205,41 +195,30 @@ Ship::draw = { @WCHNTGraphics/g, Int/hull |
 }
 ```
 
-
 ## Target
 
 ```
-%canvas
-
-%requires
-WCHNTMaths::rand() -> Float
-WCHNTMaths::sin(Float) -> Float
-WCHNTMaths::cos(Float) -> Float
-WCHNTMaths::abs(Float) -> Float
-WCHNTMaths::floor(Float) -> Int
-WCHNTMaths::round(Float) -> Int
+%smalltalk
+%prefix WCHNT
 
 %init
-var game;
-
-function init() {
-    game = GameAssemblage.factory(wchntMaths);
-    wchntGraphics.background(0x05070d, 1);
-}
+| game |
+game := WCHNTGameAssemblage new factoryWithMaths: wchntMaths.
+wchntGraphics input: wchntInput; extent: 800@600; background: 16r0005070D alpha: 1.0.
 
 %step
-function step() {
-    game.keys.inject(wchntInput.keyDown("ArrowLeft"), wchntInput.keyDown("ArrowRight"), wchntInput.keyDown("ArrowUp"), wchntInput.keyDown("ArrowDown"));
-    game.time["update!"]();
-
-    wchntGraphics.clear();
-    game.draw(wchntGraphics);
-    wchntGraphics.noStroke();
-
-    wchntGraphics.beginFill(0xd8dee9);
-    wchntGraphics.fillText(game.ship.readout(), 12, 12);
-    wchntGraphics.fillText(game.scoreLine(), 12, 34);
-    wchntGraphics.fillText(game.banner(), 12, 64);
-    wchntGraphics.endFill();
-}
+game keys inject: (wchntInput keyDown: 'ArrowLeft')
+    with: (wchntInput keyDown: 'ArrowRight')
+    with: (wchntInput keyDown: 'ArrowUp')
+    with: (wchntInput keyDown: 'ArrowDown').
+game time updateMutates.
+game updateMutates.
+wchntGraphics clear.
+game draw: wchntGraphics.
+wchntGraphics noStroke.
+wchntGraphics beginFill: 16r00D8DEE9.
+wchntGraphics fillText: (game ship readout) x: 12 y: 12.
+wchntGraphics fillText: (game scoreLine) x: 12 y: 34.
+wchntGraphics fillText: (game banner) x: 12 y: 64.
+wchntGraphics endFill.
 ```

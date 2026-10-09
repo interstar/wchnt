@@ -781,6 +781,14 @@ Target names the outer environment. Schema, Construction, and Methods stay the
 same across hosts; only Target changes. The first line of a non-empty Target
 must name a host — there is no default.
 
+An optional `%prefix NAME` directive can be placed after the host line to
+prefix WCHNT-generated class names in emitted source. For example,
+`%prefix WCHNT` maps a schema class named `Time` to `WCHNTTime`, including its generated
+references and constructions. The directive is optional, and omitting it
+preserves existing names. Native Target code that refers to generated classes
+must use the prefixed name. Built-in/platform classes and the Haxe `Main`
+entry point are not renamed; the live interpreter continues to use WCHNT names.
+
 ### Hosts
 
 | Host | Entry | Body language | Notes |

@@ -105,13 +105,14 @@ The Java plugin API (`wchnt_lang.WchntAPI`) is documented below.
 
 ## Scripts
 
-Run these from this directory (`wchnt-lang/`). Prerequisites: `lein`, `haxe`, `node` (plus `lime` + OpenFL for the windowed examples).
+Run these from this directory (`wchnt-lang/`). Prerequisites: `lein`, `haxe`, `node`, `jq` (plus `lime` + OpenFL for the windowed examples).
 
 | Script / command | What it does |
 |---|---|
 | `./build.sh` | Clean, run the unit tests, and build the JVM compiler JARs (`target/wchnt-lang.jar`, `target/wchnt-lang-standalone.jar`). |
 | `./rebuild_all.sh` | Rebuild everything: JVM compiler (via `build.sh`), live bundles, and `website/_site/`. |
 | `lein test` | Run the Clojure unit test suite. |
+| `lein run --info <file.wcn>` | Compile a file and print a versioned JSON manifest (target, backend, page kind, output names, warnings); diagnostics remain off stdout. |
 | `./run_examples.sh` | Compile **every** `examples/*.wcn` to Haxe and print the output. WCHNT → Haxe only; no JS compile or execution. Prints ✓/✗ per file. |
 | `./go.sh <file.wcn>` | Full pipeline for **one** file: WCHNT → Haxe → JS → `node`. `%cli` compiles to neko and reads stdin. `%openfl` files write `project.xml` and launch `lime`. |
 | `./go_all_examples.sh` | Compile and smoke-run every Haxe-capable example. CLI gets EOF; OpenFL examples are built, launched for 5 seconds, then stopped. Set `WCHNT_SMOKE_SECONDS` to change the window. `%canvas` / `%cli-live` are skipped because they are live-only. Logs are saved under `generated/smoke/`. |

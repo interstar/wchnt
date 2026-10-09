@@ -38,7 +38,41 @@ In Pharo 14:
    the window to stop the animation.
 
 The Morphic adapter uses `drawOn:` for rendering and Morphic's `step` / `stepTime`
-callbacks for animation. This slice does not yet implement `WCHNTInput`.
+callbacks for animation. The generated entry point runs native Smalltalk `%init`
+once and installs native Smalltalk `%step` code as the Morph's callback. WCHNT
+hex colour literals are emitted in Pharo's `16r...` radix syntax; packed and
+explicit alpha values are converted into Morphic alpha-blended drawing.
+
+## Compile and run Butterfly
+
+Butterfly is the first input experiment. It exercises the Morphic input adapter:
+mouse position/button state and the characters pressed since the previous frame
+are copied into the WCHNT `Inbox` each step. Click and drag to paint mirrored
+circles; press **1–9** to change colour.
+
+From the `wchnt-lang` project directory:
+
+```sh
+lein run smalltalk-examples/butterfly.wcn | tail -n +2 > smalltalk-examples/butterfly.st
+```
+
+In a Pharo 14 Playground, file in the generated `.st` file and run its entry
+point, just as for Bounce:
+
+```smalltalk
+CodeImporter evaluateFileNamed: '/full/path/to/wchnt-lang/smalltalk-examples/butterfly.st'.
+```
+
+Then evaluate:
+
+```smalltalk
+PaintAssemblage new main.
+```
+
+The generated main opens a Morphic window. Close that window to stop its stepping
+loop. This experiment is specifically using Morphic for window/event lifecycle;
+the WCHNT drawing and input operations remain behind `WCHNTGraphics` and
+`WCHNTInput`.
 
 ## Compile I-Spy
 

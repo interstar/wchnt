@@ -44,15 +44,27 @@ else
     exit 1
 fi
 
-# Check if this is a library (no construction section)
-if grep -q "WCHNT Library - No construction section" "$HAXE_FILE"; then
+if ! INFO=$(lein run --info "$WCHNT_FILE"); then
+    echo "❌ Could not inspect WCHNT target information" >&2
+    printf '%s\n' "$INFO" >&2
+    exit 1
+fi
+
+if ! printf '%s' "$INFO" | jq -e '.success == true' >/dev/null; then
+    echo "❌ Compiler returned invalid target information" >&2
+    printf '%s\n' "$INFO" >&2
+    exit 1
+fi
+
+PAGE_KIND=$(printf '%s' "$INFO" | jq -r '.pageKind')
+if [ "$PAGE_KIND" = "library" ]; then
     echo ""
     echo "📚 Library detected - skipping Haxe compilation and execution"
     echo "✅ Library generation complete!"
     exit 0
 fi
 
-HOST=$(grep -m1 '^// WCHNT host:' "$HAXE_FILE" | awk '{print $4}')
+HOST=$(printf '%s' "$INFO" | jq -r '.target // empty')
 
 if [ "$HOST" = "openfl" ]; then
     echo ""

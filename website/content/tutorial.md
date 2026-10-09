@@ -139,12 +139,13 @@ Things to unpack:
 
 The last layer names the *outer environment* we call the **Target Platform**.
 
-The Target Platform is an explicit thing that the wchnt compiler or environment has to know about and provide access to. And the Target section of the code is where we write the code that interfaces between it and our assemblage. In most languages, such information is often considered an after-thought to be relegated to obscure configuration files. In wchnt, despite recognising that it is
+In wchnt, the Target Platform is an explicit thing that the wchnt compiler knows about and provides access to. And the Target section of the assemblage is where we write the code that interfaces between it and our assemblage. In most languages, such information is often considered an after-thought to be relegated to obscure configuration files. In wchnt, despite recognising that it is only loosely coupled with the rest of our program, we deliberately make it more prominent and visible. Precisely so the programmer *can* see how the code interacts with its environment.
 
-The target platform is selected with an initial `%` selector. In this case we are choosing `%canvas` which is a web-canvas based environment running in the live environment in the browser. 
+The target platform is selected with an initial `%` selector. In this case we are choosing `%canvas` which is a web-canvas based environment running in the live environment in the browser. Each target platform defines certain platform resources available to our program. In `%canvas` we know we'll get `wchntGraphics` an object of class `WCHNTGraphics` which is part of the standard library, providing a surface we can draw on.
 
-That's what changes when you move from a terminal to a window to a browser. Keep it thin: build the assemblage, advance it, hand it the graphics surface.
+The target platform also defines a particular interaction loop or set of hooks into the assemblage. In the case of `%canvas` and similar interactive graphics targets, this takes the form of an `%init` phase which is run once at the beginning of the program. And a `%step` phase which is called repeatedly on each frame.
 
+In the Target section of our assemblage we write code to fit these hooks in the target's own language. In this example, we write Javascript. The target code is given a `GameAssemblage` class with a single class method : `factory()`. This calls the construction and builds the assemblage. Then in the target `step()` we call the assemblage's own `step()` method. And then `draw()`.
 
 
 ````markdown
@@ -168,65 +169,13 @@ function step() {
 }
 ```
 ````
+ 
 
-The browser harness runs `init` once and `step` every frame.
-`GameAssemblage.factory()` builds your assemblage (the name comes from the
-Construction root class); `assemblage.step()` advances it by returning a new
-`Game` value; `assemblage.draw(wchntGraphics)` paints via Methods.
-[`wchntGraphics`](wchntgraphics.html) is the portable drawing surface. Target
-code is real JavaScript here — Schema, Construction, and Methods
-stay the same across graphics hosts.
+## 6. Run it
 
-This tutorial uses a pure `step` that returns a new root. The root class is
-also allowed to define mutating `!` methods (see the Guide). For a reactive
-clock, Schema would add `$Time`, both `Time` and `Game` would define
-`update!`, and Target would tick `assemblage.time["update!"]()` instead of
-assigning `assemblage = assemblage.step()`.
+Open **[Play](https://wchnt.com/play/?page=bounce)** press **Run**. A grey ball should bounce inside the box. Try changing the ball's radius or velocity in Construction, or the colours in its draw method.
 
-## 7. Run it
+## 7. Where next
 
-Open **[Play](play/)**, then click **New** and give the page a name (e.g. `bounce`) so you get a
-fresh page to work in — the editor opens a blank page ready to edit. Paste the full program
-above into that page and press **Run**. A grey ball should bounce inside the box. Try changing
-the ball's radius or velocity in Construction, or the colours in its draw method.
-
-## 8. More of the language
-
-The bounce program uses ordinary fields and one context-dependent `:` ball. The rest of
-the language is in the **[Guide](guide.html)**. A short map:
-
-**Delegation (`+`).** A class can be its extras *plus* an inner object. Fields and
-methods of the inner object are promoted. Student is not a BasePerson unless you write
-a sum.
-
-```
-Student = String/id +BasePerson
-[:Student "s17" [:BasePerson "Ada" 36]]
-```
-
-**Write-paths.** In Methods, `[:Ball | x = (x + dx)]` copies the other fields from
-`this`. Construction stays fully positional.
-
-**Templates.** Strings have `tpl`, which fills `{name}` holes from a map. `+` does not
-concatenate — use `.concat` or `tpl`.
-
-```
-"You are in {place}.".tpl({String:String "place": room.description})
-```
-
-**Import.** A page with `## Public` is a box. Another page writes `## Import` /
-`[[thatPage]] as alias`, stores a handle as `@Quest`, and calls only the published
-methods (`realm.make(...)`). A published interface can be implemented locally:
-`Pentagon : Shape = Int/x …`.
-
-**Reactive `update!` and mailboxes.** `$Time` makes `Time` an observable: its
-`update!` notifies subscribers such as `Game::update!`. A class marked `>Keys`
-is a mailbox — Target may `inject` a snapshot, then the mailbox’s `update!`
-runs. The [Pollution](pollution.html) game uses both. Ordinary classes like
-`Ball` stay immutable values unless they are also the root or participate in `$`
-/ `>`.
-
-## Where next
-
-The **[Guide](guide.html)** is the full language tour — all five relationship sigils,
+The **[Guide](guide.html)** is the full language tour — all five relationship sigils,3
 Import / Public, write-paths, `tpl`, collections, mutability / `update!`, and the Target hosts.

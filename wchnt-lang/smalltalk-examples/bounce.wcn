@@ -50,9 +50,13 @@ Game::draw = { @WCHNTGraphics/g |
 ```
 %smalltalk
 
-%main
-| graphics |
-graphics := WCHNTGraphics new.
-graphics openInWindow.
-graphics game: (GameAssemblage new factory).
+%init
+| game |
+game := GameAssemblage new factory.
+wchntGraphics game: game.
+
+%step
+game := game step.
+wchntGraphics clear.
+game draw: wchntGraphics.
 ```

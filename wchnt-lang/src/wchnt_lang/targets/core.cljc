@@ -35,6 +35,24 @@
             []
             start)))
 
+(defn extract-class-prefix
+  "Remove and validate an optional `%prefix NAME` directive from Target text."
+  [text]
+  (let [lines (str/split-lines (or text ""))
+        directive-lines (filter #(re-find #"^[ \t]*%prefix(?:[ \t]|$)" %) lines)
+        directives (keep #(re-matches #"^[ \t]*%prefix[ \t]+([A-Z][A-Za-z0-9_]*)[ \t]*$" %)
+                         directive-lines)]
+    (when (> (count directive-lines) 1)
+      (throw (ex-info "Target may define %prefix only once"
+                      {:directives (vec directive-lines)})))
+    (when (and (seq directive-lines) (empty? directives))
+      (throw (ex-info "%prefix requires a class-name prefix beginning with an uppercase letter"
+                      {:directive (first directive-lines)})))
+    {:prefix (second (first directives))
+     :text (if (seq directive-lines)
+             (str/join "\n" (remove #(= (first directive-lines) %) lines))
+             (or text ""))}))
+
 (defn- source-fn-name
   [source]
   (when-let [match (re-find #"function\s+(\w+)" source)]
@@ -149,7 +167,8 @@
   [text]
   (if (str/blank? (or text ""))
     {:bindings {} :main nil :host nil :init nil :step nil}
-    (let [blocks (->> (str/split-lines text)
+    (let [{:keys [prefix text]} (extract-class-prefix text)
+          blocks (->> (str/split-lines text)
                       collect-blocks
                       (mapv (fn [b]
                               {:name (:name b)
@@ -165,16 +184,18 @@
                                (= "requires" (:name %)))
                           blocks)]
         (assert-lifecycle host blocks)
-        (assert-function-named (block-named blocks "init") "init")
-        (assert-function-named (block-named blocks "step") "step")
+        (when-not (= host "smalltalk")
+          (assert-function-named (block-named blocks "init") "init")
+          (assert-function-named (block-named blocks "step") "step"))
         (assert-supported-bindings other)
         (let [requires-ir (requires/parse (or (:source requires) ""))]
           (requires/assert-no-duplicate-method-signatures! requires-ir)
-          {:host host
-           :requires requires-ir
-           :external-types (requires/provided-types requires-ir)
-           :requires-text (some :source [requires])
-         :bindings (into {} (map binding-from-block other))
-         :main (source-block (block-named blocks "main"))
-         :init (source-block (block-named blocks "init"))
-           :step (source-block (block-named blocks "step"))})))))
+          (cond-> {:host host
+                   :requires requires-ir
+                   :external-types (requires/provided-types requires-ir)
+                   :requires-text (some :source [requires])
+                   :bindings (into {} (map binding-from-block other))
+                   :main (source-block (block-named blocks "main"))
+                   :init (source-block (block-named blocks "init"))
+                   :step (source-block (block-named blocks "step"))}
+            prefix (assoc :class-prefix prefix)))))))

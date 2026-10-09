@@ -1,7 +1,8 @@
 (ns wchnt-lang.targets.testharness-parse
   "Parse %testharness / %testharness-live Target bodies:
    repeated %with constructions and %assert cases."
-  (:require [clojure.string :as str]))
+  (:require [clojure.string :as str]
+            [wchnt-lang.targets.core :as core]))
 
 (def host-names
   #{"testharness" "testharness-live"})
@@ -102,7 +103,8 @@
   ([text expected-host]
    (when (str/blank? (or text ""))
      (throw (ex-info "Test harness Target cannot be blank" {})))
-   (let [blocks (collect-blocks (str/split-lines text))]
+   (let [{:keys [prefix text]} (core/extract-class-prefix text)
+         blocks (collect-blocks (str/split-lines text))]
      (when (empty? blocks)
        (throw (ex-info "Target must start with %testharness or %testharness-live"
                        {:text text})))
@@ -120,11 +122,12 @@
        (when (empty? rest-blocks)
          (throw (ex-info (str "%" host " requires at least one %with or %assert") {})))
        (let [suite (mapv parse-suite-block rest-blocks)]
-         {:host host
-          :bindings {}
-          :main nil
-          :init nil
-          :step nil
-          :requires nil
-          :external-types #{}
-          :suite suite})))))
+         (cond-> {:host host
+                  :bindings {}
+                  :main nil
+                  :init nil
+                  :step nil
+                  :requires nil
+                  :external-types #{}
+                  :suite suite}
+           prefix (assoc :class-prefix prefix)))))))

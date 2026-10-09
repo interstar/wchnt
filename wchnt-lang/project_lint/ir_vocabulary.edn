@@ -1,0 +1,70 @@
+;; The Methods/Reactions expression IR that backends must accept.
+;;
+;; Lint-side stand-in for a definitive vocabulary that should eventually live
+;; in the codebase (see README.md). backend_coverage.clj checks this file
+;; against what the front end produces, then checks every backend against it.
+
+{;; Every :expr tag a method body node can carry.
+ :expressions
+ {:int "Int literal"
+  :float "Float literal"
+  :bool "Bool literal"
+  :string "String literal"
+  :enum "Enum value literal"
+  :field "Field of this object"
+  :param "Method parameter"
+  :local "let / lambda binding"
+  :this "The receiving object"
+  :path "Field chain from a root expression"
+  :call "Method call (user, external or built-in)"
+  :target-call "Call to a % binding in Target"
+  :import-alias "Import alias, only as the receiver of a :call"
+  :construct "Construct a Schema class"
+  :host-construct "Construct a platform-constructible class"
+  :array "Array literal"
+  :map "Map literal"
+  :lambda "Block passed to map / filter / fold / times"
+  :if "if / else"
+  :switch "switch on a value"
+  :arith "Arithmetic chain"
+  :neg "Unary minus"
+  :not "Boolean not"
+  :cmp "Comparison"
+  :and "Short-circuit and"
+  :or "Short-circuit or"
+  :bitwise "Bitwise binary operator"
+  :bitnot "Bitwise complement"}
+
+ ;; Built-in methods, keyed by the receiver type the type checker accepts.
+ ;; :on is the tag the IR node carries (absent means the node has no :on), so
+ ;; a backend can only distinguish receivers by :on where this lists one.
+ :builtins
+ [{:receiver "String" :method "length" :arity 0}
+  {:receiver "String" :method "concat" :arity 1}
+  {:receiver "String" :method "str" :arity 0}
+  {:receiver "String" :method "tpl" :arity 1}
+  {:receiver "String" :method "substring" :arity 2}
+  {:receiver "Int" :method "str" :arity 0}
+  {:receiver "Int" :method "times" :arity 1}
+  {:receiver "Float" :method "str" :arity 0}
+  {:receiver "Float" :method "toInt" :arity 0}
+  {:receiver "Float" :method "floor" :arity 0}
+  {:receiver "Float" :method "ceil" :arity 0}
+  {:receiver "Float" :method "round" :arity 0}
+  {:receiver "Bool" :method "str" :arity 0}
+  {:receiver "Array" :method "length" :arity 0}
+  {:receiver "Array" :method "cons" :arity 1}
+  {:receiver "Array" :method "head" :arity 0}
+  {:receiver "Array" :method "tail" :arity 0}
+  {:receiver "Array" :method "get" :arity 1 :on "Array"}
+  {:receiver "Array" :method "map" :arity 1 :on "Array"}
+  {:receiver "Array" :method "filter" :arity 1 :on "Array"}
+  {:receiver "Array" :method "fold" :arity 2 :on "Array"}
+  {:receiver "Map" :method "get" :arity 1}
+  {:receiver "Map" :method "get" :arity 2}
+  {:receiver "Map" :method "put" :arity 2}
+  {:receiver "Map" :method "exists" :arity 1}
+  {:receiver "Map" :method "remove" :arity 1}
+  {:receiver "Map" :method "map" :arity 1 :on "Map"}
+  {:receiver "Map" :method "filter" :arity 1 :on "Map"}
+  {:receiver "Map" :method "fold" :arity 2 :on "Map"}]}
