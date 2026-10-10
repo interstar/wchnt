@@ -15,9 +15,8 @@ drawing remain WCHNT Methods.
 ```
 >Keys = Bool/left Bool/right Bool/up Bool/down
 Phase = "Flying" | "Landed" | "Crashed"
-Game = Sky Terrain :Ship Phase/phase Int/score Int/landings $Time Keys @WCHNTMaths/maths
-Sky = Int/width Int/height Float/gravity
-Terrain = [Segment]/segments Pad @WCHNTMaths/maths
+Game = Planet :Ship Phase/phase Int/score Int/landings $Time Keys @WCHNTMaths/maths
+Planet = Int/width Int/height Float/gravity [Segment]/segments Pad @WCHNTMaths/maths
 Segment = Float/x1 Float/y1 Float/x2 Float/y2
 Pad = Float/x Float/y Float/width
 Ship = Float/x Float/y Float/vx Float/vy Float/angle Float/fuel Bool/burning @WCHNTMaths/maths
@@ -29,8 +28,7 @@ Build = Float/px Float/py [Segment]/segs
 
 ```
 [:Game
-  [:Sky 800 600 0.016]
-  [:Terrain
+  [:Planet 800 600 0.016
     [:Array/Segment
       [:Segment 0.0 470.0 70.0 430.0]
       [:Segment 70.0 430.0 130.0 500.0]
@@ -71,13 +69,13 @@ Segment::heightAt = { Float/px, Float/fallback |
   } else { fallback }
 }
 
-Terrain::heightAt = { Float/px |
+Planet::heightAt = { Float/px |
   segments.fold(600.0, { Float/acc, Segment/s | s.heightAt(px, acc) })
 }
 
-Terrain::onPad = { Float/px | (px >= pad.x) and (px <= (pad.x + pad.width)) }
+Planet::onPad = { Float/px | (px >= pad.x) and (px <= (pad.x + pad.width)) }
 
-Terrain::roll = {
+Planet::roll = {
   padX = 120.0 + (maths.rand() * 500.0).
   padY = 440.0 + (maths.rand() * 100.0).
   built = 12.times({ i | i }).fold([:Build 0.0 (420.0 + (maths.rand() * 120.0)) [:Array/Segment]], { Build/b, Int/i |
@@ -85,7 +83,7 @@ Terrain::roll = {
     ny = if ((nx > padX) and (nx < (padX + 140.0))) { padY } else { 400.0 + (maths.rand() * 160.0) }.
     [:Build nx ny b.segs.cons([:Segment b.px b.py nx ny])]
   }).
-  [:Terrain built.segs [:Pad (padX + 5.0) padY 70.0] maths]
+  [:Planet width height gravity built.segs [:Pad (padX + 5.0) padY 70.0] maths]
 }
 
 Ship::step = { Keys/k |
@@ -93,8 +91,8 @@ Ship::step = { Keys/k |
   nangle = angle + turn.
   firing = k.up and (fuel > 0.0).
   power = if (firing) { 0.055 } else { 0.0 }.
-  gravity = theGame.sky.gravity.
-  w = theGame.sky.width * 1.0.
+  gravity = theGame.planet.gravity.
+  w = theGame.planet.width * 1.0.
   nvx = vx + (maths.sin(nangle) * power).
   nvy = (vy - (maths.cos(nangle) * power)) + gravity.
   nfuel = if (firing) { fuel - 0.2 } else { fuel }.
@@ -127,7 +125,7 @@ Game::update! = {
   moved = if (phase == Flying) { ship.step(keys) }
     (restart) { this.newShip() }
     else { ship }.
-  land = if (restart) { terrain.roll() } else { terrain }.
+  land = if (restart) { planet.roll() } else { planet }.
   ground = land.heightAt(moved.x).
   touching = (phase == Flying) and ((moved.y + 12.0) >= ground).
   nextPhase = if (restart) { Flying }
@@ -137,7 +135,7 @@ Game::update! = {
   justLanded = (phase == Flying) and (nextPhase == Landed).
   bonus = if (justLanded) { 100 + maths.round(moved.fuel) } else { 0 }.
   more = if (justLanded) { 1 } else { 0 }.
-  [:Game sky land moved nextPhase (score + bonus) (landings + more) time keys maths]
+  [:Game land moved nextPhase (score + bonus) (landings + more) time keys maths]
 }
 
 Game::banner = {
@@ -152,7 +150,7 @@ Game::scoreLine = {
     "score": score.str(), "landings": landings.str()})
 }
 
-Terrain::draw = { @WCHNTGraphics/g |
+Planet::draw = { @WCHNTGraphics/g |
   ground = segments.fold(g.lineStyle(2, 11184810), { acc, Segment/s | acc.drawLine(s.x1, s.y1, s.x2, s.y2) }).
   g.lineStyle(4, 5232783).drawLine(pad.x, pad.y, pad.x + pad.width, pad.y)
 }
@@ -162,7 +160,7 @@ Game::draw = { @WCHNTGraphics/g |
     Crashed -> { 14428979 }
     Landed -> { 5232783 }
     else -> { 3556687 }.
-  terrainDrawn = terrain.draw(g).
+  planetDrawn = planet.draw(g).
   ship.draw(g, hull)
 }
 
@@ -194,6 +192,7 @@ Ship::draw = { @WCHNTGraphics/g, Int/hull |
    .endFill()
 }
 ```
+
 
 ## Target
 
