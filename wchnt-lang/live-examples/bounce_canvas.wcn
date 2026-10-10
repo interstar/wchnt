@@ -25,7 +25,7 @@ The **Construction** actually builds the objects with their initial data values.
 
 ```
 [:Game
-  [:PlayArea 800 400]
+  [:PlayArea 800 500]
   [:Ball 200 150 6 5 16]
 ]
 ```
@@ -42,14 +42,14 @@ Similarly, the `step()` method of `Game` is returning a new Game with the same p
 
 The `draw()` methods receive a `@WCHNTGraphics` object as argument from the enclosing platform or environment. This is a canvas or graphicsContext on which our code can draw.
 
+(Thanks to R.I. Chalmers for the improvement to the Ball::bounced algorithm)
 
 ```
 Ball::bounced = { PlayArea/r |
-  newDx = if ((x < 0) or (x > r.width)) { -dx  } else { dx }.
-  newDy = if ((y < 0) or (y > r.height)) { -dy } else { dy }.
+  newDx = if (((x + dx - rad) < 0) or ((x + dx + rad) > r.width)) { -dx } else { dx}.
+  newDy = if (((y + dy - rad) < 0) or ((y + dy + rad) > r.height)) { -dy } else { dy }.
   [:Ball (x+newDx) (y+newDy) newDx newDy rad]
 }
-
 
 Game::step = {
   [:Game playArea ball.bounced(playArea)]
@@ -65,7 +65,7 @@ PlayArea::draw = { @WCHNTGraphics/g |
 
 Game::draw = { @WCHNTGraphics/g |
   drawnPA = playArea.draw(g).
-  drawnBal = ball.draw(g).
+  drawnBall = ball.draw(g).
   g
 }
 ```

@@ -1,5 +1,7 @@
 # Lander for Pharo 14
 
+*(Thanks to Berkan)*
+
 Fly the ship down to the green pad. **Left / right** rotate, **up** burns
 fuel, and **down** starts a fresh flight after landing or crashing. Click the
 play area first so it receives the arrow keys.

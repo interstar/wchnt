@@ -1,6 +1,17 @@
 # Bounce for Pharo 14
 
+A simple bouncing ball example to get you started.
+
+This is a markdown document, but it is, *also* wchnt source code which can be executed by clicking the Run button. The section headings and code blocks are an essential part of the syntax of the language.
+ 
+
 ## Schema
+
+The **Schema** is where we write the overall shape of the data in our program. In this case we are defining three classes called `Game`, `PlayArea` and `Ball` and how they fit together.
+
+A Game is made of or contains a PlayArea and a Ball. The PlayArea holds the dimensions of the play area. Two Ints called `width` and `height` respectively. Ball has `x` and `y` coordinates. `dx` and `dy` are the current movement in each dimension. And `rad` is radius.
+
+Note how all three classes, their components and their relationships are defined in one place.
 
 ```
 Game = PlayArea Ball
@@ -10,20 +21,25 @@ Ball = Int/x Int/y Int/dx Int/dy Int/rad
 
 ## Construction
 
+The **Construction** actually builds the objects with their initial data values. We use nested square bracket lists, with the class-name as the first element (with a colon in front), and the values of each field in the same order they appear in the schema. A Game is made of the PlayArea and the Ball, so it needs to be construction with constructions of those objects nested inside.
+
 ```
 [:Game
-  [:PlayArea 800 400]
+  [:PlayArea 800 500]
   [:Ball 200 150 6 5 16]
 ]
 ```
 
+
 ## Methods
+
+Thanks to R.I. Chalmers for the improvement to the Ball::bounced algorithm.
 
 ```
 Ball::bounced = { PlayArea/r |
-  newDx = if ((x < 0) or (x > r.width)) { -dx } else { dx }.
-  newDy = if ((y < 0) or (y > r.height)) { -dy } else { dy }.
-  [:Ball (x + newDx) (y + newDy) newDx newDy rad]
+  newDx = if (((x + dx - rad) < 0) or ((x + dx + rad) > r.width)) { -dx } else { dx}.
+  newDy = if (((y + dy - rad) < 0) or ((y + dy + rad) > r.height)) { -dy } else { dy }.
+  [:Ball (x+newDx) (y+newDy) newDx newDy rad]
 }
 
 Game::step = {

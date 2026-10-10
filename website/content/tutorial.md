@@ -56,7 +56,7 @@ Schema is assumed to come from the platform.
 
 > **Field names.** By default a component's field name is its type name with a lower-cased first
 > letter: `PlayArea` → `playArea`, `Ball` → `ball`.
-> You can override it with `/`. For example, write `Paddle/player` to call the field `paddle1`.
+> You can override it with `/`. For example, write `Paddle/player` to call the field `player`.
 
 ## 3. Construction — the initial heap
 
@@ -75,7 +75,7 @@ a nested list with the class name first:
 ````
 
 - The outer `[:Game …]` builds a `Game`.
-- Its first argument `[:PlayArea 0 0 800 600]` builds a `PlayArea` — the two numbers are its `width` and `height`.
+- Its first argument `[:PlayArea 800 600]` builds a `PlayArea` — the two numbers are its `width` and `height`.
 - The second argument `[:Ball 200 150 6 5 16]` positions the ball at (200, 150), moving right
   and down at (6, 5), with radius 16.
 
